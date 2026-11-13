@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
-import { layFlat, Occt, readStep } from '../src/engine/step-import.js';
+import { layFlat, Occt, readStep, recognise } from '../src/engine/step-import.js';
 
 const require = createRequire(import.meta.url);
 
@@ -25,6 +25,25 @@ describe('STEP import', () => {
     expect(flat.box.max[1] - flat.box.min[1]).toBeCloseTo(20, 4);
     expect(flat.box.min[1]).toBeCloseTo(0, 6);
     expect(flat.volume).toBeCloseTo(m.volume, 3);
+  }, 60000);
+
+  it('recognises the block and the shaft as editable shapes', async () => {
+    const o = await occt();
+    const block = layFlat(readStep(o, new Uint8Array(readFileSync(new URL('./fixtures/block_60x40x20.step', import.meta.url))), 'block'));
+    const r1 = recognise(block);
+    expect(r1?.shape).toBe('block');
+    if (r1?.shape === 'block') {
+      expect(r1.x).toBeCloseTo(60, 4);
+      expect(r1.y).toBeCloseTo(40, 4);
+      expect(r1.h).toBeCloseTo(20, 4);
+    }
+    const shaft = layFlat(readStep(o, new Uint8Array(readFileSync(new URL('./fixtures/shaft_d25_l100.step', import.meta.url))), 'shaft'));
+    const r2 = recognise(shaft);
+    expect(r2?.shape).toBe('cylinder');
+    if (r2?.shape === 'cylinder') {
+      expect(r2.d).toBe(25);
+      expect(r2.h).toBeCloseTo(100, 3);
+    }
   }, 60000);
 
   it('reads a shaft (25 mm across, 100 long) close to the exact cylinder', async () => {

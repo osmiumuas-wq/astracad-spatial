@@ -107,6 +107,7 @@ World.create(
     drawing: () => void world.getSystem(DrawingSystem)?.toggle(),
     print: () => world.getSystem(PrintSystem)?.toggle(),
     swing: () => world.getSystem(HingeSystem)?.toggle(),
+    explode: () => world.getSystem(HingeSystem)?.explode(),
   });
 
   // Depth occlusion (Access: "Real occlusion"): real hands and objects in front

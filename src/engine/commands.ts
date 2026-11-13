@@ -18,7 +18,8 @@ import { MATERIAL_WORDS, RULES } from './describe.js';
 
 export type Action =
   | 'undo' | 'redo' | 'test' | 'stronger' | 'grow' | 'solid' | 'flow' | 'vibration' | 'drawing'
-  | 'print' | 'save' | 'share' | 'measure' | 'laser' | 'capture' | 'sketch' | 'shape' | 'next' | 'swing' | 'help';
+  | 'print' | 'save' | 'share' | 'measure' | 'laser' | 'capture' | 'sketch' | 'shape' | 'next' | 'swing' | 'help'
+  | 'editable' | 'explode';
 
 export type Command =
   | { kind: 'action'; action: Action; text: string }
@@ -29,6 +30,8 @@ export type Command =
 
 const ACTIONS: [RegExp, Action][] = [
   [/\b(undo|go back|take that back)\b/u, 'undo'],
+  [/\beditable\b|\breverse engineer\b/u, 'editable'],
+  [/\bexplode\b|\bexploded\b|\bpull (it )?apart\b|\bcollapse\b|\bput (it )?back together\b/u, 'explode'],
   [/\bredo\b/u, 'redo'],
   [/\b(make it|make this) (stronger|hold|safer)\b|\breinforce\b|\bfix it\b/u, 'stronger'],
   [/\b(test|load test|stress test|will it hold|is it strong enough|push it)\b/u, 'test'],

@@ -103,11 +103,11 @@ version" items ship as the nearest thing that is true; "cannot" items are explai
 | 2 | Part Language v2 | Done (subset) | Fillet, chamfer, loft, spline, assemblies refused by name in the headset |
 | 3 | Truth gate | Done | Gate at 1e-5, measured agreement 3.9e-9 |
 | 4 | APEX solvers | Honest version | Voxel FEA in the headset; CalculiX cross-check of the bracket (board task 2) |
-| 5, 6 | STEP and drawing reverse engineering | Cannot (headset) | Desktop AstraCAD only; named as the desktop half of the product |
+| 5, 6 | STEP and drawing reverse engineering | Honest version (done) | STEP import in the browser (OpenCASCADE); plain blocks and cylinders are recognised from exact volume ratios and become editable parametric parts; other shapes stay reference models with a cradle round them. Full feature recognition and drawing-to-CAD stay in desktop AstraCAD |
 | 7 | Pinch-and-extract | Build | Three measurements make a glowing box rise out of the real object and fly to the bench |
 | 8 | Calipers | Done | Live spread shown, never a fixed +/- figure |
 | 9 | Cradle inversion | Done | Cradle job with 0.4 mm clearance |
-| 10 | Clash with the real world | Build (stretch) | Red where the hologram is behind real surfaces in the depth map |
+| 10 | Clash with the real world | Partial | Real occlusion (depth sensing hides the part behind real hands and objects), off by default. The red clash tint is not built |
 | 11 | Micrometer dial | Done + build | Dial ring (done); thumb swipes on the index finger, Quest microgestures, step 0.05 mm (build) |
 | 12 | Push-pull handles | Done | 1 mm snaps |
 | 13 | Knife-hand slicer | Done | |
@@ -116,7 +116,7 @@ version" items ship as the nearest thing that is true; "cannot" items are explai
 | 16 | Push-to-stress | Done | Load from push depth; linear scaling is exact |
 | 17 | Living bone | Done | Re-tested after carving; real timings shown |
 | 18 | CFD wind tunnel | Done (honest version) | Ideal-flow streamlines around the part on the bench, side or front wind, labelled "No wake, no forces". Lift and drag numbers would be invented, so none are shown |
-| 19 | Kinematic assembly | Cannot in time | Future work |
+| 19 | Kinematic assembly | Done (one assembly) | Print-in-place hinge: two bodies, revolute swing to the computed contact angle, exploded view. Gears and general mates are future work |
 | 20, 21 | Agents and self-healing | Done | |
 | 22 | Air-sketch to solid | Build | Draw a closed outline on the desk, snap to lines and right angles, pull up to extrude; goes through the truth gate |
 | 23 | Arc reactor look | Build (polish) | Emissive cyan edges, glass core, heat glow under load |
@@ -128,9 +128,9 @@ version" items ship as the nearest thing that is true; "cannot" items are explai
 | 29 | Captions | Done | |
 | 30, 31 | WebRTC co-design | Build (approved) | Six-digit room code or join link/QR; the free public PeerJS broker only introduces the two browsers. One shared part (job, dimensions, material), turntable angle, heads and fingertips in the part frame; partners sit opposite. Works headset to headset, or headset to phone/PC, so one judge can try it. Fails with a plain message; the rest of the app is unaffected |
 | 32 | Desk shelf | Build | Saved parts as miniatures beside the bench, restored each session |
-| 33 | Daily challenge | Done (local) | No global leaderboard: needs a server |
+| 33 | Daily challenge | Done (local) | Global leaderboard skipped by the entrant (needs a server account) |
 | 34 | Materials incl. Grade 5 titanium | Done | Typical values, labelled as typical |
-| 35 | Uncertainty | Done | Measured spread, not +/- 0.2 mm |
+| 35 | Uncertainty | Done | Measured spread, and +/- 2 sigma from the user's own bank-card calibration; never a fixed +/- 0.2 mm |
 | 36 | 3MF with stress colours | Build | 3MF export with per-triangle colours from the last solve |
 
 Build order: 11 (microgestures), 7, 36, 14, 32, 25, 22, 18, 23, 10, then 30-31 if approved.
@@ -161,6 +161,8 @@ Day 2 progress (emulator-checked through the IWSDK CLI unless noted):
 | Voice | Talk button (headset) and Talk on the flat page. Browser speech recognition where it works; otherwise on-device Whisper tiny (transformers.js, WebAssembly, about 40 MB model downloaded once; audio stays on the device). A synthetic spoken "Make the arm twenty millimetres longer" transcribed exactly: 3.5 s warm on a desktop (11 s first run in the built site). Replies spoken with speech synthesis when available. Not measured on a Quest |
 | Commands | Conversational engine for typed and spoken sentences: relative and absolute edits ("20 mm longer", "double the thickness", "ten percent thicker", "bore 8"), counts ("two more bolts"), spoken numbers, materials, actions (test, stronger, grow, flow, vibration, drawing, print, measure, laser, capture, undo...), and new parts. A full typed conversation (new bracket, edits, material, undo, "will it hold?") ran on the live page |
 | UX | Every notice now also shows in the headset (glass panel above the coach); before, results such as capture or laser readings appeared only on the flat page |
+| 5 (more) | Imported STEP block / cylinder made editable ("Make editable", or say "make it editable"): the 60 x 40 x 20 block and the 25 x 100 shaft fixtures recognised exactly (shaft snapped from 24.98 to 25.00, facets sit inside the circle); then "make it 10 mm taller" edited it on the live page |
+| 19 (more) | Exploded view of the hinge (Explode button, or "pull it apart"): leaf B moves off the pin to show the pin and its clearance bore; shown in emulated XR |
 | Laser | Laser tape: Measure pressed again switches to WebXR hit tests along the hand ray; two pinches measure between real surfaces and bind to the selected dimension. Emulator: floor points aimed 600 mm apart read 597 mm (the rug is 6 mm up) |
 | 23 | Bench look: cyan rim light at grazing angles and glowing cyan edges on the part; stressed areas glow hotter from a third of yield to full at yield (shown on the wall bracket at 85 % of yield in emulated XR) |
 | 10 (part) | Real occlusion (Access): IWSDK depth sensing hides the part behind real hands and objects. Emulator supplies GPU depth and the part shader recompiles with occlusion; off by default until checked on a headset. A red clash tint is not built |

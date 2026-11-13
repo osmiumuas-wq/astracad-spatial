@@ -108,6 +108,42 @@ export function measure(name: string, positions: Float32Array, indices: Uint32Ar
   return { name, positions, indices, volume: closed ? Math.abs(v6) / 6 : NaN, box: { min, max }, bodies, closed };
 }
 
+export type Recognised =
+  | { shape: 'block'; x: number; y: number; h: number }
+  | { shape: 'cylinder'; d: number; h: number };
+
+/**
+ * Reverse engineering for the simplest solids: a closed mesh whose volume is
+ * its box's volume is a block; one whose volume is pi/4 of its box, with two
+ * equal sides, is a cylinder (diameter = the equal sides, height = the third).
+ * The tolerances allow for the facets of a tessellated cylinder. Anything else
+ * returns null and stays a reference model.
+ */
+export function recognise(m: ImportedMesh): Recognised | null {
+  if (!m.closed || !Number.isFinite(m.volume) || m.bodies !== 1) return null;
+  const e = [0, 1, 2].map((a) => m.box.max[a] - m.box.min[a]);
+  const boxVol = e[0] * e[1] * e[2];
+  if (Math.abs(m.volume - boxVol) / boxVol < 1e-4) {
+    // Laid flat: X long, Z across, Y up.
+    return { shape: 'block', x: e[0], y: e[2], h: e[1] };
+  }
+  const ratio = m.volume / boxVol;
+  if (Math.abs(ratio - Math.PI / 4) / (Math.PI / 4) < 0.01) {
+    for (let a = 0; a < 3; a++) {
+      const b = (a + 1) % 3;
+      const c = (a + 2) % 3;
+      if (Math.abs(e[b] - e[c]) / Math.max(e[b], e[c]) < 0.005) {
+        // The facets sit just inside the true circle: a 25 mm shaft spans 24.98. Snap to the
+        // 0.05 mm step when that close, as a designed size would be.
+        const raw = (e[b] + e[c]) / 2;
+        const step = Math.round(raw * 20) / 20;
+        return { shape: 'cylinder', d: Math.abs(raw - step) < 0.05 ? step : raw, h: e[a] };
+      }
+    }
+  }
+  return null;
+}
+
 /**
  * Lay the part flat: its smallest extent becomes the height (Y), with proper
  * rotations only (no mirroring), centred over the origin and standing on y = 0.

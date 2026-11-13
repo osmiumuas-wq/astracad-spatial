@@ -36,10 +36,10 @@ import {
 } from './persistence.js';
 import { dailyBrief, dailyMet } from '../engine/daily.js';
 import { calibrate, CALIBRATION_READINGS, CARD_MM, correct } from '../engine/calibration.js';
-import type { ImportedMesh } from '../engine/step-import.js';
+import { recognise, type ImportedMesh } from '../engine/step-import.js';
 import { History } from './history.js';
 import { drawingSvg } from '../engine/drawing.js';
-import { answer, Described, describe } from '../engine/describe.js';
+import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, HELP, parseCommand } from '../engine/commands.js';
 
 export interface BuiltState {
@@ -467,6 +467,24 @@ export class App {
     );
   }
 
+  /**
+   * Turn the imported STEP model into an editable part when it is a block or
+   * a cylinder (recognised from its exact volume); otherwise it stays a reference.
+   */
+  makeEditable(): string {
+    const m = this.reference.peek();
+    if (!m) return 'Import a STEP file first.';
+    const r = recognise(m);
+    if (!r) return `${m.name} is not a plain block or cylinder, so it stays a reference model with a cradle round it.`;
+    const params: Params = r.shape === 'block' ? { ...blockParams(r.x, r.y), h: r.h } : { kind: 1, cx: 0, cy: 0, r: r.d / 2, h: r.h };
+    this.reference.value = null;
+    this.adoptShared({ job: 'sketch', params, material: this.material.peek() });
+    const f = (v: number): string => (Math.abs(v - Math.round(v)) < 0.01 ? v.toFixed(0) : v.toFixed(2));
+    return r.shape === 'block'
+      ? `Recognised a ${f(r.x)} x ${f(r.y)} x ${f(r.h)} mm block. It is now an editable part: pull its handles or say "make it 10 mm taller".`
+      : `Recognised a cylinder ${f(r.d)} mm across and ${f(r.h)} mm long. It is now an editable part, standing on its end.`;
+  }
+
   /** Load today's brief: its part, material and load. */
   startDaily(): void {
     const brief = dailyBrief(today());
@@ -882,11 +900,13 @@ export class App {
         return 'Shape mode.';
       case 'help':
         return HELP;
+      case 'editable':
+        return this.makeEditable();
       default: {
         const fn = this.actions[a];
         if (!fn) return 'That works on the bench in the headset.';
         fn();
-        return { flow: 'Air-flow preview.', vibration: 'Finding the natural frequencies.', drawing: 'Making the drawing.', print: 'Print preview.', share: 'Share code.', swing: 'Swinging the hinge.' }[a as string] ?? 'Done.';
+        return { flow: 'Air-flow preview.', vibration: 'Finding the natural frequencies.', drawing: 'Making the drawing.', print: 'Print preview.', share: 'Share code.', swing: 'Swinging the hinge.', explode: this.jobId.peek() === 'hinge' ? 'Exploded view.' : 'Exploded views are for the hinge assembly.' }[a as string] ?? 'Done.';
       }
     }
   }

@@ -208,6 +208,7 @@ export class WorkspaceSystem extends createSystem({
         ['act:modes', 'Vibration', () => this.world.getSystem(ModeSystem)?.toggle()],
         ['act:print', 'Print preview', () => this.world.getSystem(PrintSystem)?.toggle()],
         ['act:swing', 'Swing', () => this.world.getSystem(HingeSystem)?.toggle()],
+        ['act:explode', 'Explode', () => this.world.getSystem(HingeSystem)?.explode()],
       ],
       0.015,
     );
@@ -666,6 +667,7 @@ export class WorkspaceSystem extends createSystem({
     setButton('mode:sketch', { toggled: mode === 'sketch' });
     setButton('mode:capture', { toggled: mode === 'capture' });
     setButton('act:swing', { visible: app.jobId.value === 'hinge' });
+    setButton('act:explode', { visible: app.jobId.value === 'hinge' });
     setButton('act:undo', { disabled: !app.history.canUndo.value });
     setButton('act:redo', { disabled: !app.history.canRedo.value });
     setButton('act:grow', { label: grown ? 'Back to solid' : 'Grow bone', disabled: busy !== null && busy.kind !== 'grow' });

@@ -25,6 +25,10 @@ export class HingeSystem extends createSystem({}) {
   private basePos: Float32Array = new Float32Array(0);
   private baseNrm: Float32Array = new Float32Array(0);
   private axisY = 0;
+  /** Exploded-view slide: 0 assembled to 1 fully apart, easing towards the target. */
+  private exploding = 0;
+  private explodeTarget = 0;
+  private slide = 40;
 
   init(): void {
     const { app, bench } = ctx;
@@ -32,26 +36,40 @@ export class HingeSystem extends createSystem({}) {
     this.label.visible = false;
     bench.turntable.add(this.label.mesh);
     this.cleanupFuncs.push(
-      app.built.subscribe(() => this.endSwing()),
+      app.built.subscribe(() => {
+        this.endSwing();
+        this.exploding = 0;
+        this.explodeTarget = 0;
+        setButton('act:explode', { toggled: false, label: 'Explode' });
+      }),
       app.jobId.subscribe((id) => {
         this.endSwing();
         setButton('act:swing', { visible: id === 'hinge' });
+        setButton('act:explode', { visible: id === 'hinge' });
       }),
     );
   }
 
-  toggle(): void {
-    if (this.t >= 0) {
-      this.endSwing();
-      return;
-    }
+  /** Exploded view: leaf B moves straight off the pin, showing the bore and the pin; again to put it back. */
+  explode(): void {
+    if (this.t >= 0) this.endSwing();
+    if (this.exploding === 0 && !this.prepare()) return;
+    this.explodeTarget = this.explodeTarget > 0 ? 0 : 1;
+    setButton('act:explode', { toggled: this.explodeTarget > 0, label: this.explodeTarget > 0 ? 'Assemble' : 'Explode' });
+    ctx.sfx.play(this.explodeTarget > 0 ? 'grab' : 'bind');
+    ctx.app.say(this.explodeTarget > 0 ? 'Exploded view: leaf B is off its pin. The bore is the pin plus the print clearance all round.' : 'Assembled.', 'info');
+  }
+
+  /** Find leaf B's vertices on the current mesh. */
+  private prepare(): boolean {
     const { app } = ctx;
     const built = app.built.peek();
-    if (app.jobId.peek() !== 'hinge' || !built || app.rollback.peek() !== null) return;
+    if (app.jobId.peek() !== 'hinge' || !built || app.rollback.peek() !== null) return false;
     const p = app.params.peek();
     const { R, r, a, b } = hingeGeometry(p);
     this.axisY = R;
     this.limit = hingeLimit(p);
+    this.slide = p.W * 0.9;
     // Leaf B: its plate (z beyond the gap) and its knuckle (the middle stretch, outside the pin's bore).
     const pos = built.mesh.positions;
     const ids: number[] = [];
@@ -65,8 +83,24 @@ export class HingeSystem extends createSystem({}) {
     this.leafB = Uint32Array.from(ids);
     this.basePos = pos.slice();
     this.baseNrm = built.mesh.normals.slice();
-    this.t = 0;
     probe.hinge = { limit: Math.round(this.limit * 10) / 10, leafB: ids.length, vertices: pos.length / 3 };
+    return true;
+  }
+
+  toggle(): void {
+    if (this.t >= 0) {
+      this.endSwing();
+      return;
+    }
+    if (this.exploding > 0) {
+      this.explodeTarget = 0;
+      this.exploding = 0;
+      ctx.bench.part.restoreShape();
+      setButton('act:explode', { toggled: false, label: 'Explode' });
+    }
+    if (!this.prepare()) return;
+    const { app } = ctx;
+    this.t = 0;
     setButton('act:swing', { toggled: true, label: 'Stop' });
     app.say(`The leaves touch after ${this.limit.toFixed(1)} degrees either way. Widen the clearance or thin the leaves to open further.`, 'info');
   }
@@ -98,8 +132,28 @@ export class HingeSystem extends createSystem({}) {
     return { deg: sign * this.limit * (0.5 + 0.5 * Math.cos(Math.PI * w)), contact: false };
   }
 
+  /** Move leaf B away from the pin by the eased explode amount. */
+  private updateExplode(delta: number): void {
+    const before = this.exploding;
+    const k = 1 - Math.exp(-delta * 6);
+    this.exploding += (this.explodeTarget - this.exploding) * k;
+    if (Math.abs(this.exploding - this.explodeTarget) < 0.002) this.exploding = this.explodeTarget;
+    if (this.exploding === before) return;
+    const pos = ctx.bench.part.mesh.geometry.getAttribute('position') as BufferAttribute;
+    if (pos.array.length !== this.basePos.length) return;
+    const p = pos.array as Float32Array;
+    p.set(this.basePos);
+    // Straight away from the pin (along +Z), so the pin and the bore both come into view.
+    const dz = this.slide * this.exploding;
+    for (let i = 0; i < this.leafB.length; i++) p[this.leafB[i] * 3 + 2] = this.basePos[this.leafB[i] * 3 + 2] + dz;
+    pos.needsUpdate = true;
+  }
+
   update(delta: number): void {
-    if (this.t < 0) return;
+    if (this.t < 0) {
+      if (this.exploding !== this.explodeTarget) this.updateExplode(delta);
+      return;
+    }
     const { bench } = ctx;
     const part = bench.part;
     this.t += delta;

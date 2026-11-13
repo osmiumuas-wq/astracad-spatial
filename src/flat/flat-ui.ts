@@ -17,6 +17,7 @@ import { Bench } from '../app/bench.js';
 import { CoDesign } from '../app/codesign.js';
 import { describe } from '../engine/describe.js';
 import { parseCommand } from '../engine/commands.js';
+import { recognise as recogniseStep } from '../engine/step-import.js';
 import { ctx } from '../app/context.js';
 import { FlowSystem } from '../systems/flow-system.js';
 import { HingeSystem } from '../systems/hinge-system.js';
@@ -344,6 +345,7 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
         const { importStepFile } = await import('../app/step-loader.js');
         const m = await importStepFile(file);
         app.useReference(m);
+        stepEditable.hidden = recogniseStep(m) === null;
         stepStatus.textContent = `${m.name}: ${(m.box.max[0] - m.box.min[0]).toFixed(1)} x ${(m.box.max[2] - m.box.min[2]).toFixed(1)} x ${(m.box.max[1] - m.box.min[1]).toFixed(1)} mm` +
           `${Number.isFinite(m.volume) ? `, ${(m.volume / 1000).toFixed(2)} cm3` : ' (the mesh is not closed, so no volume)'}, ${m.bodies} bod${m.bodies === 1 ? 'y' : 'ies'}.`;
       } catch (e) {
@@ -351,7 +353,11 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
       }
     },
   });
-  root.append(h('section', {}, h('h2', {}, 'Import STEP'), stepInput, stepStatus));
+  const stepEditable = h('button', { type: 'button', class: 'go', hidden: true, click: () => {
+    stepStatus.textContent = app.runCommand('make it editable');
+    stepEditable.hidden = true;
+  } }, 'Make editable');
+  root.append(h('section', {}, h('h2', {}, 'Import STEP'), stepInput, stepStatus, stepEditable));
 
   // ----- co-design -----------------------------------------------------------
   const coStatus = h('p', { class: 'note', role: 'status' });
