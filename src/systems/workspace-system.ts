@@ -359,6 +359,12 @@ export class WorkspaceSystem extends createSystem({
 
   private setMode(mode: Mode): void {
     const { app } = ctx;
+    // Measure again while measuring: switch between fingers and the laser tape.
+    if (mode === 'measure' && app.mode.peek() === 'measure') {
+      app.laser.value = !app.laser.peek();
+      return;
+    }
+    if (mode !== 'measure') app.laser.value = false;
     app.mode.value = mode;
     if (mode === 'test' && !app.stress.peek() && !app.busy.peek()) {
       ctx.sfx.play('solve');
@@ -569,6 +575,15 @@ export class WorkspaceSystem extends createSystem({
       setButton('coach:skip', { visible: false });
       return;
     }
+    if (mode === 'measure' && app.laser.value) {
+      lines.push(
+        { text: 'LASER TAPE', size: 3.2, color: CSS.amber, weight: 700 },
+        { text: 'Point at a real surface and pinch, then pinch the other end. Press Laser again for finger measuring.', size: 4, weight: 600 },
+      );
+      this.coach.draw(lines, CSS.amber);
+      setButton('coach:skip', { visible: false });
+      return;
+    }
     if (mode === 'measure') {
       const target = app.selected.value ? paramDef(job, app.selected.value) : undefined;
       const def = target?.measure ? target : job.params.find((d) => d.measure);
@@ -610,7 +625,7 @@ export class WorkspaceSystem extends createSystem({
     const grown = app.grown.value;
     const mat = MATERIALS.find((m) => m.id === app.material.value) ?? MATERIALS[0];
     setButton('mode:shape', { toggled: mode === 'shape' });
-    setButton('mode:measure', { toggled: mode === 'measure' });
+    setButton('mode:measure', { toggled: mode === 'measure', label: mode === 'measure' && app.laser.value ? 'Laser' : 'Measure' });
     setButton('mode:test', { toggled: mode === 'test' });
     setButton('mode:sketch', { toggled: mode === 'sketch' });
     setButton('mode:capture', { toggled: mode === 'capture' });

@@ -107,7 +107,7 @@ export interface MeasurementRecord {
   measured: number;
   /** Spread of the samples the reading was averaged from, mm. */
   spread: number;
-  method: 'span' | 'tape';
+  method: 'span' | 'tape' | 'laser';
   fit: number;
 }
 

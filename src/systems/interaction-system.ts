@@ -641,7 +641,8 @@ export class InteractionSystem extends createSystem({
   }
 
   private updateMeasure(mode: string): void {
-    if (mode !== 'measure') {
+    // The laser tape (src/systems/laser-system.ts) owns the pinches while it is on.
+    if (mode !== 'measure' || ctx.app.laser.peek()) {
       this.hideCaliper();
       return;
     }

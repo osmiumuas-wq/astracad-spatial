@@ -100,6 +100,9 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
     part's size with a ruler.
 12. Access, then Real occlusion: hold a hand between your eyes and the part; the part should hide behind it.
     Check the frame rate with it on.
+14. Measure, then Measure again (it reads Laser): point at a wall and pinch, then at the opposite wall. Compare
+    with a tape measure.
+15. Drawing: the sheet should spring out of the part and be readable. On the flat page, Download drawing and print it.
 13. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
     check the +/- figure against a ruler.
 
@@ -118,6 +121,10 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   cantilever they agree with beam theory to about 2 %. They are a design preview, not a modal test.
 - STEP files are shown and measured as reference models (a cradle can be fitted round one); they are not turned back
   into editable features. The reader is OpenCascade (occt-import-js, LGPL-2.1), downloaded on first use (7.6 MB).
+- The drawing shows each view's silhouette: holes that go right through are drawn and called out; blind pockets,
+  counterbores and hidden edges are not.
+- "Describe it" is a fixed set of word rules, not a language model; it asks rather than guesses.
+- The laser tape is only as accurate as the headset's model of the room (millimetres to centimetres).
 - The hinge's swing limit is plate-against-plate geometry; friction, print sag and elephant's foot are not modelled.
 - The +/- figure on a measurement comes from the user's own card calibration; without calibration only the sample
   spread is shown.

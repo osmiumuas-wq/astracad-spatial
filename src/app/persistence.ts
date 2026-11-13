@@ -29,7 +29,7 @@ export interface Thing {
   name: string;
   value: number;
   spread: number;
-  method: 'span' | 'tape';
+  method: 'span' | 'tape' | 'laser';
   created: string;
 }
 
@@ -114,8 +114,8 @@ export const saveLibrary = (l: SavedPart[]): void => write('library', l.slice(0,
 export const loadThings = (): Thing[] => read<Thing[]>('things', []);
 export const saveThings = (t: Thing[]): void => write('things', t.slice(0, 12));
 
-export const loadCalibration = (): Partial<Record<'span' | 'tape', Calibration>> => read('calibration', {});
-export const saveCalibration = (c: Partial<Record<'span' | 'tape', Calibration>>): void => write('calibration', c);
+export const loadCalibration = (): Partial<Record<'span' | 'tape' | 'laser', Calibration>> => read('calibration', {});
+export const saveCalibration = (c: Partial<Record<'span' | 'tape' | 'laser', Calibration>>): void => write('calibration', c);
 
 export const today = (): string => new Date().toISOString().slice(0, 10);
 

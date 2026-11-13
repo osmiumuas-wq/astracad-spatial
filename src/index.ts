@@ -17,6 +17,7 @@ import { CaptureSystem } from './systems/capture-system.js';
 import { FlowSystem } from './systems/flow-system.js';
 import { DrawingSystem } from './systems/drawing-system.js';
 import { HingeSystem } from './systems/hinge-system.js';
+import { LaserSystem } from './systems/laser-system.js';
 import { ModeSystem } from './systems/mode-system.js';
 import { ReferenceSystem } from './systems/reference-system.js';
 import { ForearmSystem } from './systems/forearm-system.js';
@@ -72,6 +73,7 @@ World.create(
   world.registerSystem(ReferenceSystem, { priority: 26 });
   world.registerSystem(HingeSystem, { priority: 27 });
   world.registerSystem(DrawingSystem, { priority: 28 });
+  world.registerSystem(LaserSystem, { priority: 9 });
   world.registerSystem(SketchSystem, { priority: 7 });
   world.registerSystem(CaptureSystem, { priority: 8 });
   world.registerSystem(WorkspaceSystem, { priority: 30 });

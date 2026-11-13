@@ -61,7 +61,7 @@ export interface StressState extends SolveOutcome {
 export interface Measurement {
   value: number;
   spread: number;
-  method: 'span' | 'tape';
+  method: 'span' | 'tape' | 'laser';
   samples: number;
   /** Two-sigma uncertainty from the user's calibration, mm, when calibrated. */
   uncertainty?: number;
@@ -129,6 +129,8 @@ export class App {
   readonly calibration = signal(loadCalibration());
   /** Readings so far while calibrating, or null. */
   readonly calibrating: Signal<{ readings: number[] } | null> = signal(null);
+  /** Measure mode is using the laser tape (hit tests on the real room) instead of fingers. */
+  readonly laser = signal(false);
   /** Bumped when a system's coach prompt changes (capture steps). */
   readonly coachTick = signal(0);
   /** Notes from the last clamp (why a value was limited). */
