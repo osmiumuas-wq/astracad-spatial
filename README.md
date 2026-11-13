@@ -98,9 +98,9 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
 10. Air flow: tap Air flow on the phone stand; tap again for front wind. Note the frame rate while beads run.
 11. Capture: tap Capture, trace round the base of a box on the table with a pinch, then pinch its top. Compare the
     part's size with a ruler.
-13. Access, then Real occlusion: hold a hand between your eyes and the part; the part should hide behind it.
+12. Access, then Real occlusion: hold a hand between your eyes and the part; the part should hide behind it.
     Check the frame rate with it on.
-12. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
+13. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
     check the +/- figure against a ruler.
 
 ## Honest limits
