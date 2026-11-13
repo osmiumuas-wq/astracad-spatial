@@ -100,10 +100,10 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
     part's size with a ruler.
 12. Access, then Real occlusion: hold a hand between your eyes and the part; the part should hide behind it.
     Check the frame rate with it on.
-14. Measure, then Measure again (it reads Laser): point at a wall and pinch, then at the opposite wall. Compare
+13. Measure, then Measure again (it reads Laser): point at a wall and pinch, then at the opposite wall. Compare
     with a tape measure.
-15. Drawing: the sheet should spring out of the part and be readable. On the flat page, Download drawing and print it.
-13. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
+14. Drawing: the sheet should spring out of the part and be readable. On the flat page, Download drawing and print it.
+15. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
     check the +/- figure against a ruler.
 
 ## Honest limits
