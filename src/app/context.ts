@@ -10,6 +10,7 @@ import type { Bench } from './bench.js';
 import type { CoDesign } from './codesign.js';
 import type { Hands } from './hands.js';
 import type { Sfx } from './sfx.js';
+import type { Voice } from './voice.js';
 
 export interface Context {
   world: World;
@@ -18,6 +19,9 @@ export interface Context {
   hands: Hands;
   sfx: Sfx;
   codesign: CoDesign;
+  voice: Voice;
+  /** Listen for one spoken command, run it, and speak the reply. */
+  talk: () => Promise<void>;
   benchEntity: Entity;
   turntableEntity: Entity;
 }

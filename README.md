@@ -103,7 +103,9 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
 13. Measure, then Measure again (it reads Laser): point at a wall and pinch, then at the opposite wall. Compare
     with a tape measure.
 14. Drawing: the sheet should spring out of the part and be readable. On the flat page, Download drawing and print it.
-15. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
+15. Talk: tap Talk, say "make the arm twenty millimetres longer", wait. Note how long the first answer takes (the
+    model downloads once) and how long later ones take. Try "test it" and "show the drawing".
+16. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
     check the +/- figure against a ruler.
 
 ## Honest limits
@@ -123,7 +125,11 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   into editable features. The reader is OpenCascade (occt-import-js, LGPL-2.1), downloaded on first use (7.6 MB).
 - The drawing shows each view's silhouette: holes that go right through are drawn and called out; blind pockets,
   counterbores and hidden edges are not.
-- "Describe it" is a fixed set of word rules, not a language model; it asks rather than guesses.
+- "Describe it" and the spoken commands are a fixed set of word rules, not a language model; they ask rather than
+  guess, and a sentence they do not understand is answered with examples.
+- On-device voice uses Whisper tiny (English) through transformers.js: the model (about 40 MB) comes from the
+  Hugging Face CDN and the WebAssembly runtime from jsDelivr on first use; audio is not sent anywhere. It takes a few
+  seconds per sentence on a desktop and longer on a headset.
 - The laser tape is only as accurate as the headset's model of the room (millimetres to centimetres).
 - The hinge's swing limit is plate-against-plate geometry; friction, print sag and elephant's foot are not modelled.
 - The +/- figure on a measurement comes from the user's own card calibration; without calibration only the sample

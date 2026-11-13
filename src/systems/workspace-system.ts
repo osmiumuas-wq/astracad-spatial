@@ -82,6 +82,8 @@ export class WorkspaceSystem extends createSystem({
   private qrCanvas!: HTMLCanvasElement;
   private qrOpen = false;
   private co!: TextPanel;
+  private note!: TextPanel;
+  private noteUntil = 0;
   private coCanvas!: HTMLCanvasElement;
   private coOpen = false;
   private settingsOpen = false;
@@ -121,6 +123,7 @@ export class WorkspaceSystem extends createSystem({
     this.caption = new TextPanel(0.27, 0.034, 'Caption');
     this.qr = new TextPanel(0.2, 0.25, 'Share panel');
     this.qrCanvas = document.createElement('canvas');
+    this.note = new TextPanel(0.3, 0.05, 'Notice panel');
     this.co = new TextPanel(0.2, 0.25, 'Co-design panel');
     this.coCanvas = document.createElement('canvas');
     for (const [p, x, y, z] of [
@@ -130,6 +133,7 @@ export class WorkspaceSystem extends createSystem({
       [this.caption, 0, 0.217, -0.11],
       [this.qr, 0.27, 0.22, -0.008],
       [this.co, 0.27, 0.22, -0.008],
+      [this.note, 0, 0.33, -0.13],
     ] as [TextPanel, number, number, number][]) {
       facing(p.group, x, y, z);
       this.ui.add(p.group);
@@ -137,6 +141,15 @@ export class WorkspaceSystem extends createSystem({
     }
     this.qr.group.visible = false;
     this.co.group.visible = false;
+    this.note.group.visible = false;
+
+    // ----- voice: a Talk button left of the tool strip ------------------------
+    const talkGroup = new Group();
+    talkGroup.position.set(-0.205, 0.012, 0.2);
+    talkGroup.rotation.set(-0.95, 0, 0);
+    this.ui.add(talkGroup);
+    const talkEntity = this.world.createTransformEntity(talkGroup, { parent: this.uiEntity, persistent: true });
+    makeButton(talkEntity, { key: 'act:talk', label: 'Talk', width: 0.058, height: 0.052, tone: 'primary' }, () => void ctx.talk()).position.set(0, 0.015, 0);
     this.caption.group.visible = false;
 
     // ----- fix buttons under the agent panel ---------------------------------
@@ -324,6 +337,29 @@ export class WorkspaceSystem extends createSystem({
       effect(() => this.drawCoach()),
       effect(() => this.refreshTools()),
       effect(() => this.drawCo()),
+      effect(() => {
+        // Every notice (results, replies) shows in the room for a few seconds.
+        const n = app.notice.value;
+        if (!n) return;
+        const color = n.tone === 'good' ? CSS.green : n.tone === 'warn' ? CSS.amber : n.tone === 'bad' ? CSS.red : CSS.cyan;
+        this.note.draw([{ text: n.text, size: 3.8, weight: 600 }], color);
+        this.noteUntil = this.elapsed + Math.min(10, 5 + n.text.length / 20);
+      }),
+      effect(() => {
+        // The Talk button shows what the voice layer is doing; the panel shows what it heard.
+        const v = ctx.voice;
+        const st = v.state.value;
+        const heard = v.heard.value;
+        const pct = v.loading.value;
+        setButton('act:talk', {
+          toggled: st === 'listening',
+          label: st === 'listening' ? 'Listening' : st === 'thinking' ? 'Thinking' : st === 'loading' ? `Voice ${pct}%` : 'Talk',
+        });
+        if (st === 'listening' || st === 'thinking') {
+          this.note.draw([{ text: heard ? `"${heard}"` : st === 'listening' ? 'Listening... say a command' : 'Working it out...', size: 3.6, weight: 600, color: CSS.text }], CSS.violet);
+          this.noteUntil = this.elapsed + 30;
+        }
+      }),
       effect(() => {
         const s = app.settings.value;
         setUiStyle(s.highContrast, s.largeText ? 1.25 : 1);
@@ -734,6 +770,8 @@ export class WorkspaceSystem extends createSystem({
       return;
     }
     tickPanels(delta, ctx.app.settings.peek().reduceMotion);
+    const showNote = this.elapsed < this.noteUntil;
+    if (showNote !== this.note.group.visible) this.note.group.visible = showNote;
     // Place the bench once the head pose has settled, then look for a table for a few seconds.
     if (this.placedAt === 0 && this.elapsed > 0.6) {
       this.place();

@@ -39,7 +39,8 @@ import { calibrate, CALIBRATION_READINGS, CARD_MM, correct } from '../engine/cal
 import type { ImportedMesh } from '../engine/step-import.js';
 import { History } from './history.js';
 import { drawingSvg } from '../engine/drawing.js';
-import { answer, Described } from '../engine/describe.js';
+import { answer, Described, describe } from '../engine/describe.js';
+import { Action, HELP, parseCommand } from '../engine/commands.js';
 
 export interface BuiltState {
   mesh: MeshData;
@@ -766,6 +767,132 @@ export class App {
     this.library.value = this.library.peek().filter((p) => p.id !== id);
     saveLibrary(this.library.peek());
   }
+
+  /** Actions that live in systems (drawing, flow, vibration...), registered at start-up. */
+  readonly actions: Partial<Record<Action, () => void>> = {};
+
+  /**
+   * One sentence, typed or spoken: edit the part, change material, run an
+   * action, or make a new part. Returns the reply, which is also shown (and
+   * spoken when the user talked).
+   */
+  runCommand(sentence: string): string {
+    const job = this.job;
+    const before = { ...this.params.peek() };
+    const cmd = parseCommand(sentence, job, before);
+    let reply = '';
+    let tone: Notice['tone'] = 'info';
+    switch (cmd.kind) {
+      case 'edit': {
+        this.setParams(cmd.changes);
+        const after = this.params.peek();
+        reply = Object.keys(cmd.changes)
+          .map((id) => {
+            const d = paramDef(job, id);
+            const unit = d?.unit ? ` ${d.unit}` : '';
+            const fmt = (v: number): string => (d?.unit === '' ? String(Math.round(v)) : v.toFixed(Math.abs(v - Math.round(v)) < 0.01 ? 0 : 2));
+            return `${d?.label ?? id}: ${fmt(before[id])} to ${fmt(after[id])}${unit}`;
+          })
+          .join(', ');
+        const notes = this.clampNotes.peek();
+        if (notes.length) reply += `. ${notes.join(' ')}`;
+        tone = 'good';
+        break;
+      }
+      case 'material':
+        this.setMaterial(cmd.material);
+        reply = `Material: ${this.materialData.name}.`;
+        tone = 'good';
+        break;
+      case 'describe': {
+        const d = describe(cmd.text);
+        if ('error' in d) {
+          reply = d.error;
+          tone = 'warn';
+          break;
+        }
+        // Spoken requests cannot fill a form: missing sizes take their defaults, and the reply says so.
+        const answers: Record<string, number> = {};
+        for (const q of d.ask) answers[q.id] = q.value;
+        this.applyDescribed(d, answers);
+        reply = `${this.job.title}${d.understood.length ? `: ${d.understood.join(', ')}` : ''}.` +
+          (d.ask.length ? ` I used ${d.ask.map((q) => `${q.label.toLowerCase()} ${q.value}${q.unit ? ` ${q.unit}` : ''}`).join(', ')}; say a new value to change it.` : '');
+        tone = 'good';
+        break;
+      }
+      case 'action':
+        reply = this.runAction(cmd.action);
+        break;
+      default:
+        reply = `I did not catch a command there. ${HELP}`;
+        tone = 'warn';
+    }
+    this.say(reply, tone);
+    return reply;
+  }
+
+  private runAction(a: Action): string {
+    switch (a) {
+      case 'undo':
+        return this.history.undo() ? 'Undone.' : 'Nothing to undo.';
+      case 'redo':
+        return this.history.redo() ? 'Redone.' : 'Nothing to redo.';
+      case 'test':
+        this.mode.value = 'test';
+        void this.runTest().then((ok) => {
+          const sf = this.factor();
+          if (ok && sf !== null) {
+            this.speakReply(sf >= 2 ? `Safety factor ${sf.toFixed(1)}. It holds.` : sf >= 1 ? `Safety factor ${sf.toFixed(1)}. It holds, but the margin is thin.` : `Safety factor ${sf.toFixed(1)}. It would fail at this load.`);
+          }
+        });
+        return 'Testing the standard load.';
+      case 'stronger':
+        void this.autoReinforce();
+        return 'Marcus is reinforcing it until it holds.';
+      case 'grow':
+        void this.grow(0.55);
+        return 'Growing the bone structure.';
+      case 'solid':
+        this.clearGrown();
+        return 'Back to the solid part.';
+      case 'save':
+        return this.save() ? 'Saved to your shelf.' : 'Only a verified part can be saved.';
+      case 'next': {
+        const i = JOBS.findIndex((j) => j.id === this.jobId.peek());
+        this.selectJob(JOBS[(i + 1) % JOBS.length].id);
+        return `${this.job.title}.`;
+      }
+      case 'measure':
+        this.laser.value = false;
+        this.mode.value = 'measure';
+        return 'Measure: pinch the ends of a real object.';
+      case 'laser':
+        this.mode.value = 'measure';
+        this.laser.value = true;
+        return 'Laser tape: point at a surface and pinch, then at the other end.';
+      case 'capture':
+        this.mode.value = 'capture';
+        return 'Capture: trace round the base of the object, then pinch its top.';
+      case 'sketch':
+        this.mode.value = 'sketch';
+        return 'Sketch: draw a closed outline just above the bench.';
+      case 'shape':
+        this.laser.value = false;
+        this.mode.value = 'shape';
+        return 'Shape mode.';
+      case 'help':
+        return HELP;
+      default: {
+        const fn = this.actions[a];
+        if (!fn) return 'That works on the bench in the headset.';
+        fn();
+        return { flow: 'Air-flow preview.', vibration: 'Finding the natural frequencies.', drawing: 'Making the drawing.', print: 'Print preview.', share: 'Share code.', swing: 'Swinging the hinge.' }[a as string] ?? 'Done.';
+      }
+    }
+  }
+
+  /** Called with replies worth hearing; the voice layer speaks them when the user is talking. */
+  speakReply: (text: string) => void = () => {};
 
   /** Build a described part (after its questions are answered). */
   applyDescribed(d: Described, answers: Record<string, number>): void {

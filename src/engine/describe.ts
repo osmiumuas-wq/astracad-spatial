@@ -78,7 +78,7 @@ function screw(text: string): { name: string; clearance: number } | undefined {
   return s ? { name: s.name, clearance: s.clearance.medium } : undefined;
 }
 
-const MATERIAL_WORDS: [RegExp, string][] = [
+export const MATERIAL_WORDS: [RegExp, string][] = [
   [/\bpla\b/u, 'pla'],
   [/\bpetg\b/u, 'petg'],
   [/\babs\b/u, 'abs'],
@@ -87,7 +87,7 @@ const MATERIAL_WORDS: [RegExp, string][] = [
   [/\bstainless\b|\bsteel\b|\b304\b/u, 'ss304'],
 ];
 
-const JOB_WORDS: [RegExp, string][] = [
+export const JOB_WORDS: [RegExp, string][] = [
   [/\bhinge\b/u, 'hinge'],
   [/\bknob\b|\bdial cap\b/u, 'knob'],
   [/\bflange\b|\bbolt circle\b|\bpcd\b/u, 'flange-plate'],
@@ -100,7 +100,7 @@ const JOB_WORDS: [RegExp, string][] = [
 ];
 
 /** Per job: dimension words for each parameter, the order "A x B x C" fills, and what to ask if missing. */
-const RULES: Record<string, { words: Record<string, string[]>; triple?: string[]; key: string[] }> = {
+export const RULES: Record<string, { words: Record<string, string[]>; triple?: string[]; key: string[] }> = {
   cradle: {
     words: { L: ['length', 'long'], W: ['width', 'wide'], H: ['height', 'high', 'tall', 'thick(?:ness)?'], clr: ['clearance', 'gap'], t: ['wall'], floor: ['floor', 'base'] },
     triple: ['L', 'W', 'H'],

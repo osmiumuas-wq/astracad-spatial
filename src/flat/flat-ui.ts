@@ -16,6 +16,8 @@ import { App } from '../app/app.js';
 import { Bench } from '../app/bench.js';
 import { CoDesign } from '../app/codesign.js';
 import { describe } from '../engine/describe.js';
+import { parseCommand } from '../engine/commands.js';
+import { ctx } from '../app/context.js';
 import { FlowSystem } from '../systems/flow-system.js';
 import { HingeSystem } from '../systems/hinge-system.js';
 import { ModeSystem } from '../systems/mode-system.js';
@@ -135,13 +137,20 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
   const descText = h('textarea', {
     rows: 2,
     'aria-label': 'Describe a part',
-    placeholder: 'e.g. wall bracket, 100 mm arm, 80 high, 30 wide, 4 thick, M5 screws, PETG',
+    placeholder: 'e.g. wall bracket, 100 mm arm, 80 high, 30 wide, M5 screws, PETG  -  or  make the arm 20 mm longer',
   });
   const descOut = h('div', { class: 'describe' });
-  const descGo = h('button', { type: 'button', class: 'go' }, 'Make it');
+  const descGo = h('button', { type: 'button', class: 'go' }, 'Go');
+  const descMic = h('button', { type: 'button', title: 'Say it instead of typing (the microphone stays on this device)' }, 'Talk');
   const runDescribe = (): void => {
     descOut.replaceChildren();
-    const r = describe(descText.value);
+    // Edits and actions ("make the arm 20 mm longer", "test it") run at once; a new part asks for missing sizes.
+    const cmd = parseCommand(descText.value, app.job, app.params.peek());
+    if (cmd.kind !== 'describe') {
+      descOut.append(h('p', { class: 'note' }, app.runCommand(descText.value)));
+      return;
+    }
+    const r = describe(cmd.text);
     if ('error' in r) {
       descOut.append(h('p', { class: 'note' }, r.error));
       return;
@@ -176,13 +185,33 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
       runDescribe();
     }
   });
+  descMic.addEventListener('click', async () => {
+    const v = ctx.voice;
+    try {
+      const text = await v.listen();
+      if (text) {
+        descText.value = text;
+        runDescribe();
+        v.speak(app.notice.peek()?.text ?? '');
+      }
+    } catch (e) {
+      descOut.replaceChildren(h('p', { class: 'note' }, e instanceof Error ? e.message : String(e)));
+    }
+  });
+  effect(() => {
+    const st = ctx.voice.state.value;
+    const pct = ctx.voice.loading.value;
+    descMic.textContent = st === 'listening' ? 'Listening (tap to stop)' : st === 'thinking' ? 'Thinking...' : st === 'loading' ? `Loading voice ${pct}%` : 'Talk';
+    descMic.classList.toggle('go', st === 'listening');
+    if (st === 'listening' && ctx.voice.heard.value) descText.value = ctx.voice.heard.value;
+  });
   root.append(
     h('section', {},
-      h('h2', {}, 'Describe a part'),
+      h('h2', {}, 'Tell it'),
       descText,
-      h('div', { class: 'row' }, descGo),
+      h('div', { class: 'row' }, descGo, descMic),
       descOut,
-      h('p', { class: 'hint' }, 'Plain rules, no AI service: part words, sizes next to their names, A x B x C, M-size screws, a material. Anything missing is asked.'),
+      h('p', { class: 'hint' }, 'Describe a new part, or change this one: "make the arm 20 mm longer", "double the thickness", "two more bolts", "in aluminium", "test it", "make it stronger", "show the drawing", "undo". Word rules, no AI service; voice is recognised on this device.'),
     ),
   );
 

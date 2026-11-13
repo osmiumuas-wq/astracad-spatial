@@ -8,6 +8,7 @@ import projectOptions from 'virtual:iwsdk-project';
 import { App } from './app/app.js';
 import { Bench } from './app/bench.js';
 import { CoDesign, codeFromUrl } from './app/codesign.js';
+import { Voice } from './app/voice.js';
 import { ctx, probe } from './app/context.js';
 import { CoDesignSystem } from './systems/codesign-system.js';
 import { Hands } from './app/hands.js';
@@ -50,7 +51,27 @@ World.create(
   });
 
   const codesign = new CoDesign(app);
+  const voice = new Voice();
+  // Replies are spoken for a minute after the user last talked; otherwise they are only shown.
+  let talkedAt = -Infinity;
+  app.speakReply = (text) => {
+    if (performance.now() - talkedAt < 60000) voice.speak(text);
+  };
+  const talk = async (): Promise<void> => {
+    try {
+      sfx.play('select');
+      const text = await voice.listen();
+      if (!text) return;
+      talkedAt = performance.now();
+      const reply = app.runCommand(text);
+      voice.speak(reply);
+    } catch (e) {
+      app.say(e instanceof Error ? e.message : String(e), 'warn');
+    }
+  };
   Object.assign(ctx, {
+    voice,
+    talk,
     world,
     app,
     bench,
@@ -78,6 +99,15 @@ World.create(
   world.registerSystem(CaptureSystem, { priority: 8 });
   world.registerSystem(WorkspaceSystem, { priority: 30 });
   world.registerSystem(CoDesignSystem, { priority: 32 });
+
+  // Actions that voice and typed commands can trigger in systems.
+  Object.assign(app.actions, {
+    flow: () => world.getSystem(FlowSystem)?.toggle(),
+    vibration: () => world.getSystem(ModeSystem)?.toggle(),
+    drawing: () => void world.getSystem(DrawingSystem)?.toggle(),
+    print: () => world.getSystem(PrintSystem)?.toggle(),
+    swing: () => world.getSystem(HingeSystem)?.toggle(),
+  });
 
   // Depth occlusion (Access: "Real occlusion"): real hands and objects in front
   // of the part hide it. Off by default until it has been checked on a headset;
