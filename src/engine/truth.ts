@@ -41,6 +41,8 @@ export interface GateInput {
   /** Closed-form bounding box and the tessellation allowance on it, mm. */
   jobBox?: { box: Box3; tol: number };
   jobGenus?: number;
+  /** Separate bodies the part is meant to have (an assembly printed in place); 1 when absent. */
+  jobBodies?: number;
 }
 
 const rel = (a: number, b: number): number => Math.abs(a - b) / Math.max(Math.abs(b), 1e-12);
@@ -51,15 +53,16 @@ export function runGate(input: GateInput): GateResult {
   const { props, generic } = input;
   const checks: Check[] = [];
 
+  const bodies = input.jobBodies ?? 1;
   const sound =
-    props.status === 'NoError' && props.components === 1 && props.volume > 0;
+    props.status === 'NoError' && props.components === bodies && props.volume > 0;
   checks.push({
     id: 'solid',
-    label: 'Watertight single solid',
+    label: bodies === 1 ? 'Watertight single solid' : `Watertight, ${bodies} separate bodies`,
     status: sound ? 'pass' : 'fail',
     detail: sound
-      ? `1 body, ${props.triangles} triangles, kernel status ${props.status}`
-      : `status ${props.status}, ${props.components} bodies, volume ${mm3(props.volume)}`,
+      ? `${bodies} bod${bodies === 1 ? 'y' : 'ies'}, ${props.triangles} triangles, kernel status ${props.status}`
+      : `status ${props.status}, ${props.components} bodies (expected ${bodies}), volume ${mm3(props.volume)}`,
   });
 
   const second = rel(props.volumeCheck, props.volume);

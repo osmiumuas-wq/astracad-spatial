@@ -234,6 +234,27 @@ export class PartView {
     return exaggeration;
   }
 
+  /** Displace the part along a vibration mode shape (unit peak) by `amp` mm. Returns false if the shape does not fit. */
+  showMode(shape: Float32Array, amp: number): boolean {
+    const pos = this.mesh.geometry.getAttribute('position') as BufferAttribute | undefined;
+    if (!pos || shape.length !== this.base.length || pos.array.length !== this.base.length) {
+      return false;
+    }
+    const p = pos.array as Float32Array;
+    for (let i = 0; i < p.length; i++) p[i] = this.base[i] + shape[i] * amp;
+    pos.needsUpdate = true;
+    return true;
+  }
+
+  /** Put the vertices back where the kernel made them. */
+  restoreShape(): void {
+    const pos = this.mesh.geometry.getAttribute('position') as BufferAttribute | undefined;
+    if (pos && pos.array.length === this.base.length) {
+      (pos.array as Float32Array).set(this.base);
+      pos.needsUpdate = true;
+    }
+  }
+
   /** Cut the view with a world-space plane (null removes the cut). */
   setClip(plane: Plane | null): void {
     const m = this.mesh.material;

@@ -88,6 +88,7 @@ describe('Viktor: standards', () => {
       jobVolume: job.volume(params),
       jobBox: job.box(params),
       jobGenus: job.genus(params),
+      jobBodies: job.bodies,
     });
     expect(gate.verdict).toBe('verified');
   });

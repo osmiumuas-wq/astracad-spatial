@@ -7,10 +7,12 @@
  */
 
 import wasmUrl from 'manifold-3d/manifold.wasm?url';
-import { autoReinforce, StressSummary } from './agents.js';
+import { autoReinforce, estimateCost, rankOrientations, StressSummary } from './agents.js';
 import { buildRecord, toBinaryStl } from './exporters.js';
 import { expectVolume } from './expect.js';
 import { FeaResult, solveFea } from './fea.js';
+import { solveFlow } from './flow.js';
+import { solveModes } from './modal.js';
 import { Job, jobById, Params } from './jobs.js';
 import { initKernel, Kernel } from './kernel.js';
 import { materialById } from './materials.js';
@@ -97,6 +99,7 @@ async function handle(req: Request): Promise<void> {
             jobVolume: job.volume(params),
             jobBox: job.box(params),
             jobGenus: job.genus(params),
+            jobBodies: job.bodies,
           })
         : { verdict: 'kernel-only' as const, checks: [] };
     const mesh = copyMesh(out.mesh);
@@ -116,8 +119,56 @@ async function handle(req: Request): Promise<void> {
     return;
   }
 
+  if (req.type === 'flow') {
+    const out = build(kernel, job, params);
+    const res = solveFlow(out.mesh.positions, out.mesh.indices, req.wind);
+    scope.postMessage(
+      { id: req.id, type: 'flowed', points: res.points, speeds: res.speeds, starts: res.starts, h: res.h, cells: res.cells, iterations: res.iterations, ms: res.ms, wind: req.wind },
+      [res.points.buffer, res.speeds.buffer, res.starts.buffer],
+    );
+    return;
+  }
+
+  if (req.type === 'slice') {
+    const out = build(kernel, job, params);
+    const best = rankOrientations(out.mesh.positions, out.mesh.indices)[0];
+    const shownEvery = Math.max(1, Math.round(best.height / 0.2 / 120));
+    const layers = kernel.slice(job.spec(params), best.up, 0.2, shownEvery);
+    const cost = estimateCost(out.props, materialById('pla'));
+    scope.postMessage(
+      { id: req.id, type: 'sliced', ...layers, up: best.up, upLabel: best.label, minutes: cost.minutes ?? 0 },
+      [layers.segments.buffer, layers.starts.buffer],
+    );
+    return;
+  }
+
   const material = materialById(req.material);
   const wallHint = job.roles.wall ? params[job.roles.wall] : undefined;
+
+  if (req.type === 'modes') {
+    const { fixture, fixtureLabel, load } = loadOf(job, params, undefined);
+    const out = build(kernel, job, params);
+    const res = solveModes({
+      positions: out.mesh.positions,
+      indices: out.mesh.indices,
+      volume: out.props.volume,
+      E: material.E,
+      nu: material.nu,
+      density: material.density,
+      fixture,
+      load,
+      // No thin-wall refinement here: frequencies need far fewer cells than peak stress,
+      // and the finer grid made this take most of a minute.
+      targetElements: 2500,
+      modes: 3,
+      onProgress: (mode, iteration) => scope.postMessage({ id: req.id, type: 'mode-progress', mode, iteration }),
+    });
+    scope.postMessage(
+      { id: req.id, type: 'moded', frequencies: res.frequencies, shapes: res.shapes, cell: res.cell, elements: res.elements, ms: res.ms, fixtureLabel },
+      res.shapes.map((s) => s.buffer),
+    );
+    return;
+  }
 
   if (req.type === 'solve') {
     const { fixture, fixtureLabel, load } = loadOf(job, params, req.load);
@@ -271,6 +322,7 @@ async function handle(req: Request): Promise<void> {
       jobVolume: job.volume(params),
       jobBox: job.box(params),
       jobGenus: job.genus(params),
+      jobBodies: job.bodies,
     });
     const source = req.grownMesh ?? out.mesh;
     const stl = toBinaryStl(source.positions, source.indices, `${spec.name} ${gate.verdict}`);

@@ -12,16 +12,16 @@ export const COLORS = {
   green: 0x3ddc84,
   red: 0xff4d4f,
   violet: 0x9b7bff,
-  glass: 0x0c1420,
+  glass: 0x1a2458,
   ink: 0x0b1220,
   white: 0xffffff,
 } as const;
 
 export const CSS = {
   ink: '#0b1220',
-  panel: 'rgba(11,18,32,0.92)',
-  text: '#f2f6fb',
-  dim: '#9fb0c5',
+  panel: 'rgba(38,52,120,0.9)',
+  text: '#f4f6ff',
+  dim: '#b8c0e0',
   amber: '#ffb020',
   cyan: '#35d0ff',
   green: '#3ddc84',

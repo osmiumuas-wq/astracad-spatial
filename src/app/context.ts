@@ -7,6 +7,7 @@
 import type { Entity, World } from '@iwsdk/core';
 import type { App } from './app.js';
 import type { Bench } from './bench.js';
+import type { CoDesign } from './codesign.js';
 import type { Hands } from './hands.js';
 import type { Sfx } from './sfx.js';
 
@@ -16,6 +17,7 @@ export interface Context {
   bench: Bench;
   hands: Hands;
   sfx: Sfx;
+  codesign: CoDesign;
   benchEntity: Entity;
   turntableEntity: Entity;
 }

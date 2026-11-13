@@ -9,8 +9,8 @@
  * Model axes follow SOLIDWORKS: Y is up, the front plane is XY.
  */
 
-import { compensationBulge } from './sketch.js';
-import { Box3, PartSpec, Seg, Vec3 } from './types.js';
+import { circlePolygon, compensationBulge, polygonArea } from './sketch.js';
+import { Box3, Feature, PartSpec, Seg, Vec2, Vec3 } from './types.js';
 
 export type Params = Record<string, number>;
 
@@ -81,6 +81,8 @@ export interface Job {
   volume: (p: Params) => number;
   box: (p: Params) => { box: Box3; tol: number };
   genus: (p: Params) => number;
+  /** Separate bodies (an assembly printed in place); 1 when absent. */
+  bodies?: number;
   handles: HandleDef[];
   loadCase: (p: Params) => LoadCase;
   roles: JobRoles;
@@ -711,7 +713,325 @@ const cradle: Job = {
   roles: { wall: 't', stiffen: ['t', 'floor'], fit: 'L' },
 };
 
-export const JOBS: readonly Job[] = [cradle, fitClip, phoneStand, wallBracket, flangePlate, knob];
+// ---------------------------------------------------------------------------
+// 7. Air sketch: an outline drawn by hand on the bench, pulled up into a solid
+// ---------------------------------------------------------------------------
+
+/** Most corners an air-sketched outline may have. */
+export const SKETCH_MAX_POINTS = 32;
+
+const sketchParams: ParamDef[] = [
+  { id: 'h', label: 'Height', unit: 'mm', min: 1, max: 200, step: 1, fine: 0.05, value: 10 },
+];
+
+/** Outline carried in the parameters, so the worker and saved parts can rebuild it. */
+function sketchOutline(p: Params): { circle: { cx: number; cy: number; r: number } | null; pts: [number, number][] } {
+  if (p.kind === 1) return { circle: { cx: p.cx, cy: p.cy, r: p.r }, pts: [] };
+  const n = Math.round(p.n);
+  const pts: [number, number][] = [];
+  for (let i = 0; i < n; i++) pts.push([p[`x${i}`], p[`y${i}`]]);
+  return { circle: null, pts };
+}
+
+const DEFAULT_SKETCH: Params = { kind: 0, n: 4, x0: -20, y0: -12.5, x1: 20, y1: -12.5, x2: 20, y2: 12.5, x3: -20, y3: 12.5 };
+
+function sketchArea(pts: [number, number][]): number {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const q = pts[(i + 1) % pts.length];
+    a += pts[i][0] * q[1] - q[0] * pts[i][1];
+  }
+  return Math.abs(a) / 2;
+}
+
+const airSketch: Job = {
+  id: 'sketch',
+  title: 'Air sketch',
+  blurb: 'Draw an outline on the bench, then pull it up into a solid.',
+  params: sketchParams,
+  clamp(input) {
+    const p = baseClamp(sketchParams, input);
+    const notes: string[] = [];
+    const src = input.kind === undefined ? DEFAULT_SKETCH : input;
+    const finite = (k: string): boolean => Number.isFinite(src[k]);
+    if (src.kind === 1 && finite('cx') && finite('cy') && finite('r') && src.r > 0) {
+      Object.assign(p, { kind: 1, cx: src.cx, cy: src.cy, r: src.r });
+    } else {
+      const n = Math.round(src.n);
+      let ok = n >= 3 && n <= SKETCH_MAX_POINTS;
+      for (let i = 0; ok && i < n; i++) ok = finite(`x${i}`) && finite(`y${i}`);
+      const from = ok ? src : DEFAULT_SKETCH;
+      p.kind = 0;
+      p.n = Math.round(from.n);
+      for (let i = 0; i < p.n; i++) {
+        p[`x${i}`] = from[`x${i}`];
+        p[`y${i}`] = from[`y${i}`];
+      }
+      if (!ok) notes.push('Outline was not usable; showing the default rectangle.');
+    }
+    return { params: p, notes };
+  },
+  spec(p) {
+    const { circle, pts } = sketchOutline(p);
+    const loop: Seg[] = circle
+      ? [['C', circle.cx, circle.cy, circle.r]]
+      : pts.map((a, i): Seg => {
+          const b = pts[(i + 1) % pts.length];
+          return ['L', a[0], a[1], b[0], b[1]];
+        });
+    return {
+      language: 2,
+      name: 'air_sketch',
+      units: 'mm',
+      features: [
+        { $op: 'sketch.loops', id: 'outline', sketched_on: 'top', args: { loops: [loop] } },
+        { $op: 'feature.extrude', id: 'body', args: { depth: p.h } },
+      ],
+      notes: { hand_check: 'volume = outline area (shoelace formula, or pi r^2) x height' },
+    };
+  },
+  volume(p) {
+    const { circle, pts } = sketchOutline(p);
+    return (circle ? Math.PI * circle.r * circle.r : sketchArea(pts)) * p.h;
+  },
+  box(p) {
+    const { circle, pts } = sketchOutline(p);
+    if (circle) {
+      return {
+        box: { min: [circle.cx - circle.r, 0, -circle.cy - circle.r], max: [circle.cx + circle.r, p.h, -circle.cy + circle.r] },
+        tol: compensationBulge(circle.r) + EXACT_BOX_TOL,
+      };
+    }
+    const us = pts.map((q) => q[0]);
+    const vs = pts.map((q) => q[1]);
+    return {
+      box: { min: [Math.min(...us), 0, -Math.max(...vs)], max: [Math.max(...us), p.h, -Math.min(...vs)] },
+      tol: EXACT_BOX_TOL,
+    };
+  },
+  genus: () => 0,
+  handles: [
+    {
+      param: 'h',
+      at: (p) => {
+        const { circle, pts } = sketchOutline(p);
+        if (circle) return [circle.cx, p.h, -circle.cy];
+        const cx = pts.reduce((s, q) => s + q[0], 0) / pts.length;
+        const cy = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+        return [cx, p.h, -cy];
+      },
+      axis: [0, 1, 0],
+      gain: 1,
+    },
+  ],
+  loadCase(p) {
+    const b = airSketch.box(p).box;
+    return {
+      fixtureLabel: 'Base on the desk',
+      fixture: [{ kind: 'box', min: [b.min[0] - 1, -1, b.min[2] - 1], max: [b.max[0] + 1, 0, b.max[2] + 1] }],
+      loadLabel: 'Pressing on the top',
+      region: { kind: 'box', min: [b.min[0] - 1, p.h - 0.5, b.min[2] - 1], max: [b.max[0] + 1, p.h + 1, b.max[2] + 1] },
+      dir: [0, -1, 0],
+      newtons: 50,
+    };
+  },
+  roles: { stiffen: ['h'] },
+};
+
+// ---------------------------------------------------------------------------
+// 8. Print-in-place hinge: a two-body assembly with a revolute joint
+// ---------------------------------------------------------------------------
+//
+// Pin axis along X at height t/2. Leaf A (z < 0) carries the two outer
+// knuckles and the pin; leaf B (z > 0) carries the middle knuckle, bored
+// round the pin with clearance c. Every gap is c, so it prints assembled and
+// turns straight off the bed. The two leaves are separate bodies.
+
+const hingeParams: ParamDef[] = [
+  { id: 'L', label: 'Hinge length', unit: 'mm', min: 24, max: 120, step: 1, fine: 0.05, value: 48 },
+  { id: 'W', label: 'Leaf width', unit: 'mm', min: 10, max: 60, step: 1, fine: 0.05, value: 24 },
+  { id: 't', label: 'Thickness', unit: 'mm', min: 3, max: 8, step: 0.5, fine: 0.05, value: 4 },
+  { id: 'c', label: 'Print clearance', unit: 'mm', min: 0.2, max: 0.8, step: 0.05, fine: 0.05, value: 0.4 },
+];
+
+/** Derived sizes: knuckle radius R, pin radius r, knuckle lengths a (outer) and b (middle). */
+export function hingeGeometry(p: Params): { R: number; r: number; a: number; b: number } {
+  const R = p.t / 2;
+  const a = (p.L - 2 * p.c) / 3;
+  return { R, r: 0.5 * R, a, b: a };
+}
+
+/** Area of the kernel's facet polygon for a circle (equal-area facets). */
+const disc = (r: number): number => polygonArea(circlePolygon(0, 0, r));
+
+/** Clip a polygon to an axis-aligned rectangle (Sutherland-Hodgman). */
+function clipToRect(poly: Vec2[], u0: number, u1: number, v0: number, v1: number): Vec2[] {
+  const edges: [(p: Vec2) => number][] = [[(p) => p[0] - u0], [(p) => u1 - p[0]], [(p) => p[1] - v0], [(p) => v1 - p[1]]];
+  let out = poly;
+  for (const [inside] of edges) {
+    const src = out;
+    out = [];
+    for (let i = 0; i < src.length; i++) {
+      const a = src[i];
+      const b = src[(i + 1) % src.length];
+      const da = inside(a);
+      const db = inside(b);
+      if (da >= 0) out.push(a);
+      if (da >= 0 !== db >= 0) {
+        const t = da / (da - db);
+        out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+    if (!out.length) break;
+  }
+  return out;
+}
+
+/**
+ * Section area of a bridge rectangle (u from u0 to u1, v from 0 to t) joined
+ * to a knuckle of radius R on the axis: rectangle + knuckle polygon - their
+ * overlap, with the same facets the kernel cuts.
+ */
+function bridgeKnuckleArea(u0: number, u1: number, t: number, R: number): number {
+  const poly = circlePolygon(0, R, R);
+  const overlap = clipToRect(poly, u0, u1, 0, t);
+  return (u1 - u0) * t + polygonArea(poly) - (overlap.length >= 3 ? Math.abs(polygonArea(overlap)) : 0);
+}
+
+const hinge: Job = {
+  id: 'hinge',
+  title: 'Print-in-place hinge',
+  blurb: 'Two leaves on a pin, printed already assembled. Swing it to see where the leaves meet.',
+  params: hingeParams,
+  clamp(input) {
+    const p = baseClamp(hingeParams, input);
+    const notes: string[] = [];
+    // Keep at least 0.4 mm of knuckle wall round the bore.
+    const maxC = Math.round((0.5 * (p.t / 2) - 0.4) * 20) / 20;
+    if (p.c > maxC) {
+      p.c = Math.max(0.2, maxC);
+      notes.push(`Clearance limited to ${p.c.toFixed(2)} mm to keep 0.4 mm of knuckle wall at this thickness.`);
+    }
+    if (p.W < p.t / 2 + p.c + 2) {
+      p.W = p.t / 2 + p.c + 2;
+      notes.push('Leaf widened to reach past the knuckles.');
+    }
+    return { params: p, notes };
+  },
+  spec(p) {
+    const { R, r, a, b } = hingeGeometry(p);
+    const { L, W, t, c } = p;
+    // The 'right' plane: sketch u = -z, v = y, extrusion along +X.
+    const rect = (u0: number, u1: number): Seg[] => [
+      ['L', u0, 0, u1, 0], ['L', u1, 0, u1, t], ['L', u1, t, u0, t], ['L', u0, t, u0, 0],
+    ];
+    const at = (id: string, x: number): Feature => ({ $op: 'ref.plane', id, args: { base: 'right', offset: x } });
+    const body = (id: string, plane: string, loop: Seg[], depth: number, op = 'feature.extrude'): Feature[] => [
+      { $op: 'sketch.loops', id: `${id}_sk`, sketched_on: plane, args: { loops: [loop] } },
+      // A cut's default direction is into the face it starts on; here every feature runs along +X.
+      { $op: op, id, args: { depth, direction: 'normal' } },
+    ];
+    const circle = (rad: number): Seg[] => [['C', 0, R, rad]];
+    return {
+      language: 2,
+      name: 'print_in_place_hinge',
+      units: 'mm',
+      features: [
+        at('x0', 0),
+        at('xb', a + c),
+        at('x2', L - a),
+        // The bore starts and ends inside the empty gaps, so no face lies on its ends.
+        at('xbore', a + c / 2),
+        ...body('leaf_a', 'x0', rect(R + c, W), L),
+        ...body('leaf_b', 'x0', rect(-W, -(R + c)), L),
+        ...body('bridge_a1', 'x0', rect(0, R + c), a),
+        ...body('knuckle_a1', 'x0', circle(R), a),
+        ...body('bridge_a2', 'x2', rect(0, R + c), a),
+        ...body('knuckle_a2', 'x2', circle(R), a),
+        ...body('bridge_b', 'xb', rect(-(R + c), 0), b),
+        ...body('knuckle_b', 'xb', circle(R), b),
+        ...body('bore_b', 'xbore', circle(r + c), b + c, 'feature.cut'),
+        ...body('pin', 'x0', circle(r), L),
+      ],
+      notes: { hand_check: 'two leaves + bridges + outer half-knuckles - bore + pin in the gaps and bore' },
+    };
+  },
+  volume(p) {
+    const { R, r, a, b } = hingeGeometry(p);
+    const { L, W, t, c } = p;
+    return (
+      2 * L * t * (W - R - c) +
+      2 * a * bridgeKnuckleArea(0, R + c, t, R) +
+      b * (bridgeKnuckleArea(-(R + c), 0, t, R) - disc(r + c)) +
+      disc(r) * (2 * c + b)
+    );
+  },
+  bodies: 2,
+  box(p) {
+    const { R } = hingeGeometry(p);
+    return {
+      box: { min: [0, 0, -p.W], max: [p.L, p.t, p.W] },
+      tol: compensationBulge(R) + EXACT_BOX_TOL,
+    };
+  },
+  // Two bodies, each with one loop (leaf A through its pin, leaf B round its bore): Euler characteristic 0.
+  genus: () => 1,
+  handles: [
+    { param: 'L', at: (p) => [p.L, p.t / 2, -p.W / 2], axis: [1, 0, 0], gain: 1 },
+    { param: 'W', at: (p) => [p.L / 2, p.t / 2, p.W], axis: [0, 0, 1], gain: 1 },
+    { param: 't', at: (p) => [p.L / 2, p.t, -p.W * 0.7], axis: [0, 1, 0], gain: 1 },
+  ],
+  loadCase(p) {
+    const { R, a } = hingeGeometry(p);
+    return {
+      fixtureLabel: 'Leaf A screwed down',
+      fixture: [{ kind: 'box', min: [-1, -1, -p.W - 1], max: [p.L + 1, 0.01, -(R + p.c)] }],
+      loadLabel: 'Pressing on a knuckle',
+      region: { kind: 'box', min: [0, p.t - 0.6, -R], max: [a, p.t + 1, R] },
+      dir: [0, -1, 0],
+      newtons: 20,
+    };
+  },
+  roles: { stiffen: ['t'] },
+};
+
+/**
+ * How far leaf B swings either way before it touches leaf A, in degrees.
+ * The knuckles never collide (every gap is the clearance), so the limit is
+ * plate against plate: two rectangles in the section across the pin, one of
+ * them turning about the axis, tested by separating axes every 0.05 degrees.
+ */
+export function hingeLimit(p: Params): number {
+  const { R } = hingeGeometry(p);
+  const near = R + p.c;
+  const A: Vec2[] = [[-p.W, -R], [-near, -R], [-near, R], [-p.W, R]];
+  const Bbase: Vec2[] = [[near, -R], [p.W, -R], [p.W, R], [near, R]];
+  const overlaps = (P: Vec2[], Q: Vec2[]): boolean => {
+    for (const poly of [P, Q]) {
+      for (let i = 0; i < poly.length; i++) {
+        const [x0, y0] = poly[i];
+        const [x1, y1] = poly[(i + 1) % poly.length];
+        const nx = y1 - y0;
+        const ny = x0 - x1;
+        let pMin = Infinity, pMax = -Infinity, qMin = Infinity, qMax = -Infinity;
+        for (const [x, y] of P) { const d = x * nx + y * ny; pMin = Math.min(pMin, d); pMax = Math.max(pMax, d); }
+        for (const [x, y] of Q) { const d = x * nx + y * ny; qMin = Math.min(qMin, d); qMax = Math.max(qMax, d); }
+        if (pMax <= qMin + 1e-9 || qMax <= pMin + 1e-9) return false;
+      }
+    }
+    return true;
+  };
+  for (let deg = 0; deg <= 180; deg += 0.05) {
+    const th = (deg * Math.PI) / 180;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    const B = Bbase.map(([z, y]): Vec2 => [z * c - y * s, z * s + y * c]);
+    if (overlaps(A, B)) return Math.max(0, deg - 0.05);
+  }
+  return 180;
+}
+
+export const JOBS: readonly Job[] = [cradle, fitClip, phoneStand, wallBracket, flangePlate, knob, airSketch, hinge];
 
 export const jobById = (id: string): Job => JOBS.find((j) => j.id === id) ?? JOBS[0];
 

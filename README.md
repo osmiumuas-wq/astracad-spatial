@@ -93,6 +93,13 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
    should go down.
 7. Watch the frame rate (Meta Quest Developer Hub or OVR Metrics). The rules ask for 60 fps minimum.
 8. Try a second room you have not used before.
+9. Co-design: tap Co-design, Start a room, then open the join link (or scan the QR) on a phone or PC. Change a
+   dimension on each side; both should follow. Then try headset to headset if a second Quest is available.
+10. Air flow: tap Air flow on the phone stand; tap again for front wind. Note the frame rate while beads run.
+11. Capture: tap Capture, trace round the base of a box on the table with a pinch, then pinch its top. Compare the
+    part's size with a ruler.
+12. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
+    check the +/- figure against a ruler.
 
 ## Honest limits
 
@@ -103,3 +110,18 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   are refused by name and belong to desktop AstraCAD.
 - Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step.
 - The agents are rule-based expert systems, not language models.
+- Capture makes a parametric extrusion of an object's traced footprint and height, not a 3D scan: overhangs,
+  tapers and curved tops are not captured. The Quest browser gives web pages no camera image.
+- Vibration frequencies come from the same coarse voxel grid as the stress preview (about 2 500 cells); on a
+  cantilever they agree with beam theory to about 2 %. They are a design preview, not a modal test.
+- STEP files are shown and measured as reference models (a cradle can be fitted round one); they are not turned back
+  into editable features. The reader is OpenCascade (occt-import-js, LGPL-2.1), downloaded on first use (7.6 MB).
+- The hinge's swing limit is plate-against-plate geometry; friction, print sag and elephant's foot are not modelled.
+- The +/- figure on a measurement comes from the user's own card calibration; without calibration only the sample
+  spread is shown.
+- The air-flow preview is ideal (potential) flow: it shows where air goes and where it speeds up, but it has no
+  viscosity, so no wake, no separation, no drag and no lift. The app shows no forces.
+- Co-design uses the free public PeerJS broker (0.peerjs.com) to introduce two browsers; it sees the room code and
+  the two devices' network addresses, as any WebRTC signalling service does. Part data and hand poses then go directly
+  between the devices. No TURN relay is configured, so some strict networks cannot connect; the app says so and
+  carries on alone. If the broker is down, co-design is unavailable and everything else works.

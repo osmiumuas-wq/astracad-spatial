@@ -127,6 +127,7 @@ describe('every job passes the truth gate', () => {
           jobVolume: job.volume(params),
           jobBox: job.box(params),
           jobGenus: job.genus(params),
+          jobBodies: job.bodies,
         });
         const failed = gate.checks.filter((c) => c.status === 'fail');
         expect(failed, `${job.id} ${JSON.stringify(params)} -> ${JSON.stringify(failed)}`).toEqual([]);
@@ -174,5 +175,24 @@ describe('the language is strict', () => {
     expect(plateOnly.applied).toEqual(['disc', 'plate']);
     expect(plateOnly.props.volume).toBeGreaterThan(full.props.volume);
     expect(plateOnly.props.genus).toBe(1);
+  });
+});
+
+describe('slicing for the print preview', () => {
+  it('slices along the build direction with the true layer count', () => {
+    const job = JOBS.find((j) => j.id === 'wall-bracket')!;
+    const params = defaultParams(job);
+    const layers = kernel.slice(job.spec(params), [1, 0, 0], 0.2, 5);
+    expect(layers.height).toBeCloseTo(params.arm, 3);
+    expect(layers.printLayers).toBe(Math.round(params.arm / 0.2));
+    expect(layers.starts.length).toBe(Math.ceil(params.arm / 1 - 1e-9));
+    // Every outline point lies inside the part's box.
+    const box = job.box(params).box;
+    for (let i = 0; i < layers.segments.length; i += 3) {
+      for (let a = 0; a < 3; a++) {
+        expect(layers.segments[i + a]).toBeGreaterThan(box.min[a] - 1e-3);
+        expect(layers.segments[i + a]).toBeLessThan(box.max[a] + 1e-3);
+      }
+    }
   });
 });

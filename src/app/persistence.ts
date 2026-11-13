@@ -4,6 +4,7 @@
  * accessibility settings and whether the first-run coach has been completed.
  */
 
+import type { Calibration } from '../engine/calibration.js';
 import { Params } from '../engine/jobs.js';
 
 const PREFIX = 'astracad.spatial.v1.';
@@ -32,7 +33,7 @@ export interface Thing {
   created: string;
 }
 
-export type Skill = 'measure' | 'shape' | 'dial' | 'test' | 'fix' | 'slice' | 'history' | 'grow' | 'save';
+export type Skill = 'measure' | 'shape' | 'dial' | 'test' | 'fix' | 'slice' | 'history' | 'grow' | 'save' | 'sketch';
 
 export interface Progress {
   skills: Partial<Record<Skill, number>>;
@@ -109,6 +110,9 @@ export const loadLibrary = (): SavedPart[] => read<SavedPart[]>('library', []);
 export const saveLibrary = (l: SavedPart[]): void => write('library', l.slice(0, 24));
 export const loadThings = (): Thing[] => read<Thing[]>('things', []);
 export const saveThings = (t: Thing[]): void => write('things', t.slice(0, 12));
+
+export const loadCalibration = (): Partial<Record<'span' | 'tape', Calibration>> => read('calibration', {});
+export const saveCalibration = (c: Partial<Record<'span' | 'tape', Calibration>>): void => write('calibration', c);
 
 export const today = (): string => new Date().toISOString().slice(0, 10);
 

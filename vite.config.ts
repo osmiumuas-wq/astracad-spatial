@@ -13,7 +13,8 @@ export default defineConfig({
   // ASTRA_DEV_HTTP for localhost previews, where plain HTTP is a secure context.
   plugins: [iwsdkDev({ https: process.env.ASTRA_DEV_HTTP === '1' ? false : undefined })],
   worker: { format: 'es' },
-  server: { host: '0.0.0.0', port: 8081, open: false },
+  // Evidence files written during emulator runs must not reload the page (that ends the XR session).
+  server: { host: '0.0.0.0', port: 8081, open: false, watch: { ignored: ['**/artifacts/**', '**/exchange/**', '**/dist/**'] } },
   build: {
     outDir: 'dist',
     sourcemap: process.env.NODE_ENV !== 'production',

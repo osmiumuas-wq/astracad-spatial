@@ -24,7 +24,30 @@ import { UiButton } from '../components.js';
 import { ctx } from './context.js';
 import { CSS } from './palette.js';
 
-const FONT_STACK = "system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', Arial, sans-serif";
+const FONT_STACK = "'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', Arial, sans-serif";
+const MONO_STACK = "'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace";
+
+/** Frosted glass fill: blue at the top left, violet at the bottom right. */
+function glassFill(c: CanvasRenderingContext2D, w: number, h: number, alpha: number): CanvasGradient {
+  const g = c.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, `rgba(52, 84, 178, ${alpha})`);
+  g.addColorStop(0.55, `rgba(36, 44, 112, ${alpha})`);
+  g.addColorStop(1, `rgba(78, 52, 150, ${alpha})`);
+  return g;
+}
+
+/** The bright rim along the top of a glass shape. */
+function glassRim(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, line: number): void {
+  const g = c.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.16)');
+  g.addColorStop(1, 'rgba(255,255,255,0.28)');
+  c.beginPath();
+  c.roundRect(x, y, w, h, r);
+  c.lineWidth = line;
+  c.strokeStyle = g;
+  c.stroke();
+}
 /** Canvas pixels per metre of panel. */
 const PX_PER_M = 4200;
 /** Panel line sizes are written small; this brings them to about 1.1 degrees at 0.5 m. */
@@ -71,12 +94,12 @@ export function registerAction(key: string, fn: () => void): void {
 }
 
 const TONES: Record<Tone, { bg: string; fg: string; border: string }> = {
-  default: { bg: '#14203a', fg: CSS.text, border: '#2f4366' },
-  primary: { bg: '#ffb020', fg: '#1a1203', border: '#ffd06b' },
-  good: { bg: '#123524', fg: CSS.text, border: CSS.green },
-  warn: { bg: '#3a2a08', fg: CSS.text, border: CSS.amber },
-  bad: { bg: '#3a1214', fg: CSS.text, border: CSS.red },
-  ghost: { bg: 'rgba(11,18,32,0.55)', fg: CSS.dim, border: '#2b3a57' },
+  default: { bg: 'glass', fg: CSS.text, border: 'rim' },
+  primary: { bg: 'blue', fg: '#ffffff', border: 'rgba(255,255,255,0.6)' },
+  good: { bg: 'rgba(30,110,80,0.85)', fg: CSS.text, border: CSS.green },
+  warn: { bg: 'rgba(110,72,18,0.85)', fg: CSS.text, border: CSS.amber },
+  bad: { bg: 'rgba(120,30,40,0.85)', fg: CSS.text, border: CSS.red },
+  ghost: { bg: 'rgba(30,36,80,0.6)', fg: CSS.dim, border: 'rgba(255,255,255,0.22)' },
 };
 
 let highContrast = false;
@@ -102,14 +125,29 @@ function drawButton(b: ButtonRecord): void {
   const h = b.canvas.height;
   c.clearRect(0, 0, w, h);
   const tone = TONES[b.toggled ? 'primary' : b.tone];
+  const r = h / 2 - 3;
   c.beginPath();
-  c.roundRect(3, 3, w - 6, h - 6, Math.min(h / 2 - 3, 34));
-  c.fillStyle = b.pressed ? '#ffffff' : highContrast && !b.toggled ? '#000000' : tone.bg;
+  c.roundRect(3, 3, w - 6, h - 6, r);
+  let fill: string | CanvasGradient = tone.bg;
+  if (tone.bg === 'glass') {
+    fill = glassFill(c, w, h, b.hovered ? 0.95 : 0.86);
+  } else if (tone.bg === 'blue') {
+    const g = c.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, '#4b8bff');
+    g.addColorStop(0.5, '#3d6cff');
+    g.addColorStop(1, '#6f5bff');
+    fill = g;
+  }
+  c.fillStyle = b.pressed ? '#ffffff' : highContrast && !b.toggled ? '#000000' : fill;
   c.globalAlpha = b.disabled ? 0.45 : 1;
   c.fill();
-  c.lineWidth = b.hovered || highContrast ? 7 : 4;
-  c.strokeStyle = b.hovered ? CSS.cyan : highContrast ? '#ffffff' : tone.border;
-  c.stroke();
+  if (b.hovered || highContrast || tone.border !== 'rim') {
+    c.lineWidth = b.hovered || highContrast ? 7 : 4;
+    c.strokeStyle = b.hovered ? CSS.cyan : highContrast ? '#ffffff' : tone.border;
+    c.stroke();
+  } else {
+    glassRim(c, 3, 3, w - 6, h - 6, r, 4);
+  }
   c.fillStyle = b.pressed ? '#0b1220' : highContrast && !b.toggled ? '#ffffff' : tone.fg;
   const size = Math.min(h * 0.46, 58) * textScale;
   c.font = `650 ${size}px ${FONT_STACK}`;
@@ -245,18 +283,44 @@ export interface Line {
   gapAfter?: number;
 }
 
+const panels: TextPanel[] = [];
+
+/**
+ * Animate result pops: a panel with a new headline springs forward from 94 %
+ * and settles at full size. Call once per frame; `still` turns it off
+ * (the Less motion setting).
+ */
+export function tickPanels(delta: number, still: boolean): void {
+  for (const p of panels) {
+    if (p.popAt < 0) continue;
+    p.popAt += delta;
+    const t = p.popAt;
+    const s = still || t > 0.8 ? 1 : 1 - 0.06 * Math.exp(-7 * t) * Math.cos(14 * t);
+    p.group.scale.setScalar(s);
+    p.mesh.position.z = still ? 0 : 0.012 * Math.exp(-5 * t) * Math.sin(Math.min(Math.PI, t * 9));
+    if (s === 1) {
+      p.popAt = -1;
+      p.mesh.position.z = 0;
+    }
+  }
+}
+
 export class TextPanel {
   readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>;
   readonly group = new Group();
   private readonly canvas: HTMLCanvasElement;
   private readonly texture: CanvasTexture;
   private key = '';
+  private head = '';
+  /** Seconds since the last pop, or -1 when settled. */
+  popAt = -1;
 
   constructor(
     readonly width: number,
     readonly height: number,
     name: string,
   ) {
+    panels.push(this);
     this.canvas = document.createElement('canvas');
     this.canvas.width = Math.round(width * PX_PER_M);
     this.canvas.height = Math.round(height * PX_PER_M);
@@ -280,21 +344,42 @@ export class TextPanel {
       return;
     }
     this.key = key;
+    // A new headline (a verdict, a result) pops the panel forward; small edits do not.
+    const head = accent + lines.slice(0, 3).map((l) => l.text).join('|');
+    if (head !== this.head) {
+      if (this.head !== '') this.popAt = 0;
+      this.head = head;
+    }
     const c = this.canvas.getContext('2d') as CanvasRenderingContext2D;
     const W = this.canvas.width;
     const H = this.canvas.height;
     const mm = PX_PER_M / 1000;
     c.clearRect(0, 0, W, H);
+    const radius = 14 * mm;
     c.beginPath();
-    c.roundRect(4, 4, W - 8, H - 8, 9 * mm);
-    c.fillStyle = highContrast ? '#000000' : 'rgba(9,15,28,0.94)';
+    c.roundRect(4, 4, W - 8, H - 8, radius);
+    c.fillStyle = highContrast ? '#000000' : glassFill(c, W, H, 0.84);
     c.fill();
-    c.lineWidth = highContrast ? 8 : 4;
-    c.strokeStyle = highContrast ? '#ffffff' : '#2b3a57';
-    c.stroke();
-    c.fillStyle = accent;
-    c.fillRect(4, 4 + 9 * mm, 3 * mm, 16 * mm);
-    const pad = 8 * mm;
+    if (highContrast) {
+      c.lineWidth = 8;
+      c.strokeStyle = '#ffffff';
+      c.stroke();
+    } else {
+      // A soft sheen across the upper half, then the bright glass rim.
+      const sheen = c.createLinearGradient(0, 0, 0, H * 0.5);
+      sheen.addColorStop(0, 'rgba(255,255,255,0.10)');
+      sheen.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = sheen;
+      c.fill();
+      glassRim(c, 4, 4, W - 8, H - 8, radius, 5);
+      // The accent glows along the top edge.
+      const glow = c.createLinearGradient(radius, 0, W * 0.6, 0);
+      glow.addColorStop(0, accent);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      c.fillStyle = glow;
+      c.fillRect(radius, 4, W * 0.6 - radius, 2.2 * mm);
+    }
+    const pad = 9 * mm;
     let y = pad;
     c.textBaseline = 'top';
     for (const l of lines) {
@@ -308,7 +393,10 @@ export class TextPanel {
         c.roundRect(pad * 0.6, y - size * 0.3, W - pad * 1.2, size * 1.6, size * 0.4);
         c.fill();
       }
-      c.font = `${l.weight ?? 500} ${size}px ${FONT_STACK}`;
+      // Short upper-case lines are eyebrow labels: monospace and spaced out, as on the flat page.
+      const eyebrow = l.text.length < 40 && /[A-Z]/u.test(l.text) && l.text === l.text.toUpperCase() && (l.size ?? 4.6) <= 3.6;
+      c.font = eyebrow ? `500 ${size}px ${MONO_STACK}` : `${l.weight ?? 500} ${size}px ${FONT_STACK}`;
+      (c as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = eyebrow ? `${(size * 0.08).toFixed(1)}px` : '0px';
       c.fillStyle = highContrast ? '#ffffff' : (l.color ?? CSS.text);
       c.textAlign = 'left';
       if (l.value) {

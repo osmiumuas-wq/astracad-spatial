@@ -47,7 +47,9 @@ const GRAB_RADIUS = 0.03;
 const DIAL_RADIUS = 0.032;
 const DETENT_DEG = 10;
 const SAMPLE_WINDOW_S = 0.9;
-const SAMPLES = 96;
+const SAMPLES = 160;
+/** Samples are taken at most this often, so the window length does not depend on frame rate, s. */
+const SAMPLE_DT = 1 / 90;
 /** Joint centres sit inside the hand: the palm's skin is about this far below them, m. */
 const PALM_SKIN = 0.014;
 
@@ -74,9 +76,14 @@ class Samples {
   clear(): void {
     this.n = 0;
     this.head = 0;
+    this.last = -1;
   }
 
+  private last = -1;
+
   push(value: number, time: number): void {
+    if (this.n > 0 && time - this.last < SAMPLE_DT) return;
+    this.last = time;
     this.v[this.head] = value;
     this.t[this.head] = time;
     this.head = (this.head + 1) % SAMPLES;
@@ -135,6 +142,8 @@ export class InteractionSystem extends createSystem({
   private pushPending = false;
   private yielded = false;
   private lastRefresh = 0;
+  private readonly microLeft = new Uint8Array(10);
+  private readonly microRight = new Uint8Array(10);
   private sliceHold = 0;
   private slicing = false;
   private readonly clip = new Plane();
@@ -340,12 +349,56 @@ export class InteractionSystem extends createSystem({
     });
 
     const mode = app.mode.peek();
+    this.updateMicrogestures(session, mode);
     this.updateHandles(mode === 'shape');
     this.updateDial();
     this.updateGrabs(mode);
     this.updateMeasure(mode);
     this.updatePush(mode);
     this.updateSlice(mode);
+  }
+
+  /**
+   * Quest microgestures: the thumb swipes or taps on the side of the curled
+   * index finger, and the runtime reports it as hand gamepad buttons
+   * 5 to 9 (left, right, forward, backward, tap). Here they drive the dial
+   * without lifting the arm: forward and backward step 0.05 mm, left and
+   * right step 1 mm, a tap moves to the next dimension.
+   */
+  private updateMicrogestures(session: XRSession, mode: string): void {
+    const { app, sfx } = ctx;
+    for (const source of session.inputSources) {
+      if (!source.hand || !source.gamepad || (source.handedness !== 'left' && source.handedness !== 'right')) continue;
+      const prev = source.handedness === 'left' ? this.microLeft : this.microRight;
+      const buttons = source.gamepad.buttons;
+      for (let b = 5; b <= 9; b++) {
+        const now = buttons[b]?.pressed === true;
+        const was = prev[b] === 1;
+        prev[b] = now ? 1 : 0;
+        if (!now || was || mode !== 'shape') continue;
+        const job = app.job;
+        let id = app.selected.peek();
+        if (b === 9 || !id) {
+          const i = id ? job.params.findIndex((d) => d.id === id) : -1;
+          id = job.params[(i + 1) % job.params.length].id;
+          app.selected.value = id;
+          sfx.play('select');
+          if (b === 9) continue;
+        }
+        const detents = b === 7 || b === 6 ? 1 : -1;
+        const coarse = b === 5 || b === 6;
+        const before = app.params.peek()[id];
+        app.nudge(id, detents, coarse);
+        const after = app.params.peek()[id];
+        if (after !== before) {
+          sfx.play(coarse ? 'step' : 'tick', undefined, after > before ? 1.08 : 0.92);
+          app.award('dial');
+        } else {
+          sfx.play('limit');
+        }
+        probe.microgesture = b;
+      }
+    }
   }
 
   private updateHandles(show: boolean): void {
@@ -357,7 +410,7 @@ export class InteractionSystem extends createSystem({
     for (let i = 0; i < MAX_HANDLES; i++) {
       const h = this.handles[i];
       const def = job.handles[i];
-      const visible = show && !!def && app.rollback.peek() === null && !app.grown.peek();
+      const visible = show && !!def && app.rollback.peek() === null && !app.grown.peek() && bench.part.mesh.visible;
       if (h.group.visible !== visible) {
         h.group.visible = visible;
         if (visible && !h.entity.hasComponent(RayInteractable)) h.entity.addComponent(RayInteractable);
@@ -418,8 +471,8 @@ export class InteractionSystem extends createSystem({
         this.endGrab();
       }
     }
-    // Start.
-    if (!this.grab) {
+    // Start (the air sketch owns every pinch over the bench while it is active).
+    if (!this.grab && mode !== 'sketch' && mode !== 'capture') {
       for (const side of [this.dominant(), this.dominant() === 'left' ? 'right' : 'left'] as Side[]) {
         const hand = hands.get(side);
         if (!hand.tracked || !hand.pinchStarted) continue;
@@ -579,6 +632,8 @@ export class InteractionSystem extends createSystem({
     if (next) {
       app.selected.value = next;
     } else {
+      // Every dimension is measured: lift the object's box out of the real world.
+      app.extractFrom.value = [(a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2];
       setTimeout(() => {
         if (app.mode.peek() === 'measure') app.mode.value = 'shape';
       }, 1200);
@@ -593,6 +648,7 @@ export class InteractionSystem extends createSystem({
     const { app, hands } = ctx;
     const id = app.selected.peek();
     const def = id ? paramDef(app.job, id) : undefined;
+    probe.measure = { id, kind: def?.measure, rearm: this.needRearm, wait: +(this.lockedUntil - this.time).toFixed(2), queue: this.measureQueue.join(',') };
     if (!def?.measure) {
       this.hideCaliper();
       return;

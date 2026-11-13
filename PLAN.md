@@ -88,9 +88,75 @@ CalculiX, OpenFOAM and Chrono stay on the desktop; the headset exports the same 
 | 5, 6: STEP and drawing reverse engineering | Desktop Python. Not part of the judged build |
 | 18: particle wind tunnel with lift and drag in newtons | A real flow solver does not fit the frame budget. Invented force numbers would be false content |
 | 19: kinematic assemblies | A second product. Future plan |
-| 30, 31: WebRTC co-design | A six-digit code cannot carry a WebRTC offer; it needs a signalling service. That service can fail during three weeks of judging, and one judge with one headset cannot see the feature |
+| 30, 31: WebRTC co-design | Superseded on day 2: the entrant approved the public PeerJS broker. The risk stays (the broker can be down during judging), so the feature fails gracefully and a phone or PC can be the second person |
 | 25: sending a print job over Wi-Fi | Judges have no printer; a secure page cannot reach a LAN device |
 | Global leaderboard | Needs a server |
+
+## 4b. Revision 3 (day 2): the whole specification, item by item
+
+The entrant asked for all 36 items. Each one is now in one of three states. "Build" items are scheduled; "honest
+version" items ship as the nearest thing that is true; "cannot" items are explained in the submission as future work.
+
+| # | Item | State | What ships |
+|---|---|---|---|
+| 1 | Dual kernel | Honest version | Manifold kernel in the headset; the exported Part Language JSON builds in SOLIDWORKS and OpenCASCADE on the desktop (cross-check task 1 on the board) |
+| 2 | Part Language v2 | Done (subset) | Fillet, chamfer, loft, spline, assemblies refused by name in the headset |
+| 3 | Truth gate | Done | Gate at 1e-5, measured agreement 3.9e-9 |
+| 4 | APEX solvers | Honest version | Voxel FEA in the headset; CalculiX cross-check of the bracket (board task 2) |
+| 5, 6 | STEP and drawing reverse engineering | Cannot (headset) | Desktop AstraCAD only; named as the desktop half of the product |
+| 7 | Pinch-and-extract | Build | Three measurements make a glowing box rise out of the real object and fly to the bench |
+| 8 | Calipers | Done | Live spread shown, never a fixed +/- figure |
+| 9 | Cradle inversion | Done | Cradle job with 0.4 mm clearance |
+| 10 | Clash with the real world | Build (stretch) | Red where the hologram is behind real surfaces in the depth map |
+| 11 | Micrometer dial | Done + build | Dial ring (done); thumb swipes on the index finger, Quest microgestures, step 0.05 mm (build) |
+| 12 | Push-pull handles | Done | 1 mm snaps |
+| 13 | Knife-hand slicer | Done | |
+| 14 | Forearm time travel | Build | Left wrist face-up shows the feature filmstrip along the forearm; bench rail stays as fallback |
+| 15 | Seated ergonomics | Done | |
+| 16 | Push-to-stress | Done | Load from push depth; linear scaling is exact |
+| 17 | Living bone | Done | Re-tested after carving; real timings shown |
+| 18 | CFD wind tunnel | Done (honest version) | Ideal-flow streamlines around the part on the bench, side or front wind, labelled "No wake, no forces". Lift and drag numbers would be invented, so none are shown |
+| 19 | Kinematic assembly | Cannot in time | Future work |
+| 20, 21 | Agents and self-healing | Done | |
+| 22 | Air-sketch to solid | Build | Draw a closed outline on the desk, snap to lines and right angles, pull up to extrude; goes through the truth gate |
+| 23 | Arc reactor look | Build (polish) | Emissive cyan edges, glass core, heat glow under load |
+| 24 | QR hand-off | Done | |
+| 25 | Flick to print | Honest version | Drop the part on the desk: real layer outlines sliced by the kernel, layer count and time. No Wi-Fi transmission: a secure web page cannot reach a printer on the LAN |
+| 26 | Gaze and pinch | Done (Meta VR Glasses) | Quest 3 has no eye tracking; hand rays and dwell there |
+| 27 | One-handed mode | Done | One-hand tape measure included |
+| 28 | Colour-blind map | Done | Cividis-like map |
+| 29 | Captions | Done | |
+| 30, 31 | WebRTC co-design | Build (approved) | Six-digit room code or join link/QR; the free public PeerJS broker only introduces the two browsers. One shared part (job, dimensions, material), turntable angle, heads and fingertips in the part frame; partners sit opposite. Works headset to headset, or headset to phone/PC, so one judge can try it. Fails with a plain message; the rest of the app is unaffected |
+| 32 | Desk shelf | Build | Saved parts as miniatures beside the bench, restored each session |
+| 33 | Daily challenge | Done (local) | No global leaderboard: needs a server |
+| 34 | Materials incl. Grade 5 titanium | Done | Typical values, labelled as typical |
+| 35 | Uncertainty | Done | Measured spread, not +/- 0.2 mm |
+| 36 | 3MF with stress colours | Build | 3MF export with per-triangle colours from the last solve |
+
+Build order: 11 (microgestures), 7, 36, 14, 32, 25, 22, 18, 23, 10, then 30-31 if approved.
+
+Day 2 progress (emulator-checked through the IWSDK CLI unless noted):
+
+| # | Result |
+|---|---|
+| 11 | Thumb microgestures: tap picks the dimension, 3 forward swipes +0.15 mm, right swipe +1 mm |
+| 7 | Tape, tape, span locked 80, 45, 78.8 mm; the glowing object box flew into an 84.8 x 49.3 mm cradle |
+| 36 | 3MF with stress colours; an independent Python reader recomputes the kernel volume exactly, 0 open edges (unit test) |
+| 32 | Saved parts stand as miniatures on a ledge behind the bench; ray and pinch loads one |
+| 25 | Bracket sliced into 350 real layers (0.2 mm), built up on the bench, printed left end down, about 22 min |
+| 14 | Left palm up shows the feature filmstrip on the forearm; a fingertip touch rolled the cradle back to 3 of 5 |
+| 22 | A drawn L became a 6-corner outline (58 x 44.5 mm for 60 x 45 drawn), pulled up to 43 mm, gate verified |
+| Fixed | Switching parts threw in the flat page and aborted the switch; persistent XRAnchor moved the bench out of view (removed); caliper window broke at high frame rates |
+| 30, 31 | Two browser tabs over the real PeerJS broker: room opened, joined by code, part synced both ways with a "Partner: ..." caption, simultaneous edits converged (host wins a tie), guest seated opposite (head at z -0.52 in the host's part frame), turntable angle followed (+pi for the guest), leave returns the host to waiting, a wrong code says "No room with that code". Not yet run: join by link, partner hands in XR (needs two XR sessions), two headsets |
+| UI | Liquid-glass theme on the flat page (frosted rounded cards, blue-violet field, Inter Tight + JetBrains Mono) and on every headset panel and button (glass gradient, bright rim, pill buttons, blue selected state); panels pop forward when a new result arrives (off under Less motion) |
+| Capture | Pull a real object into CAD: trace its base with a pinch, pinch its top; a glowing solid rises out of it and flies to the bench as an editable parametric part (outline corners + height), truth gate verified. Emulator: traced 70 x 40, top 55 mm up, got 69 x 40 x 55 mm. It is a footprint extrusion, not a 3D scan; the Quest browser gives pages no camera image (search, Nov 2026) |
+| 35 | Calibration with a bank card (85.60 mm, ISO/IEC 7810): 3 readings give the person's bias and scatter per method; later readings are corrected and shown as value +/- 2 sigma. Live page check: readings 88.1, 87.4, 88.4 gave +2.4 mm bias, 0.5 mm scatter; a later 52.0 became 49.6 +/- 1.3 mm |
+| 4 (part) | Vibration: three lowest natural frequencies and mode shapes, held by the job's fixture (lumped mass, inverse iteration with M-orthogonal deflation on the voxel model). Steel cantilever 100 x 10 x 10: 828.7 Hz vs 815.4 Hz Euler-Bernoulli (+1.6 %). Wall bracket on the live page: 409 / 1484 / 1763 Hz in 12 s on a desktop (3 439 cells); the part swings in each mode, slowed down |
+| 5 (part) | STEP import (OpenCascade via occt-import-js, LGPL, 7.6 MB, loaded on first use): a 60 x 40 x 20 block reads 48.00 cm3 exactly, a 25 x 100 shaft within 0.5 % (chords); laid flat, a cradle is fitted round it and the model sits in the pocket as violet glass. Reference only: not turned back into features |
+| 19 | Print-in-place hinge: two separate bodies (leaf A with pin, leaf B bored round it, every gap = clearance), truth gate extended to N bodies, verified for the default and 25 random sets. Swing turns leaf B about the pin until the plates touch: 180 - 2 atan(R / (R + c)) degrees, matched to 0.1 deg by separating-axis sweep; default opens 100.3 deg each way, contact shown in red. Shown in emulated XR |
+| 33 | Global leaderboard: skipped (entrant decision, 13 Nov) |
+| 18 | Ideal (potential) flow solved on a 75 000-cell voxel grid in about 0.2 s, bench treated as a wall; 66 streamlines with speed-coloured beads, labelled "No wake, no forces". Check against the textbook sphere: within 4 % two cells from the surface, 1 to 2 % further out; same air through every cross-section within 3 % (unit tests). Shown in emulated XR from the tool strip |
+
 
 ## 5. Numbers in the directive that must not be used
 

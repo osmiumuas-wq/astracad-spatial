@@ -3,3 +3,5 @@
 *.mp3 binary
 *.png binary
 *.jpg binary
+*.step binary
+*.stp binary

@@ -771,6 +771,52 @@ export class Kernel {
   }
 
   /**
+   * Slice the part into layers along `up` (a unit axis). Every `shown`-th
+   * layer is returned as outlines, enough to animate a print on the desk; the
+   * true layer count at `layerHeight` is reported alongside.
+   */
+  slice(spec: PartSpec, up: Vec3, layerHeight = 0.2, shownEvery = 1): Layers {
+    const arena: Disposable[] = [];
+    const keep = <T extends Disposable>(o: T): T => {
+      arena.push(o);
+      return o;
+    };
+    try {
+      const { solid } = this.construct(spec, spec.features.length, keep);
+      // Rotation taking `up` to +Z (columns: x', y', z' = up).
+      const z = norm(up);
+      const helper: Vec3 = Math.abs(z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      const x = norm(cross(helper, z));
+      const y = cross(z, x);
+      const toLocal: Mat4 = [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, 0, 0, 0, 1];
+      const turned = keep(solid.transform(toLocal));
+      const box = turned.boundingBox();
+      const height = box.max[2] - box.min[2];
+      const printLayers = Math.max(1, Math.round(height / layerHeight));
+      const segs: number[] = [];
+      const starts: number[] = [];
+      const step = layerHeight * shownEvery;
+      for (let h = box.min[2] + step / 2; h < box.max[2]; h += step) {
+        starts.push(segs.length);
+        const cs = keep(turned.slice(h));
+        for (const poly of cs.toPolygons()) {
+          for (let i = 0; i < poly.length; i++) {
+            const a = poly[i];
+            const b = poly[(i + 1) % poly.length];
+            // Back to part coordinates: p = x * u + y * v + z * h.
+            for (const q of [a, b]) {
+              segs.push(x[0] * q[0] + y[0] * q[1] + z[0] * h, x[1] * q[0] + y[1] * q[1] + z[1] * h, x[2] * q[0] + y[2] * q[1] + z[2] * h);
+            }
+          }
+        }
+      }
+      return { segments: new Float32Array(segs), starts: Uint32Array.from(starts), height, printLayers, layerHeight };
+    } finally {
+      release(arena);
+    }
+  }
+
+  /**
    * Carve a solid with a scalar field (used by the topology optimiser): keeps
    * the part of `spec`'s solid where `field` is above `level`. The outer faces
    * stay the exact CAD faces; only the carved surfaces are new.
@@ -798,6 +844,19 @@ export class Kernel {
       release(arena);
     }
   }
+}
+
+/** Layer outlines of a part printed with `up` as the build direction. */
+export interface Layers {
+  /** Line segments (xyz pairs, part millimetres) of every shown layer, concatenated. */
+  segments: Float32Array;
+  /** Start offset (in floats) of each shown layer inside `segments`. */
+  starts: Uint32Array;
+  /** Height of the part along `up`, mm. */
+  height: number;
+  /** Number of layers at the real layer height. */
+  printLayers: number;
+  layerHeight: number;
 }
 
 function release(arena: Disposable[]): void {

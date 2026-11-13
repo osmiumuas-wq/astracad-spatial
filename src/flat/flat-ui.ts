@@ -10,8 +10,14 @@ import qrcode from 'qrcode-generator';
 import { AGENTS, Finding } from '../engine/agents.js';
 import { JOBS } from '../engine/jobs.js';
 import { MATERIALS } from '../engine/materials.js';
+import { toThreeMF } from '../engine/threemf.js';
+import { stressColor } from '../app/palette.js';
 import { App } from '../app/app.js';
 import { Bench } from '../app/bench.js';
+import { CoDesign } from '../app/codesign.js';
+import { FlowSystem } from '../systems/flow-system.js';
+import { HingeSystem } from '../systems/hinge-system.js';
+import { ModeSystem } from '../systems/mode-system.js';
 import { Sfx } from '../app/sfx.js';
 
 type Child = Node | string | null | undefined | false;
@@ -78,10 +84,10 @@ const VERDICT_TEXT: Record<string, string> = {
   refused: 'Refused',
 };
 
-export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx): void {
-  const root = h('aside', { id: 'flat', 'aria-label': 'AstraCAD Spatial' });
+export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, codesign: CoDesign): void {
+  const root = h('aside', { id: 'flat', class: 'glass', 'aria-label': 'AstraCAD Spatial' });
   document.body.append(root);
-  const toast = h('div', { id: 'toast', role: 'status', 'aria-live': 'polite' });
+  const toast = h('div', { id: 'toast', class: 'glass', role: 'status', 'aria-live': 'polite' });
   document.body.append(toast);
 
   // ----- header --------------------------------------------------------------
@@ -92,7 +98,13 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx): voi
   const xrHint = h('p', { class: 'hint' }, 'Checking for a headset...');
   root.append(
     h('header', {},
-      h('div', { class: 'eyebrow' }, 'ASTRACAD SPATIAL'),
+      h('div', { class: 'brand' },
+        h('span', { class: 'mark', 'aria-hidden': 'true' }, 'A'),
+        h('b', {}, 'ASTraCAD'),
+        h('span', { class: 'crumb' }, '/ SPATIAL'),
+        h('span', { class: 'pill live' }, 'Verified'),
+      ),
+      h('div', { class: 'eyebrow' }, 'Hands-first product studio'),
       h('h1', {}, 'Measure the real thing. Get the part that fits.'),
       h('p', { class: 'lede' }, 'Pinch a real object to size a part, shape it with your fingers, push it to test it, and take the file with you. Hands only.'),
       enter,
@@ -148,11 +160,16 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx): voi
   const btnFix = h('button', { type: 'button', click: () => void app.autoReinforce() }, 'Let Marcus reinforce');
   const btnGrow = h('button', { type: 'button', click: () => void app.grow(0.55) }, 'Grow bone (keep 55 %)');
   const btnSolid = h('button', { type: 'button', click: () => app.clearGrown() }, 'Back to solid');
+  const btnFlow = h('button', { type: 'button', title: 'Ideal flow around the part: where the air goes. No wake, no forces.', click: () => {
+    world.getSystem(FlowSystem)?.toggle();
+  } }, 'Air flow preview');
   root.append(
     h('section', {},
       h('h2', {}, 'Load test'),
       h('div', { class: 'row' }, btnTest, btnFix),
-      h('div', { class: 'row' }, btnGrow, btnSolid),
+      h('div', { class: 'row' }, btnGrow, btnSolid, btnFlow,
+        h('button', { type: 'button', title: 'Natural frequencies and mode shapes. Press again for the next mode.', click: () => world.getSystem(ModeSystem)?.toggle() }, 'Vibration modes'),
+        h('button', { type: 'button', title: 'Hinge only: swing leaf B until the leaves touch.', click: () => world.getSystem(HingeSystem)?.toggle() }, 'Swing hinge')),
       h('label', { class: 'field' }, loadLabel, loadRange),
       testStatus,
       agentLog,
@@ -183,10 +200,91 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx): voi
             download(files.json, `${files.name}.astracad.json`, 'application/json');
           }
         } }, 'Download record'),
+        h('button', { type: 'button', title: 'With the stress map as vertex colours, when the part has been tested', click: () => {
+          const built = app.built.peek();
+          const grown = app.grown.peek();
+          const mesh = grown?.final ? grown.mesh : built?.mesh;
+          if (!mesh) return;
+          const s = app.stress.peek();
+          let colors: Float32Array | null = null;
+          if (s && s.vertexStress.length * 3 === mesh.positions.length) {
+            colors = new Float32Array(mesh.positions.length);
+            const k = app.loadN.peek() / s.newtons / app.materialData.yield;
+            const safe = app.settings.peek().colorSafe;
+            for (let v = 0; v < s.vertexStress.length; v++) stressColor(s.vertexStress[v] * k, safe, colors, v * 3);
+          }
+          const res = toThreeMF(mesh.positions, mesh.indices, colors, app.job.title);
+          download(res.bytes, `${app.job.id}${colors ? '_stress' : ''}.3mf`, 'model/3mf');
+          app.say(colors ? `3MF saved with ${res.colors} stress colours.` : '3MF saved. Run a load test first to include stress colours.', 'good');
+        } }, 'Download 3MF'),
       ),
       h('div', { class: 'share' }, qr, h('div', {}, h('p', { class: 'note' }, 'Scan to open this exact part on another device. The link holds the part; no server is involved.'), link)),
     ),
   );
+
+  // ----- STEP import ---------------------------------------------------------
+  const stepStatus = h('p', { class: 'note', role: 'status' }, 'Bring a part from SOLIDWORKS, Fusion, Onshape or FreeCAD. A cradle is fitted round it, and it rides into the headset on the bench.');
+  const stepInput = h('input', {
+    type: 'file', accept: '.step,.stp,.STEP,.STP', 'aria-label': 'STEP file',
+    change: async (ev) => {
+      const file = (ev.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      stepStatus.textContent = `Reading ${file.name}... (the first file loads the 7.6 MB OpenCascade reader)`;
+      try {
+        const { importStepFile } = await import('../app/step-loader.js');
+        const m = await importStepFile(file);
+        app.useReference(m);
+        stepStatus.textContent = `${m.name}: ${(m.box.max[0] - m.box.min[0]).toFixed(1)} x ${(m.box.max[2] - m.box.min[2]).toFixed(1)} x ${(m.box.max[1] - m.box.min[1]).toFixed(1)} mm` +
+          `${Number.isFinite(m.volume) ? `, ${(m.volume / 1000).toFixed(2)} cm3` : ' (the mesh is not closed, so no volume)'}, ${m.bodies} bod${m.bodies === 1 ? 'y' : 'ies'}.`;
+      } catch (e) {
+        stepStatus.textContent = e instanceof Error ? e.message : String(e);
+      }
+    },
+  });
+  root.append(h('section', {}, h('h2', {}, 'Import STEP'), stepInput, stepStatus));
+
+  // ----- co-design -----------------------------------------------------------
+  const coStatus = h('p', { class: 'note', role: 'status' });
+  const coCode = h('input', { type: 'text', inputmode: 'numeric', maxlength: 7, placeholder: '123 456', 'aria-label': 'Room code' });
+  const coHost = h('button', { type: 'button', click: () => void codesign.host() }, 'Start a room');
+  const coJoin = h('button', { type: 'button', click: () => void codesign.join(coCode.value) }, 'Join');
+  const coLeave = h('button', { type: 'button', click: () => codesign.leave() }, 'Leave room');
+  const coQr = h('canvas', { class: 'qr', 'aria-label': 'QR code to join this room' });
+  const coLink = h('input', { type: 'text', readonly: true, 'aria-label': 'Link to join this room' });
+  const coShare = h('div', { class: 'share' }, coQr, h('div', {}, h('p', { class: 'note' }, 'Your partner scans this or opens the link, on a headset, phone or PC.'), coLink));
+  const coForm = h('div', { class: 'row' }, coHost, coCode, coJoin);
+  root.append(
+    h('section', {},
+      h('h2', {}, 'Co-design'),
+      h('p', { class: 'note' }, 'Two people, one part. A free public service (PeerJS) introduces the two browsers; the part and hands then go directly between them.'),
+      coForm,
+      coLeave,
+      coShare,
+      coStatus,
+    ),
+  );
+  effect(() => {
+    const status = codesign.status.value;
+    const code = codesign.code.value;
+    const error = codesign.error.value;
+    const inRoom = status !== 'off' && status !== 'failed';
+    coForm.hidden = inRoom;
+    coLeave.hidden = !inRoom;
+    coShare.hidden = !(status === 'waiting' && code);
+    if (status === 'waiting' && code) {
+      const url = codesign.joinUrl(code);
+      drawQr(coQr, url, 180);
+      coLink.value = url;
+    }
+    const spaced = code ? `${code.slice(0, 3)} ${code.slice(3)}` : '';
+    coStatus.textContent =
+      status === 'starting' ? 'Opening a room...'
+      : status === 'waiting' ? `Room ${spaced} is open. Waiting for your partner.`
+      : status === 'joining' ? `Joining room ${spaced}...`
+      : status === 'connected' ? `Connected in room ${spaced}. You share one part.`
+      : status === 'failed' ? (error ?? 'Co-design could not connect.')
+      : (error ?? '');
+  });
 
   // ----- shelf ---------------------------------------------------------------
   const shelf = h('div', { class: 'shelf' });
@@ -238,7 +336,8 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx): voi
       }
     }
     for (const d of job.params) {
-      const row = paramBox.querySelector(`label[data-param="${d.id}"]`) as HTMLElement;
+      const row = paramBox.querySelector(`label[data-param="${d.id}"]`) as HTMLElement | null;
+      if (!row || params[d.id] === undefined) continue;
       (row.querySelector('output') as HTMLOutputElement).textContent = d.unit === ''
         ? String(Math.round(params[d.id]))
         : `${params[d.id].toFixed(d.unit === 'deg' ? 1 : 2)} ${d.unit}`;
@@ -369,10 +468,10 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx): voi
       return;
     }
     toast.textContent = n.text;
-    toast.className = `show ${n.tone}`;
+    toast.className = `glass show ${n.tone}`;
     clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => {
-      toast.className = '';
+      toast.className = 'glass';
     }, 4200);
   });
 

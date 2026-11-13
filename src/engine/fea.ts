@@ -458,6 +458,15 @@ export class VoxelModel {
     }
   }
 
+  /** y = K x, with fixed nodes held at zero (for Rayleigh quotients). */
+  apply(x: Float64Array, y: Float64Array): void {
+    this.multiply(x, y);
+  }
+
+  isFixed(n: number): boolean {
+    return this.fixed[n] === 1;
+  }
+
   private multiply(x: Float64Array, y: Float64Array): void {
     const { A, neighbours, fixed } = this;
     for (let n = 0; n < this.nodeCount; n++) {

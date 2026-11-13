@@ -4,7 +4,7 @@
  * immersive bench and the flat page.
  */
 
-import { Signal, signal } from '@iwsdk/core';
+import { batch, Signal, signal } from '@iwsdk/core';
 import { Finding, runAgents, safetyFactor, StressSummary } from '../engine/agents.js';
 import { MeasurementRecord } from '../engine/exporters.js';
 import { defaultParams, Job, jobById, JOBS, paramDef, Params } from '../engine/jobs.js';
@@ -16,7 +16,9 @@ import { KernelProps, Material, MeshData, Vec3 } from '../engine/types.js';
 import { CancelledError, EngineClient } from './engine-client.js';
 import {
   bumpStreak,
+  loadCalibration,
   loadLibrary,
+  saveCalibration,
   loadProgress,
   loadSettings,
   loadThings,
@@ -33,6 +35,8 @@ import {
   uid,
 } from './persistence.js';
 import { dailyBrief, dailyMet } from '../engine/daily.js';
+import { calibrate, CALIBRATION_READINGS, CARD_MM, correct } from '../engine/calibration.js';
+import type { ImportedMesh } from '../engine/step-import.js';
 
 export interface BuiltState {
   mesh: MeshData;
@@ -56,6 +60,8 @@ export interface Measurement {
   spread: number;
   method: 'span' | 'tape';
   samples: number;
+  /** Two-sigma uncertainty from the user's calibration, mm, when calibrated. */
+  uncertainty?: number;
 }
 
 export interface Busy {
@@ -80,7 +86,7 @@ export interface GrownState {
   of: number;
 }
 
-export type Mode = 'shape' | 'measure' | 'test';
+export type Mode = 'shape' | 'measure' | 'test' | 'sketch' | 'capture';
 
 export class App {
   readonly engine = new EngineClient();
@@ -102,6 +108,8 @@ export class App {
   readonly busy: Signal<Busy | null> = signal(null);
   readonly measurement: Signal<Measurement | null> = signal(null);
   readonly bound: Signal<MeasurementRecord[]> = signal([]);
+  /** World point the last measurement of a full set was taken at (starts the extract flight). */
+  readonly extractFrom: Signal<[number, number, number] | null> = signal(null);
   readonly grown: Signal<GrownState | null> = signal(null);
   readonly agentLog: Signal<string[]> = signal([]);
   readonly notice: Signal<Notice | null> = signal(null);
@@ -112,6 +120,14 @@ export class App {
   readonly things: Signal<Thing[]> = signal(loadThings());
   /** True while a handle or dial is being moved. */
   readonly dragging = signal(false);
+  /** A STEP model brought in from desktop CAD, shown seated in a cradle fitted round it. */
+  readonly reference: Signal<ImportedMesh | null> = signal(null);
+  /** Per-method calibration against a bank card, if done. */
+  readonly calibration = signal(loadCalibration());
+  /** Readings so far while calibrating, or null. */
+  readonly calibrating: Signal<{ readings: number[] } | null> = signal(null);
+  /** Bumped when a system's coach prompt changes (capture steps). */
+  readonly coachTick = signal(0);
   /** Notes from the last clamp (why a value was limited). */
   readonly clampNotes: Signal<string[]> = signal([]);
 
@@ -181,7 +197,9 @@ export class App {
     const { params, notes } = job.clamp({ ...this.params.peek(), ...changes });
     this.clampNotes.value = notes;
     const before = this.params.peek();
-    if (job.params.every((d) => Math.abs(params[d.id] - before[d.id]) < 1e-9)) {
+    // Compare every key: some parts (the air sketch) carry geometry beyond their named dimensions.
+    const keys = new Set([...Object.keys(params), ...Object.keys(before)]);
+    if ([...keys].every((k) => Math.abs((params[k] ?? NaN) - (before[k] ?? NaN)) < 1e-9)) {
       return;
     }
     this.params.value = params;
@@ -219,13 +237,16 @@ export class App {
   selectJob(id: string): void {
     const job = jobById(id);
     this.invalidateAnalysis();
-    this.jobId.value = job.id;
-    this.params.value = defaultParams(job);
-    this.selected.value = null;
-    this.rollback.value = null;
-    this.bound.value = [];
-    this.agentLog.value = [];
-    this.loadN.value = job.loadCase(this.params.peek()).newtons;
+    // One batch: observers must never see the new job with the old parameters.
+    batch(() => {
+      this.jobId.value = job.id;
+      this.params.value = defaultParams(job);
+      this.selected.value = null;
+      this.rollback.value = null;
+      this.bound.value = [];
+      this.agentLog.value = [];
+      this.loadN.value = job.loadCase(this.params.peek()).newtons;
+    });
     this.requestBuild();
   }
 
@@ -353,6 +374,80 @@ export class App {
         this.refreshFindings();
       }
     }
+  }
+
+  /**
+   * Take on a co-design partner's part exactly (job, every parameter, material).
+   * Unlike setParams, keys the partner's part does not have are dropped, so an
+   * air sketch with fewer corners does not keep stale ones.
+   */
+  adoptShared(part: { job: string; params: Params; material: string }): void {
+    const job = jobById(part.job);
+    const { params } = job.clamp(part.params);
+    const sameJob = job.id === this.jobId.peek();
+    const before = this.params.peek();
+    const keys = new Set([...Object.keys(params), ...Object.keys(before)]);
+    const same = sameJob && [...keys].every((k) => Math.abs((params[k] ?? NaN) - (before[k] ?? NaN)) < 1e-9);
+    if (part.material !== this.material.peek()) {
+      this.setMaterial(part.material);
+    }
+    if (same) {
+      return;
+    }
+    this.invalidateAnalysis();
+    batch(() => {
+      this.jobId.value = job.id;
+      this.params.value = params;
+      if (!sameJob) {
+        this.selected.value = null;
+        this.rollback.value = null;
+        this.bound.value = [];
+        this.agentLog.value = [];
+        this.loadN.value = job.loadCase(params).newtons;
+      }
+    });
+    this.requestBuild();
+  }
+
+  /** Put a hand-drawn outline on the bench as a new part, ready to be pulled up. */
+  loadSketch(outline: Params, notes: string[]): void {
+    this.selectJob('sketch');
+    this.setParams(outline);
+    this.mode.value = 'shape';
+    this.selected.value = 'h';
+    this.award('sketch');
+    this.say(`${notes.join('. ')}. Pull the handle up to give it height.`, 'good');
+  }
+
+  /** Put a captured real object on the bench as an editable part (footprint outline + height). */
+  loadCapture(params: Params, notes: string[]): void {
+    this.selectJob('sketch');
+    this.setParams(params);
+    this.mode.value = 'shape';
+    this.selected.value = 'h';
+    this.award('sketch');
+    const size = params.kind === 1 ? `${(params.r * 2).toFixed(1)} mm across` : `${params.n} corners`;
+    this.say(
+      `Captured: ${size}, ${params.h.toFixed(1)} mm tall. ${notes.join('. ')}. A parametric extrusion of the footprint: every corner and the height can be edited.`,
+      'good',
+    );
+  }
+
+  /** Show an imported model and fit a cradle round it (its laid-flat size plus the cradle's clearance). */
+  useReference(m: ImportedMesh): void {
+    const L = m.box.max[0] - m.box.min[0];
+    const W = m.box.max[2] - m.box.min[2];
+    const H = m.box.max[1] - m.box.min[1];
+    this.selectJob('cradle');
+    this.setParams({ L, W, H });
+    this.reference.value = m;
+    const p = this.params.peek();
+    const limited = Math.abs(p.L - L) > 0.01 || Math.abs(p.W - W) > 0.01 || Math.abs(p.H - H) > 0.01;
+    this.say(
+      `${m.name}: ${L.toFixed(1)} x ${W.toFixed(1)} x ${H.toFixed(1)} mm${Number.isFinite(m.volume) ? `, ${(m.volume / 1000).toFixed(2)} cm3` : ''}. ` +
+        (limited ? 'Too big for the cradle in some direction; the cradle was limited to its largest size.' : 'A cradle now fits round it.'),
+      limited ? 'warn' : 'good',
+    );
   }
 
   /** Load today's brief: its part, material and load. */
@@ -491,9 +586,44 @@ export class App {
 
   // ----- measure -------------------------------------------------------------
 
-  lockMeasurement(m: Measurement): void {
+  lockMeasurement(raw: Measurement): void {
+    const cal = this.calibrating.peek();
+    if (cal) {
+      // Calibration readings are kept raw and never bound to the part.
+      const readings = [...cal.readings, raw.value];
+      if (readings.length < CALIBRATION_READINGS) {
+        this.calibrating.value = { readings };
+        this.say(`Card reading ${readings.length} of ${CALIBRATION_READINGS}: ${raw.value.toFixed(1)} mm. Measure it again.`, 'info');
+        return;
+      }
+      const result = calibrate(readings);
+      const all = { ...this.calibration.peek(), [raw.method]: result };
+      this.calibration.value = all;
+      saveCalibration(all);
+      this.calibrating.value = null;
+      this.say(
+        `Calibrated (${raw.method === 'span' ? 'finger span' : 'two-hand tape'}): your readings run ${result.bias >= 0 ? '+' : ''}${result.bias.toFixed(1)} mm, ` +
+          `scatter ${result.sd.toFixed(1)} mm. Later readings are corrected and shown with their measured uncertainty.`,
+        'good',
+      );
+      return;
+    }
+    let m = raw;
+    const c = this.calibration.peek()[raw.method];
+    if (c) {
+      const fixed = correct(raw.value, raw.spread, c);
+      m = { ...raw, value: fixed.value, uncertainty: fixed.uncertainty };
+      this.say(`${m.value.toFixed(1)} mm +/- ${fixed.uncertainty.toFixed(1)} mm (2 sigma, from your calibration).`, 'info');
+    }
     this.measurement.value = m;
     this.award('measure');
+  }
+
+  /** Measure a bank card's long edge a few times to learn this person's bias and scatter. */
+  startCalibration(): void {
+    this.calibrating.value = { readings: [] };
+    this.mode.value = 'measure';
+    this.say(`Calibrate: measure the long edge of a bank card (${CARD_MM.toFixed(2)} mm) ${CALIBRATION_READINGS} times, with the method you use most.`, 'info');
   }
 
   /** Bind the locked measurement to a parameter (plus that parameter's fit allowance). */
@@ -604,13 +734,15 @@ export class App {
 
   loadSaved(part: SavedPart): void {
     this.invalidateAnalysis();
-    this.jobId.value = jobById(part.job).id;
-    this.material.value = materialById(part.material).id;
-    this.params.value = jobById(part.job).clamp(part.params).params;
-    this.selected.value = null;
-    this.rollback.value = null;
-    this.bound.value = [];
-    this.loadN.value = this.job.loadCase(this.params.peek()).newtons;
+    batch(() => {
+      this.jobId.value = jobById(part.job).id;
+      this.material.value = materialById(part.material).id;
+      this.params.value = jobById(part.job).clamp(part.params).params;
+      this.selected.value = null;
+      this.rollback.value = null;
+      this.bound.value = [];
+      this.loadN.value = this.job.loadCase(this.params.peek()).newtons;
+    });
     this.requestBuild();
   }
 

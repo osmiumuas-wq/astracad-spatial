@@ -7,6 +7,7 @@
 import { ReinforceStep, StressSummary } from './agents.js';
 import { MeasurementRecord, PartRecord } from './exporters.js';
 import { LoadRegion } from './fea.js';
+import { Wind } from './flow.js';
 import { Params } from './jobs.js';
 import { GateResult } from './truth.js';
 import { KernelProps, MeshData, Vec3 } from './types.js';
@@ -21,6 +22,9 @@ export interface LoadSpec {
 
 export type Request =
   | { id: number; type: 'build'; job: string; params: Params; upTo?: number }
+  | { id: number; type: 'slice'; job: string; params: Params }
+  | { id: number; type: 'flow'; job: string; params: Params; wind: Wind }
+  | { id: number; type: 'modes'; job: string; params: Params; material: string }
   | {
       id: number;
       type: 'solve';
@@ -89,4 +93,8 @@ export type Response =
       ms: number;
     }
   | { id: number; type: 'exported'; stl: Uint8Array; record: PartRecord; name: string }
+  | { id: number; type: 'sliced'; segments: Float32Array; starts: Uint32Array; height: number; printLayers: number; layerHeight: number; up: Vec3; upLabel: string; minutes: number }
+  | { id: number; type: 'flowed'; points: Float32Array; speeds: Float32Array; starts: Uint32Array; h: number; cells: number; iterations: number; ms: number; wind: Wind }
+  | { id: number; type: 'moded'; frequencies: number[]; shapes: Float32Array[]; cell: number; elements: number; ms: number; fixtureLabel: string }
+  | { id: number; type: 'mode-progress'; mode: number; iteration: number }
   | { id: number; type: 'error'; message: string; featureId?: string };

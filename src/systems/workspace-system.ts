@@ -17,7 +17,6 @@ import {
   Quaternion,
   Vector3,
   VisibilityState,
-  XRAnchor,
   XRPlane,
 } from '@iwsdk/core';
 import { AGENTS, Finding } from '../engine/agents.js';
@@ -27,8 +26,15 @@ import { MATERIALS } from '../engine/materials.js';
 import { ctx } from '../app/context.js';
 import { CSS } from '../app/palette.js';
 import { today, Settings } from '../app/persistence.js';
-import { Line, makeButton, setButton, setUiStyle, TextPanel } from '../app/ui3d.js';
+import { Line, makeButton, setButton, setUiStyle, TextPanel, tickPanels } from '../app/ui3d.js';
 import { drawQr } from '../flat/flat-ui.js';
+import type { Mode } from '../app/app.js';
+import { CALIBRATION_READINGS, CARD_MM } from '../engine/calibration.js';
+import { CaptureSystem } from './capture-system.js';
+import { FlowSystem } from './flow-system.js';
+import { HingeSystem } from './hinge-system.js';
+import { ModeSystem } from './mode-system.js';
+import { PrintSystem } from './print-system.js';
 
 const FEATURE_NAMES: Record<string, string> = {
   'sketch.loops': 'Profile sketch',
@@ -46,7 +52,7 @@ const FEATURE_NAMES: Record<string, string> = {
 
 const COACH: { skill: string; text: string }[] = [
   { skill: 'shape', text: 'Pinch an amber handle and pull it.' },
-  { skill: 'dial', text: 'Pinch the dial ring and turn it: 0.05 mm per click.' },
+  { skill: 'dial', text: 'Turn the dial ring, or swipe your thumb along your index finger: 0.05 mm per click.' },
   { skill: 'measure', text: 'Tap Measure, then pinch both ends of a real object.' },
   { skill: 'test', text: 'Tap Test, then push the part with an open palm.' },
   { skill: 'fix', text: 'Pinch a Fix on an agent card.' },
@@ -74,6 +80,9 @@ export class WorkspaceSystem extends createSystem({
   private qr!: TextPanel;
   private qrCanvas!: HTMLCanvasElement;
   private qrOpen = false;
+  private co!: TextPanel;
+  private coCanvas!: HTMLCanvasElement;
+  private coOpen = false;
   private settingsOpen = false;
   private captionText = '';
   private captionUntil = 0;
@@ -111,18 +120,22 @@ export class WorkspaceSystem extends createSystem({
     this.caption = new TextPanel(0.27, 0.034, 'Caption');
     this.qr = new TextPanel(0.2, 0.25, 'Share panel');
     this.qrCanvas = document.createElement('canvas');
+    this.co = new TextPanel(0.2, 0.25, 'Co-design panel');
+    this.coCanvas = document.createElement('canvas');
     for (const [p, x, y, z] of [
       [this.proof, -0.26, 0.14, -0.02],
       [this.agents, 0.27, 0.22, -0.02],
       [this.coach, 0, 0.27, -0.12],
       [this.caption, 0, 0.217, -0.11],
       [this.qr, 0.27, 0.22, -0.008],
+      [this.co, 0.27, 0.22, -0.008],
     ] as [TextPanel, number, number, number][]) {
       facing(p.group, x, y, z);
       this.ui.add(p.group);
       this.world.createTransformEntity(p.group, { parent: this.uiEntity, persistent: true });
     }
     this.qr.group.visible = false;
+    this.co.group.visible = false;
     this.caption.group.visible = false;
 
     // ----- fix buttons under the agent panel ---------------------------------
@@ -167,6 +180,8 @@ export class WorkspaceSystem extends createSystem({
         ['mode:shape', 'Shape', () => this.setMode('shape')],
         ['mode:measure', 'Measure', () => this.setMode('measure')],
         ['mode:test', 'Test', () => this.setMode('test')],
+        ['mode:sketch', 'Sketch', () => this.setMode('sketch')],
+        ['mode:capture', 'Capture', () => this.setMode('capture'), 0.064],
         ['act:grow', 'Grow bone', () => { if (app.grown.peek()) { app.clearGrown(); } else { sfx.play('grow'); void app.grow(0.55); } }],
       ],
       0.03,
@@ -176,13 +191,18 @@ export class WorkspaceSystem extends createSystem({
         ['act:job', 'Next part', () => this.nextJob()],
         ['act:mat', 'PLA', () => this.nextMaterial()],
         ['act:save', 'Save', () => { if (app.save()) sfx.play('save'); }],
-        ['act:share', 'Share', () => { this.qrOpen = !this.qrOpen; this.refreshShare(); }],
+        ['act:share', 'Share', () => { this.qrOpen = !this.qrOpen; this.coOpen = false; this.refreshShare(); }],
+        ['act:co', 'Co-design', () => { this.coOpen = !this.coOpen; this.qrOpen = false; this.refreshShare(); }, 0.066],
+        ['act:swing', 'Swing', () => this.world.getSystem(HingeSystem)?.toggle()],
       ],
       0,
     );
     row(
       [
         ['act:daily', 'Daily job', () => app.startDaily()],
+        ['act:print', 'Print preview', () => this.world.getSystem(PrintSystem)?.toggle(), 0.07],
+        ['act:flow', 'Air flow', () => this.world.getSystem(FlowSystem)?.toggle()],
+        ['act:modes', 'Vibration', () => this.world.getSystem(ModeSystem)?.toggle()],
         ['act:place', 'Bring bench here', () => this.place(), 0.08],
         ['act:settings', 'Access', () => { this.settingsOpen = !this.settingsOpen; this.refreshSettings(); }],
       ],
@@ -216,6 +236,11 @@ export class WorkspaceSystem extends createSystem({
       });
       b.position.set((i % 2) * 0.066 - 0.033, 0.042 - Math.floor(i / 2) * 0.028, 0);
     });
+    makeButton(setEntity, { key: 'act:calib', label: 'Calibrate with a card', width: 0.126, height: 0.022, tone: 'default' }, () => {
+      this.settingsOpen = false;
+      this.refreshSettings();
+      app.startCalibration();
+    }).position.set(0, 0.042 - 4 * 0.028, 0);
 
     // ----- coach skip --------------------------------------------------------
     const coachBtns = new Group();
@@ -232,6 +257,33 @@ export class WorkspaceSystem extends createSystem({
     makeButton(shareEntity, { key: 'share:close', label: 'Close', width: 0.06, height: 0.022 }, () => {
       this.qrOpen = false;
       this.refreshShare();
+    });
+
+    // ----- co-design: room buttons and a keypad for a partner's code ---------
+    const { codesign } = ctx;
+    const coBtns = new Group();
+    facing(coBtns, 0.27, 0.083, 0.0);
+    this.ui.add(coBtns);
+    const coEntity = this.world.createTransformEntity(coBtns, { parent: this.uiEntity, persistent: true });
+    makeButton(coEntity, { key: 'co:host', label: 'Start a room', width: 0.09, height: 0.022, tone: 'default' }, () => {
+      sfx.play('select');
+      void codesign.host();
+    }).position.set(-0.05, 0, 0);
+    makeButton(coEntity, { key: 'co:leave', label: 'Leave room', width: 0.09, height: 0.022, tone: 'warn' }, () => codesign.leave()).position.set(-0.05, 0, 0);
+    makeButton(coEntity, { key: 'co:close', label: 'Close', width: 0.06, height: 0.022 }, () => {
+      this.coOpen = false;
+      this.refreshShare();
+    }).position.set(0.06, 0, 0);
+    const keypad = new Group();
+    facing(keypad, 0.27, 0.152, -0.002);
+    this.ui.add(keypad);
+    const padEntity = this.world.createTransformEntity(keypad, { parent: this.uiEntity, persistent: true });
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'join'].forEach((k, i) => {
+      const label = k === 'del' ? 'Del' : k === 'join' ? 'Join' : k;
+      makeButton(padEntity, { key: `co:k${k}`, label, width: 0.04, height: 0.024, tone: k === 'join' ? 'default' : 'ghost', poke: true }, () => {
+        sfx.play('select');
+        codesign.key(k);
+      }).position.set(((i % 3) - 1) * 0.046, 0.042 - Math.floor(i / 3) * 0.028, 0);
     });
 
     // ----- history rail ------------------------------------------------------
@@ -259,6 +311,7 @@ export class WorkspaceSystem extends createSystem({
       effect(() => this.drawAgents()),
       effect(() => this.drawCoach()),
       effect(() => this.refreshTools()),
+      effect(() => this.drawCo()),
       effect(() => {
         const s = app.settings.value;
         setUiStyle(s.highContrast, s.largeText ? 1.25 : 1);
@@ -292,7 +345,7 @@ export class WorkspaceSystem extends createSystem({
 
   // ----- actions ---------------------------------------------------------------
 
-  private setMode(mode: 'shape' | 'measure' | 'test'): void {
+  private setMode(mode: Mode): void {
     const { app } = ctx;
     app.mode.value = mode;
     if (mode === 'test' && !app.stress.peek() && !app.busy.peek()) {
@@ -334,9 +387,9 @@ export class WorkspaceSystem extends createSystem({
     bench.root.updateMatrixWorld(true);
     this.snapped = false;
     this.placedAt = this.elapsed;
-    if (!ctx.benchEntity.hasComponent(XRAnchor)) {
-      ctx.benchEntity.addComponent(XRAnchor);
-    }
+    // No XRAnchor here: IWSDK's anchored group restores an earlier session's
+    // pose, which moved the bench out of view. The bench is placed relative to
+    // the user each session, in the session's local-floor space.
   }
 
   /** Lower or raise the bench onto a detected horizontal surface under it. */
@@ -463,8 +516,8 @@ export class WorkspaceSystem extends createSystem({
     this.agents.draw(lines, CSS.cyan);
     const m = head('marcus');
     setButton('act:reinforce', { visible: !busy && !!m && (m.severity === 'fail' || m.severity === 'warn') && !!stress });
-    for (const k of ['fix:marcus', 'fix:elena', 'fix:viktor']) {
-      if (this.qrOpen) setButton(k, { visible: false });
+    for (const k of ['fix:marcus', 'fix:elena', 'fix:viktor', 'act:reinforce']) {
+      if (this.qrOpen || this.coOpen) setButton(k, { visible: false });
     }
   }
 
@@ -474,6 +527,36 @@ export class WorkspaceSystem extends createSystem({
     const mode = app.mode.value;
     const job = JOBS.find((j) => j.id === app.jobId.value) ?? JOBS[0];
     const lines: Line[] = [];
+    if (mode === 'capture') {
+      void app.coachTick.value;
+      const step = this.world.getSystem(CaptureSystem)?.prompt ?? '';
+      lines.push(
+        { text: 'CAPTURE A REAL OBJECT', size: 3.2, color: CSS.cyan, weight: 700 },
+        { text: step, size: 4.2, weight: 600 },
+      );
+      this.coach.draw(lines, CSS.cyan);
+      setButton('coach:skip', { visible: false });
+      return;
+    }
+    if (mode === 'sketch') {
+      lines.push(
+        { text: 'AIR SKETCH', size: 3.2, color: CSS.amber, weight: 700 },
+        { text: 'Pinch just above the bench and draw a closed outline. Let go to finish.', size: 4.2, weight: 600 },
+      );
+      this.coach.draw(lines, CSS.amber);
+      setButton('coach:skip', { visible: false });
+      return;
+    }
+    const calibrating = app.calibrating.value;
+    if (mode === 'measure' && calibrating) {
+      lines.push(
+        { text: `CALIBRATE  ${calibrating.readings.length + 1} OF ${CALIBRATION_READINGS}`, size: 3.2, color: CSS.violet, weight: 700 },
+        { text: `Measure the long edge of a bank card: ${CARD_MM.toFixed(2)} mm.`, size: 4.4, weight: 600 },
+      );
+      this.coach.draw(lines, CSS.violet);
+      setButton('coach:skip', { visible: false });
+      return;
+    }
     if (mode === 'measure') {
       const target = app.selected.value ? paramDef(job, app.selected.value) : undefined;
       const def = target?.measure ? target : job.params.find((d) => d.measure);
@@ -517,17 +600,79 @@ export class WorkspaceSystem extends createSystem({
     setButton('mode:shape', { toggled: mode === 'shape' });
     setButton('mode:measure', { toggled: mode === 'measure' });
     setButton('mode:test', { toggled: mode === 'test' });
+    setButton('mode:sketch', { toggled: mode === 'sketch' });
+    setButton('mode:capture', { toggled: mode === 'capture' });
+    setButton('act:swing', { visible: app.jobId.value === 'hinge' });
     setButton('act:grow', { label: grown ? 'Back to solid' : 'Grow bone', disabled: busy !== null && busy.kind !== 'grow' });
     setButton('act:mat', { label: mat.name.split(' ')[0] });
     setButton('act:save', { disabled: app.built.value?.gate.verdict === 'refused' });
   }
 
+  private drawCo(): void {
+    const { codesign } = ctx;
+    const status = codesign.status.value;
+    const code = codesign.code.value;
+    const typed = codesign.typed.value;
+    const error = codesign.error.value;
+    const role = codesign.role.value;
+    const open = this.coOpen;
+    setButton('act:co', { toggled: open || status === 'connected', label: status === 'connected' ? 'Co-design on' : 'Co-design' });
+    const inRoom = status === 'waiting' || status === 'connected' || status === 'starting' || status === 'joining';
+    setButton('co:host', { visible: open && !inRoom });
+    setButton('co:leave', { visible: open && inRoom });
+    setButton('co:close', { visible: open });
+    for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'del', '0', 'join']) {
+      setButton(`co:k${k}`, { visible: open && !inRoom, disabled: k === 'join' && typed.length !== 6 });
+    }
+    if (!open) return;
+    const spaced = (c: string): string => `${c.slice(0, 3)} ${c.slice(3)}`;
+    const lines: Line[] = [{ text: 'CO-DESIGN', size: 3.2, color: CSS.violet, weight: 700 }];
+    let accent: string = CSS.violet;
+    if (status === 'waiting' && code) {
+      lines.push(
+        { text: `Room ${spaced(code)}`, size: 7, weight: 700 },
+        { text: 'Your partner types this code on their bench, or scans this from a phone or PC.', size: 3.3, color: CSS.dim },
+      );
+      drawQr(this.coCanvas, codesign.joinUrl(code), 300);
+      this.co.draw(lines, accent);
+      this.co.drawImage(this.coCanvas, 112, 100);
+      return;
+    }
+    if (status === 'connected') {
+      accent = CSS.green;
+      lines.push(
+        { text: 'Connected', band: 'rgba(61,220,132,0.22)', weight: 700, gapAfter: 1 },
+        { text: role === 'host' ? `Room ${spaced(code ?? '')}. You started it.` : `Room ${spaced(code ?? '')}. You joined.`, size: 3.6 },
+        { text: 'One shared part. Changes either of you make appear on both benches. Your partner sits across the bench; their fingertips show in violet.', size: 3.4, color: CSS.dim },
+        { text: 'Load tests run on each bench separately, on the same part.', size: 3.2, color: CSS.dim },
+      );
+    } else if (status === 'starting' || status === 'joining') {
+      lines.push({ text: status === 'starting' ? 'Opening a room...' : `Joining ${spaced(code ?? '')}...`, size: 4.4, weight: 600 });
+    } else {
+      lines.push(
+        { text: 'Start a room, or type your partner\'s code:', size: 3.6 },
+        { text: typed.padEnd(6, '_').split('').join(' '), size: 7, weight: 700, color: CSS.amber },
+      );
+      if (error) {
+        accent = CSS.red;
+        lines.push({ text: error, size: 3.2, color: CSS.red });
+      }
+    }
+    this.co.draw(lines, accent);
+  }
+
   private refreshShare(): void {
     this.qr.group.visible = this.qrOpen;
-    this.agents.group.visible = !this.qrOpen;
+    this.co.group.visible = this.coOpen;
+    this.agents.group.visible = !this.qrOpen && !this.coOpen;
     setButton('share:close', { visible: this.qrOpen });
     setButton('act:share', { toggled: this.qrOpen });
     setButton('act:reinforce', { visible: false });
+    this.drawCo();
+    if (this.coOpen) {
+      for (const k of ['fix:marcus', 'fix:elena', 'fix:viktor']) setButton(k, { visible: false });
+      return;
+    }
     if (!this.qrOpen) {
       this.drawAgents();
       return;
@@ -545,6 +690,7 @@ export class WorkspaceSystem extends createSystem({
   private refreshSettings(): void {
     const s = ctx.app.settings.peek();
     setButton('act:settings', { toggled: this.settingsOpen });
+    setButton('act:calib', { visible: this.settingsOpen });
     for (const key of ['colorSafe', 'captions', 'sound', 'dwell', 'largeText', 'highContrast', 'reduceMotion', 'handed'] as const) {
       setButton(`set:${key}`, {
         visible: this.settingsOpen,
@@ -558,6 +704,7 @@ export class WorkspaceSystem extends createSystem({
     if (this.world.visibilityState.peek() === VisibilityState.NonImmersive) {
       return;
     }
+    tickPanels(delta, ctx.app.settings.peek().reduceMotion);
     // Place the bench once the head pose has settled, then look for a table for a few seconds.
     if (this.placedAt === 0 && this.elapsed > 0.6) {
       this.place();

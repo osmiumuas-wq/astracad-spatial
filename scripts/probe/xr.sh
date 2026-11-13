@@ -16,3 +16,5 @@ click() { # click a named target with the right controller ray, from above and i
   q xr set-transform --input-json '{"device":"controller-right","position":{"x":0.1,"y":1.42,"z":-0.05}}'
   q xr look-at --input-json "{\"device\":\"controller-right\",\"target\":$P}"; sleep 0.3
   q xr select --input-json '{"device":"controller-right"}'; }
+# Screenshots go to artifacts/ (git-ignored, and ignored by the dev server watcher) unless SHOT is set.
+export SHOT="${SHOT:-$PWD/artifacts/shots}"
