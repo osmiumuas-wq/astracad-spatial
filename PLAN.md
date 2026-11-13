@@ -155,6 +155,10 @@ Day 2 progress (emulator-checked through the IWSDK CLI unless noted):
 | 5 (part) | STEP import (OpenCascade via occt-import-js, LGPL, 7.6 MB, loaded on first use): a 60 x 40 x 20 block reads 48.00 cm3 exactly, a 25 x 100 shaft within 0.5 % (chords); laid flat, a cradle is fitted round it and the model sits in the pocket as violet glass. Reference only: not turned back into features |
 | 19 | Print-in-place hinge: two separate bodies (leaf A with pin, leaf B bored round it, every gap = clearance), truth gate extended to N bodies, verified for the default and 25 random sets. Swing turns leaf B about the pin until the plates touch: 180 - 2 atan(R / (R + c)) degrees, matched to 0.1 deg by separating-axis sweep; default opens 100.3 deg each way, contact shown in red. Shown in emulated XR |
 | 33 | Global leaderboard: skipped (entrant decision, 13 Nov) |
+| 23 | Bench look: cyan rim light at grazing angles and glowing cyan edges on the part; stressed areas glow hotter from a third of yield to full at yield (shown on the wall bracket at 85 % of yield in emulated XR) |
+| 10 (part) | Real occlusion (Access): IWSDK depth sensing hides the part behind real hands and objects. Emulator supplies GPU depth and the part shader recompiles with occlusion; off by default until checked on a headset. A red clash tint is not built |
+| UI | Tool strip regrouped into four rows of at most five (about 0.31 m wide, was 0.42 m) |
+| 5 (part) | STEP import also checked in the production build (served over HTTP by scripts/preview-http.mjs): shaft 48.96 cm3 against the exact 49.09 |
 | 18 | Ideal (potential) flow solved on a 75 000-cell voxel grid in about 0.2 s, bench treated as a wall; 66 streamlines with speed-coloured beads, labelled "No wake, no forces". Check against the textbook sphere: within 4 % two cells from the surface, 1 to 2 % further out; same air through every cross-section within 3 % (unit tests). Shown in emulated XR from the tool strip |
 
 

@@ -3,7 +3,7 @@
  * manifest, build the bench, and register the systems.
  */
 
-import { World } from '@iwsdk/core';
+import { DepthOccludable, DepthSensingSystem, effect, World } from '@iwsdk/core';
 import projectOptions from 'virtual:iwsdk-project';
 import { App } from './app/app.js';
 import { Bench } from './app/bench.js';
@@ -74,6 +74,17 @@ World.create(
   world.registerSystem(CaptureSystem, { priority: 8 });
   world.registerSystem(WorkspaceSystem, { priority: 30 });
   world.registerSystem(CoDesignSystem, { priority: 32 });
+
+  // Depth occlusion (Access: "Real occlusion"): real hands and objects in front
+  // of the part hide it. Off by default until it has been checked on a headset;
+  // without depth data the system does nothing.
+  world.registerSystem(DepthSensingSystem, { configData: { enableOcclusion: true, enableDepthTexture: true } });
+  const pivotEntity = world.createTransformEntity(bench.part.pivot, { parent: turntableEntity, persistent: true });
+  effect(() => {
+    const on = app.settings.value.occlusion;
+    if (on && !pivotEntity.hasComponent(DepthOccludable)) pivotEntity.addComponent(DepthOccludable);
+    if (!on && pivotEntity.hasComponent(DepthOccludable)) pivotEntity.removeComponent(DepthOccludable);
+  });
 
   mountFlatUi(world, app, bench, sfx, codesign);
 

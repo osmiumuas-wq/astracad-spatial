@@ -165,8 +165,10 @@ export class WorkspaceSystem extends createSystem({
     strip.rotation.set(-0.95, 0, 0);
     this.ui.add(strip);
     const stripEntity = this.world.createTransformEntity(strip, { parent: this.uiEntity, persistent: true });
+    // Four rows of at most five: about 0.31 m wide, so the strip stays within the
+    // central view of Quest 3 and the narrower Meta VR Glasses.
     const row = (keys: [string, string, () => void, number?][], y: number): void => {
-      const widths = keys.map((k) => k[3] ?? 0.06);
+      const widths = keys.map((k) => k[3] ?? 0.058);
       const total = widths.reduce((a, b) => a + b, 0) + 0.006 * (keys.length - 1);
       let x = -total / 2;
       keys.forEach(([key, label, fn], i) => {
@@ -181,10 +183,19 @@ export class WorkspaceSystem extends createSystem({
         ['mode:measure', 'Measure', () => this.setMode('measure')],
         ['mode:test', 'Test', () => this.setMode('test')],
         ['mode:sketch', 'Sketch', () => this.setMode('sketch')],
-        ['mode:capture', 'Capture', () => this.setMode('capture'), 0.064],
-        ['act:grow', 'Grow bone', () => { if (app.grown.peek()) { app.clearGrown(); } else { sfx.play('grow'); void app.grow(0.55); } }],
+        ['mode:capture', 'Capture', () => this.setMode('capture')],
       ],
-      0.03,
+      0.045,
+    );
+    row(
+      [
+        ['act:grow', 'Grow bone', () => { if (app.grown.peek()) { app.clearGrown(); } else { sfx.play('grow'); void app.grow(0.55); } }],
+        ['act:flow', 'Air flow', () => this.world.getSystem(FlowSystem)?.toggle()],
+        ['act:modes', 'Vibration', () => this.world.getSystem(ModeSystem)?.toggle()],
+        ['act:print', 'Print preview', () => this.world.getSystem(PrintSystem)?.toggle()],
+        ['act:swing', 'Swing', () => this.world.getSystem(HingeSystem)?.toggle()],
+      ],
+      0.015,
     );
     row(
       [
@@ -192,21 +203,17 @@ export class WorkspaceSystem extends createSystem({
         ['act:mat', 'PLA', () => this.nextMaterial()],
         ['act:save', 'Save', () => { if (app.save()) sfx.play('save'); }],
         ['act:share', 'Share', () => { this.qrOpen = !this.qrOpen; this.coOpen = false; this.refreshShare(); }],
-        ['act:co', 'Co-design', () => { this.coOpen = !this.coOpen; this.qrOpen = false; this.refreshShare(); }, 0.066],
-        ['act:swing', 'Swing', () => this.world.getSystem(HingeSystem)?.toggle()],
+        ['act:co', 'Co-design', () => { this.coOpen = !this.coOpen; this.qrOpen = false; this.refreshShare(); }],
       ],
-      0,
+      -0.015,
     );
     row(
       [
         ['act:daily', 'Daily job', () => app.startDaily()],
-        ['act:print', 'Print preview', () => this.world.getSystem(PrintSystem)?.toggle(), 0.07],
-        ['act:flow', 'Air flow', () => this.world.getSystem(FlowSystem)?.toggle()],
-        ['act:modes', 'Vibration', () => this.world.getSystem(ModeSystem)?.toggle()],
         ['act:place', 'Bring bench here', () => this.place(), 0.08],
         ['act:settings', 'Access', () => { this.settingsOpen = !this.settingsOpen; this.refreshSettings(); }],
       ],
-      -0.03,
+      -0.045,
     );
 
     // ----- accessibility settings (a second strip, shown on demand) ----------
@@ -224,6 +231,7 @@ export class WorkspaceSystem extends createSystem({
       ['highContrast', 'Contrast'],
       ['reduceMotion', 'Less motion'],
       ['handed', 'Left-handed'],
+      ['occlusion', 'Real occlusion'],
     ];
     toggles.forEach(([key, label], i) => {
       const b = makeButton(setEntity, { key: `set:${key}`, label, width: 0.06, height: 0.022 }, () => {
@@ -240,7 +248,7 @@ export class WorkspaceSystem extends createSystem({
       this.settingsOpen = false;
       this.refreshSettings();
       app.startCalibration();
-    }).position.set(0, 0.042 - 4 * 0.028, 0);
+    }).position.set(0, 0.042 - 5 * 0.028, 0);
 
     // ----- coach skip --------------------------------------------------------
     const coachBtns = new Group();
@@ -691,7 +699,7 @@ export class WorkspaceSystem extends createSystem({
     const s = ctx.app.settings.peek();
     setButton('act:settings', { toggled: this.settingsOpen });
     setButton('act:calib', { visible: this.settingsOpen });
-    for (const key of ['colorSafe', 'captions', 'sound', 'dwell', 'largeText', 'highContrast', 'reduceMotion', 'handed'] as const) {
+    for (const key of ['colorSafe', 'captions', 'sound', 'dwell', 'largeText', 'highContrast', 'reduceMotion', 'handed', 'occlusion'] as const) {
       setButton(`set:${key}`, {
         visible: this.settingsOpen,
         toggled: key === 'handed' ? s.handed === 'left' : Boolean(s[key]),

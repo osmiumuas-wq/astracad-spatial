@@ -46,19 +46,45 @@ export class PartView {
   private seatReady = false;
   private readonly tint = new Color(COLORS.part);
 
+  /** 0 to 1: how strongly stressed areas glow (rises as the load nears yield). */
+  private readonly heat = { value: 0 };
+  /** Strength of the cyan rim light at grazing angles. */
+  private readonly rim = { value: 0.55 };
+
   constructor() {
     const material = new MeshStandardMaterial({
       color: COLORS.part,
-      roughness: 0.55,
-      metalness: 0.05,
+      roughness: 0.38,
+      metalness: 0.12,
       flatShading: false,
     });
+    // The bench look: a cool cyan rim where the surface turns away from the
+    // eye, and stressed areas that glow hotter as the load approaches yield.
+    // When IWSDK's depth occlusion wraps this hook, the key changes, so three.js
+    // compiles the wrapped shader instead of reusing the plain one.
+    const own = (shader: { uniforms: Record<string, unknown>; fragmentShader: string }): void => {
+      shader.uniforms.uHeat = this.heat;
+      shader.uniforms.uRim = this.rim;
+      shader.fragmentShader = `uniform float uHeat;\nuniform float uRim;\n${shader.fragmentShader}`.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          float facing = clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+          totalEmissiveRadiance += uRim * pow(1.0 - facing, 3.0) * vec3(0.22, 0.72, 1.0);
+        }
+        #ifdef USE_COLOR
+          totalEmissiveRadiance += vColor.rgb * uHeat;
+        #endif`,
+      );
+    };
+    material.onBeforeCompile = own;
+    material.customProgramCacheKey = () => (material.onBeforeCompile === own ? 'astra-part-v1' : 'astra-part-v1-occluded');
     this.mesh = new Mesh(new BufferGeometry(), material);
     this.mesh.name = 'Part';
     this.mesh.frustumCulled = false;
     this.edges = new LineSegments(
       new BufferGeometry(),
-      new LineBasicMaterial({ color: COLORS.edge, transparent: true, opacity: 0.85 }),
+      new LineBasicMaterial({ color: 0x3fc4ff, transparent: true, opacity: 0.9, toneMapped: false }),
     );
     this.edges.name = 'Part edges';
     this.edges.frustumCulled = false;
@@ -193,6 +219,7 @@ export class PartView {
     }
     this.stress = null;
     this.disp = null;
+    this.heat.value = 0;
     const m = this.mesh.material;
     m.vertexColors = false;
     m.color.copy(this.tint);
@@ -219,6 +246,9 @@ export class PartView {
       deform && this.maxDisp > 0
         ? Math.min(4000, Math.max(1, (0.06 * this.size) / (this.maxDisp * atYield)))
         : 0;
+    // Glow starts at a third of yield and is full at yield.
+    const ratio = peakStress > 0 ? (loadFactor * peakStress) / yieldMPa : 0;
+    this.heat.value = Math.min(1, Math.max(0, (ratio - 0.33) / 0.67)) * 0.8;
     const pos = this.mesh.geometry.getAttribute('position') as BufferAttribute;
     const p = pos.array as Float32Array;
     const k = loadFactor * exaggeration;

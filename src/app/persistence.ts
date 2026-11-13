@@ -58,6 +58,8 @@ export interface Settings {
   sound: boolean;
   /** Dwell on a target to select it, for users who cannot pinch. */
   dwell: boolean;
+  /** Real hands and objects in front of the part hide it (headset depth sensing). */
+  occlusion: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -69,6 +71,7 @@ export const DEFAULT_SETTINGS: Settings = {
   colorSafe: false,
   sound: true,
   dwell: false,
+  occlusion: false,
 };
 
 export const DEFAULT_PROGRESS: Progress = {
