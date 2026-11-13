@@ -111,9 +111,10 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
 ## Honest limits
 
 - Stress results are a design preview: linear statics on a voxel grid, typical datasheet material values. Checked
-  against CalculiX on the wall bracket (scripts/verify/ccx_bracket.py): peak stress within 4 %, but deflection reads
-  23 % low at the default grid (11 % at a finer one) because 4 mm walls are only a few cells thick. On simple members
-  deflection agrees with beam theory to a few percent.
+  against CalculiX on the wall bracket (scripts/verify/ccx_bracket.py, tests/ccx-reference.test.ts): deflection
+  within 1.3 % and P99 stress within 0.7 % at the app's grid, whose cells are a fraction of the wall and whose origin
+  is moved so flat faces sit on cell boundaries. A grid that cannot line up with the walls still reads up to about
+  17 % stiff, which is why the app sizes cells from the wall.
 - The headset kernel builds sketches, extrudes, cuts, revolves, holes and patterns. Fillets, shells, lofts and sweeps
   are refused by name and belong to desktop AstraCAD.
 - Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step.

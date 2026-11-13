@@ -56,8 +56,109 @@ function gradients(xi: number, eta: number, zeta: number): number[][] {
   ]);
 }
 
-/** Element stiffness of a unit cube with unit Young's modulus (24 x 24, row-major). */
+/**
+ * The voxel element: an 8-node hexahedron with Wilson's incompatible modes
+ * (the element CalculiX calls C3D8I). Each displacement component gets three
+ * extra internal "bubble" shapes (1 - xi^2, 1 - eta^2, 1 - zeta^2), which let
+ * a single cell bend without the parasitic shear that makes plain hexahedra
+ * too stiff in thin walls. Every voxel is the same cube, so the 33 x 33 matrix
+ * is integrated once (2 x 2 x 2 Gauss) and the 9 internal amplitudes are
+ * condensed out: K = Kuu - Kua Kaa^-1 Kau. `R` recovers them from the nodal
+ * displacements (alpha = R u) for stress output. Unit modulus, unit cube.
+ */
+export function incompatibleElement(nu: number): { K: Float64Array; R: Float64Array } {
+  const lam = nu / ((1 + nu) * (1 - 2 * nu));
+  const mu = 1 / (2 * (1 + nu));
+  const N = 33;
+  const full = new Float64Array(N * N);
+  const detJ = 1 / 8;
+  const B = new Float64Array(6 * N);
+  const DB = new Float64Array(6 * N);
+  for (const a of [-GAUSS, GAUSS]) {
+    for (const b of [-GAUSS, GAUSS]) {
+      for (const c of [-GAUSS, GAUSS]) {
+        B.fill(0);
+        const put = (col: number, d: number[]): void => {
+          // col is the x-component column of a 3-dof group with physical gradient d.
+          B[0 * N + col] = d[0];
+          B[1 * N + col + 1] = d[1];
+          B[2 * N + col + 2] = d[2];
+          B[3 * N + col] = d[1];
+          B[3 * N + col + 1] = d[0];
+          B[4 * N + col + 1] = d[2];
+          B[4 * N + col + 2] = d[1];
+          B[5 * N + col + 2] = d[0];
+          B[5 * N + col] = d[2];
+        };
+        const g = gradients(a, b, c);
+        for (let l = 0; l < 8; l++) put(3 * l, g[l]);
+        const pt = [a, b, c];
+        for (let k = 0; k < 3; k++) {
+          // d(1 - xi_k^2)/dx_k on the unit cube: -2 xi_k * (d xi / d x = 2).
+          const d = [0, 0, 0];
+          d[k] = -4 * pt[k];
+          put(24 + 3 * k, d);
+        }
+        for (let j = 0; j < N; j++) {
+          const e0 = B[j], e1 = B[N + j], e2 = B[2 * N + j];
+          DB[j] = (lam + 2 * mu) * e0 + lam * (e1 + e2);
+          DB[N + j] = (lam + 2 * mu) * e1 + lam * (e0 + e2);
+          DB[2 * N + j] = (lam + 2 * mu) * e2 + lam * (e0 + e1);
+          DB[3 * N + j] = mu * B[3 * N + j];
+          DB[4 * N + j] = mu * B[4 * N + j];
+          DB[5 * N + j] = mu * B[5 * N + j];
+        }
+        for (let i = 0; i < N; i++) {
+          for (let j = 0; j < N; j++) {
+            let s = 0;
+            for (let r = 0; r < 6; r++) s += B[r * N + i] * DB[r * N + j];
+            full[i * N + j] += detJ * s;
+          }
+        }
+      }
+    }
+  }
+  // Solve Kaa X = Kau (9 x 24) by Gauss-Jordan; R = -X.
+  const M = new Float64Array(9 * 33);
+  for (let i = 0; i < 9; i++) {
+    for (let j = 0; j < 9; j++) M[i * 33 + j] = full[(24 + i) * N + 24 + j];
+    for (let j = 0; j < 24; j++) M[i * 33 + 9 + j] = full[(24 + i) * N + j];
+  }
+  for (let col = 0; col < 9; col++) {
+    let piv = col;
+    for (let r = col + 1; r < 9; r++) if (Math.abs(M[r * 33 + col]) > Math.abs(M[piv * 33 + col])) piv = r;
+    if (piv !== col) for (let j = 0; j < 33; j++) [M[col * 33 + j], M[piv * 33 + j]] = [M[piv * 33 + j], M[col * 33 + j]];
+    const p = M[col * 33 + col];
+    for (let j = 0; j < 33; j++) M[col * 33 + j] /= p;
+    for (let r = 0; r < 9; r++) {
+      if (r === col) continue;
+      const f = M[r * 33 + col];
+      if (f !== 0) for (let j = 0; j < 33; j++) M[r * 33 + j] -= f * M[col * 33 + j];
+    }
+  }
+  const R = new Float64Array(9 * 24);
+  for (let i = 0; i < 9; i++) for (let j = 0; j < 24; j++) R[i * 24 + j] = -M[i * 33 + 9 + j];
+  const K = new Float64Array(576);
+  for (let i = 0; i < 24; i++) {
+    for (let j = 0; j < 24; j++) {
+      let s = full[i * N + j];
+      for (let k = 0; k < 9; k++) s += full[i * N + 24 + k] * R[k * 24 + j];
+      K[i * 24 + j] = s;
+    }
+  }
+  return { K, R };
+}
+
+/** Element stiffness of a unit cube with unit Young's modulus (24 x 24, row-major): the incompatible-mode element. */
 export function unitStiffness(nu: number): Float64Array {
+  return incompatibleElement(nu).K;
+}
+
+/**
+ * The previous element (selectively integrated shear), kept for comparison
+ * tests: on the wall bracket it read 23 % stiffer than CalculiX.
+ */
+export function assumedShearStiffness(nu: number): Float64Array {
   const lam = nu / ((1 + nu) * (1 - 2 * nu));
   const mu = 1 / (2 * (1 + nu));
   const K = new Float64Array(576);
@@ -121,19 +222,73 @@ export function unitStiffness(nu: number): Float64Array {
  * happens to fall, and bending stiffness (which goes with thickness cubed)
  * swings by tens of percent between grid sizes.
  */
+/**
+ * Grid origin per axis that puts the part's large flat faces on cell
+ * boundaries. A face that cuts through the middle of a layer of cells leaves
+ * half-full cells at the outer fibre of a bending member, and spreading that
+ * material over the whole cell overstates bending stiffness: for a beam three
+ * cells deep, I = 3 h^3 instead of 2.25 h^3. Faces perpendicular to each axis
+ * are collected with their areas, and the shift that leaves the least
+ * face area off the grid is chosen.
+ */
+export function alignedOrigin(positions: Float32Array, indices: Uint32Array, h: number, min: Vec3): Vec3 {
+  const planes: Map<number, number>[] = [new Map(), new Map(), new Map()];
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = indices[t] * 3, b = indices[t + 1] * 3, c = indices[t + 2] * 3;
+    const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2];
+    const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2];
+    const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+    const len = Math.hypot(n[0], n[1], n[2]);
+    if (len < 1e-12) continue;
+    for (let k = 0; k < 3; k++) {
+      if (Math.abs(n[k]) / len > 0.9999) {
+        const key = Math.round(positions[a + k] * 1e4) / 1e4;
+        planes[k].set(key, (planes[k].get(key) ?? 0) + len / 2);
+      }
+    }
+  }
+  const origin: Vec3 = [min[0], min[1], min[2]];
+  for (let k = 0; k < 3; k++) {
+    const cost = (shift: number): number => {
+      let s = 0;
+      for (const [c, area] of planes[k]) {
+        const f = (((c - (min[k] - shift)) / h) % 1 + 1) % 1;
+        s += area * Math.min(f, 1 - f);
+      }
+      return s;
+    };
+    let best = 0;
+    let bestCost = cost(0);
+    for (const c of planes[k].keys()) {
+      const shift = (((c - min[k]) % h) + h) % h;
+      const s = cost(shift);
+      if (s < bestCost - 1e-9) {
+        best = shift;
+        bestCost = s;
+      }
+    }
+    // Shift the origin down so the chosen faces fall on grid lines.
+    origin[k] = min[k] - (best > 1e-9 ? h - best : 0);
+  }
+  return origin;
+}
+
 export function voxelize(
   positions: Float32Array,
   indices: Uint32Array,
   h: number,
+  align = false,
 ): VoxelGrid {
-  const min: Vec3 = [Infinity, Infinity, Infinity];
+  const lo: Vec3 = [Infinity, Infinity, Infinity];
   const max: Vec3 = [-Infinity, -Infinity, -Infinity];
   for (let i = 0; i < positions.length; i += 3) {
     for (let a = 0; a < 3; a++) {
-      min[a] = Math.min(min[a], positions[i + a]);
+      lo[a] = Math.min(lo[a], positions[i + a]);
       max[a] = Math.max(max[a], positions[i + a]);
     }
   }
+  // `min` is the grid origin: the part's lower corner, or moved down so faces sit on cell boundaries.
+  const min = align ? alignedOrigin(positions, indices, h, lo) : lo;
   const nx = Math.max(1, Math.ceil((max[0] - min[0]) / h - 1e-6));
   const ny = Math.max(1, Math.ceil((max[1] - min[1]) / h - 1e-6));
   const nz = Math.max(1, Math.ceil((max[2] - min[2]) / h - 1e-6));
@@ -643,22 +798,25 @@ export class VoxelModel {
     const inv = 1 / this.grid.h;
     const lamU = nu / ((1 + nu) * (1 - 2 * nu));
     const muU = 1 / (2 * (1 + nu));
-    // Per corner: gradients for the normal strains and for each shear component.
-    const corner = SIGN.map(([sx, sy, sz]) => ({
-      n: gradients(sx, sy, sz),
-      xy: gradients(0, 0, sz),
-      yz: gradients(sx, 0, 0),
-      zx: gradients(0, sy, 0),
-    }));
+    // Corner strains of the incompatible-mode element: the nodal shapes plus the
+    // element's own bubble field (amplitudes alpha = R u), so stress matches the stiffness.
+    const R = incompatibleElement(nu).R;
+    const corner = SIGN.map(([sx, sy, sz]) => ({ n: gradients(sx, sy, sz), bubble: [-4 * sx, -4 * sy, -4 * sz] }));
     const acc = new Float64Array(this.nodeCount * 6);
     const counts = new Uint16Array(this.nodeCount);
     const ue = new Float64Array(24);
+    const alpha = new Float64Array(9);
     for (let e = 0; e < this.elementCount; e++) {
       for (let l = 0; l < 8; l++) {
         const n = elementNodes[e * 8 + l] * 3;
         ue[3 * l] = u[n];
         ue[3 * l + 1] = u[n + 1];
         ue[3 * l + 2] = u[n + 2];
+      }
+      for (let i = 0; i < 9; i++) {
+        let s = 0;
+        for (let j = 0; j < 24; j++) s += R[i * 24 + j] * ue[j];
+        alpha[i] = s;
       }
       const E = typeof modulus === 'number' ? modulus : modulus[e];
       const lam = lamU * E;
@@ -668,12 +826,21 @@ export class VoxelModel {
         let exx = 0, eyy = 0, ezz = 0, gxy = 0, gyz = 0, gzx = 0;
         for (let l = 0; l < 8; l++) {
           const ux = ue[3 * l], uy = ue[3 * l + 1], uz = ue[3 * l + 2];
-          exx += g.n[l][0] * ux;
-          eyy += g.n[l][1] * uy;
-          ezz += g.n[l][2] * uz;
-          gxy += g.xy[l][1] * ux + g.xy[l][0] * uy;
-          gyz += g.yz[l][2] * uy + g.yz[l][1] * uz;
-          gzx += g.zx[l][2] * ux + g.zx[l][0] * uz;
+          const d = g.n[l];
+          exx += d[0] * ux;
+          eyy += d[1] * uy;
+          ezz += d[2] * uz;
+          gxy += d[1] * ux + d[0] * uy;
+          gyz += d[2] * uy + d[1] * uz;
+          gzx += d[2] * ux + d[0] * uz;
+        }
+        // Bubble k (along axis k) of component cc adds d/dx_k to that component.
+        for (let k = 0; k < 3; k++) {
+          const db = g.bubble[k];
+          const ax = alpha[3 * k] * db, ay = alpha[3 * k + 1] * db, az = alpha[3 * k + 2] * db;
+          if (k === 0) { exx += ax; gxy += ay; gzx += az; }
+          else if (k === 1) { eyy += ay; gxy += ax; gyz += az; }
+          else { ezz += az; gyz += ay; gzx += ax; }
         }
         const tr = (exx + eyy + ezz) * inv;
         const node = elementNodes[e * 8 + c];
@@ -902,7 +1069,7 @@ export function prepareModel(
   maxElements = 9000,
 ): PreparedModel {
   const h = chooseCellSize(setup.volume, setup.targetElements ?? 6000, setup.wallHint, maxElements);
-  const grid = voxelize(setup.positions, setup.indices, h);
+  const grid = voxelize(setup.positions, setup.indices, h, true);
 
   // Material not connected to the fixture would float; drop it before numbering.
   const probe = new VoxelModel(grid, setup.nu);

@@ -50,8 +50,11 @@ stated patch (470.4 mm2).
 | Max deflection | 4.458 mm | 3.419 mm | -23 % |
 | P99 von Mises (load patch excluded) | 28.33 MPa | 27.19 MPa | -4 % |
 
-The finer spatial grid (1.19 mm) reads 3.98 mm (-11 %). Reading: the safety factor, which comes from stress, is
-within 4 % on this part; deflection on 4 mm walls reads too stiff and must be called a preview.
+Follow-up (same day): the cause was grid alignment, not the element. The arm's faces (y = 66, 70) fell half a cell
+off a grid starting at y = 0, so the arm's outer layers were half-full cells, which overstate bending stiffness
+(I = 3h^3 instead of 2.25h^3 for three cells). The stress grid's origin now moves so flat faces land on cell
+boundaries, and the element is now the incompatible-mode hexahedron. Result at the default grid: **4.401 mm
+(-1.3 %), 28.53 MPa (+0.7 %)**. `tests/ccx-reference.test.ts` keeps it within 5 %.
 
 **Task 4, second-kernel volumes: done.** `<python with OCP> scripts/verify/occ_volumes.py astracad-gen/src` builds
 each of the 24 exchange specs with OpenCASCADE (`astracad_geom.occ_build`, imported unchanged). 24/24 within 1e-5 of

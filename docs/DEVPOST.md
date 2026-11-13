@@ -50,8 +50,9 @@ WebAssembly, driven by a typed JSON part language; circles are tessellated so th
 lets the truth gate hold to 1e-5. The stress preview is a voxel finite-element solver (partial-volume hexahedra,
 conjugate gradients) in a Web Worker: a straight cantilever agrees with Timoshenko beam theory within 3 % at three or
 more cells through the thickness, and its first natural frequency is within 1.6 % of Euler-Bernoulli. On the wall
-bracket, CalculiX (converged) puts peak stress within 4 % of ours; our deflection reads 23 % stiff on its thin walls,
-so the app calls it a preview. An independent OpenCASCADE build of 24 test parts matches the closed-form volumes to
+bracket, a converged CalculiX solve agrees with ours to 1.3 % in deflection and 0.7 % in stress. (Getting there
+was its own story: the first comparison read 23 % stiff, because faces cutting through the middle of a cell
+overstate bending stiffness; the grid now lines up with the part's faces.) An independent OpenCASCADE build of 24 test parts matches the closed-form volumes to
 1e-15, and our browser kernel matches OpenCASCADE to 2e-9. Flow is a
 potential-flow solve on a voxel grid, within 4 % of the textbook sphere solution two cells from the surface. Voice
 uses the browser's recogniser where there is one, and otherwise runs Whisper on the device, so audio never leaves

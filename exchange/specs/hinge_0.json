@@ -1,0 +1,402 @@
+{
+  "language": 2,
+  "name": "print_in_place_hinge",
+  "units": "mm",
+  "features": [
+    {
+      "$op": "ref.plane",
+      "id": "x0",
+      "args": {
+        "base": "right",
+        "offset": 0
+      }
+    },
+    {
+      "$op": "ref.plane",
+      "id": "xb",
+      "args": {
+        "base": "right",
+        "offset": 16.133333333333333
+      }
+    },
+    {
+      "$op": "ref.plane",
+      "id": "x2",
+      "args": {
+        "base": "right",
+        "offset": 32.266666666666666
+      }
+    },
+    {
+      "$op": "ref.plane",
+      "id": "xbore",
+      "args": {
+        "base": "right",
+        "offset": 15.933333333333334
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "leaf_a_sk",
+      "sketched_on": "x0",
+      "args": {
+        "loops": [
+          [
+            [
+              "L",
+              2.4,
+              0,
+              24,
+              0
+            ],
+            [
+              "L",
+              24,
+              0,
+              24,
+              4
+            ],
+            [
+              "L",
+              24,
+              4,
+              2.4,
+              4
+            ],
+            [
+              "L",
+              2.4,
+              4,
+              2.4,
+              0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "leaf_a",
+      "args": {
+        "depth": 48,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "leaf_b_sk",
+      "sketched_on": "x0",
+      "args": {
+        "loops": [
+          [
+            [
+              "L",
+              -24,
+              0,
+              -2.4,
+              0
+            ],
+            [
+              "L",
+              -2.4,
+              0,
+              -2.4,
+              4
+            ],
+            [
+              "L",
+              -2.4,
+              4,
+              -24,
+              4
+            ],
+            [
+              "L",
+              -24,
+              4,
+              -24,
+              0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "leaf_b",
+      "args": {
+        "depth": 48,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "bridge_a1_sk",
+      "sketched_on": "x0",
+      "args": {
+        "loops": [
+          [
+            [
+              "L",
+              0,
+              0,
+              2.4,
+              0
+            ],
+            [
+              "L",
+              2.4,
+              0,
+              2.4,
+              4
+            ],
+            [
+              "L",
+              2.4,
+              4,
+              0,
+              4
+            ],
+            [
+              "L",
+              0,
+              4,
+              0,
+              0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "bridge_a1",
+      "args": {
+        "depth": 15.733333333333334,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "knuckle_a1_sk",
+      "sketched_on": "x0",
+      "args": {
+        "loops": [
+          [
+            [
+              "C",
+              0,
+              2,
+              2
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "knuckle_a1",
+      "args": {
+        "depth": 15.733333333333334,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "bridge_a2_sk",
+      "sketched_on": "x2",
+      "args": {
+        "loops": [
+          [
+            [
+              "L",
+              0,
+              0,
+              2.4,
+              0
+            ],
+            [
+              "L",
+              2.4,
+              0,
+              2.4,
+              4
+            ],
+            [
+              "L",
+              2.4,
+              4,
+              0,
+              4
+            ],
+            [
+              "L",
+              0,
+              4,
+              0,
+              0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "bridge_a2",
+      "args": {
+        "depth": 15.733333333333334,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "knuckle_a2_sk",
+      "sketched_on": "x2",
+      "args": {
+        "loops": [
+          [
+            [
+              "C",
+              0,
+              2,
+              2
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "knuckle_a2",
+      "args": {
+        "depth": 15.733333333333334,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "bridge_b_sk",
+      "sketched_on": "xb",
+      "args": {
+        "loops": [
+          [
+            [
+              "L",
+              -2.4,
+              0,
+              0,
+              0
+            ],
+            [
+              "L",
+              0,
+              0,
+              0,
+              4
+            ],
+            [
+              "L",
+              0,
+              4,
+              -2.4,
+              4
+            ],
+            [
+              "L",
+              -2.4,
+              4,
+              -2.4,
+              0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "bridge_b",
+      "args": {
+        "depth": 15.733333333333334,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "knuckle_b_sk",
+      "sketched_on": "xb",
+      "args": {
+        "loops": [
+          [
+            [
+              "C",
+              0,
+              2,
+              2
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "knuckle_b",
+      "args": {
+        "depth": 15.733333333333334,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "bore_b_sk",
+      "sketched_on": "xbore",
+      "args": {
+        "loops": [
+          [
+            [
+              "C",
+              0,
+              2,
+              1.4
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.cut",
+      "id": "bore_b",
+      "args": {
+        "depth": 16.133333333333333,
+        "direction": "normal"
+      }
+    },
+    {
+      "$op": "sketch.loops",
+      "id": "pin_sk",
+      "sketched_on": "x0",
+      "args": {
+        "loops": [
+          [
+            [
+              "C",
+              0,
+              2,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "pin",
+      "args": {
+        "depth": 48,
+        "direction": "normal"
+      }
+    }
+  ],
+  "notes": {
+    "hand_check": "two leaves + bridges + outer half-knuckles - bore + pin in the gaps and bore"
+  }
+}

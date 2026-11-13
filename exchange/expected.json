@@ -1070,5 +1070,369 @@
       },
       "genus": 0
     }
+  },
+  {
+    "file": "specs/sketch_0.json",
+    "job": "sketch",
+    "parameters": {
+      "h": 10,
+      "kind": 0,
+      "n": 4,
+      "x0": -20,
+      "y0": -12.5,
+      "x1": 20,
+      "y1": -12.5,
+      "x2": 20,
+      "y2": 12.5,
+      "x3": -20,
+      "y3": 12.5
+    },
+    "closed_form_volume_mm3": 10000,
+    "generic_closed_form_volume_mm3": 10000,
+    "closed_form_bbox_mm": {
+      "min": [
+        -20,
+        0,
+        -12.5
+      ],
+      "max": [
+        20,
+        10,
+        12.5
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 10000,
+      "surface_area_mm2": 3300,
+      "bbox_mm": {
+        "min": [
+          -20,
+          0,
+          -12.5
+        ],
+        "max": [
+          20,
+          10,
+          12.5
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/sketch_1.json",
+    "job": "sketch",
+    "parameters": {
+      "h": 153.55,
+      "kind": 0,
+      "n": 4,
+      "x0": -20,
+      "y0": -12.5,
+      "x1": 20,
+      "y1": -12.5,
+      "x2": 20,
+      "y2": 12.5,
+      "x3": -20,
+      "y3": 12.5
+    },
+    "closed_form_volume_mm3": 153550,
+    "generic_closed_form_volume_mm3": 153550,
+    "closed_form_bbox_mm": {
+      "min": [
+        -20,
+        0,
+        -12.5
+      ],
+      "max": [
+        20,
+        153.55,
+        12.5
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 153550,
+      "surface_area_mm2": 21961.5,
+      "bbox_mm": {
+        "min": [
+          -20,
+          0,
+          -12.5
+        ],
+        "max": [
+          20,
+          153.55,
+          12.5
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/sketch_2.json",
+    "job": "sketch",
+    "parameters": {
+      "h": 160.45000000000002,
+      "kind": 0,
+      "n": 4,
+      "x0": -20,
+      "y0": -12.5,
+      "x1": 20,
+      "y1": -12.5,
+      "x2": 20,
+      "y2": 12.5,
+      "x3": -20,
+      "y3": 12.5
+    },
+    "closed_form_volume_mm3": 160450.00000000003,
+    "generic_closed_form_volume_mm3": 160450.00000000003,
+    "closed_form_bbox_mm": {
+      "min": [
+        -20,
+        0,
+        -12.5
+      ],
+      "max": [
+        20,
+        160.45000000000002,
+        12.5
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 160450.00000000003,
+      "surface_area_mm2": 22858.500000000004,
+      "bbox_mm": {
+        "min": [
+          -20,
+          0,
+          -12.5
+        ],
+        "max": [
+          20,
+          160.45000000000002,
+          12.5
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/sketch_3.json",
+    "job": "sketch",
+    "parameters": {
+      "h": 98.2,
+      "kind": 0,
+      "n": 4,
+      "x0": -20,
+      "y0": -12.5,
+      "x1": 20,
+      "y1": -12.5,
+      "x2": 20,
+      "y2": 12.5,
+      "x3": -20,
+      "y3": 12.5
+    },
+    "closed_form_volume_mm3": 98200,
+    "generic_closed_form_volume_mm3": 98200,
+    "closed_form_bbox_mm": {
+      "min": [
+        -20,
+        0,
+        -12.5
+      ],
+      "max": [
+        20,
+        98.2,
+        12.5
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 98200,
+      "surface_area_mm2": 14766,
+      "bbox_mm": {
+        "min": [
+          -20,
+          0,
+          -12.5
+        ],
+        "max": [
+          20,
+          98.2,
+          12.5
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/hinge_0.json",
+    "job": "hinge",
+    "parameters": {
+      "L": 48,
+      "W": 24,
+      "t": 4,
+      "c": 0.4
+    },
+    "closed_form_volume_mm3": 8999.196272731453,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -24
+      ],
+      "max": [
+        48,
+        4,
+        24
+      ]
+    },
+    "expected_genus": 1,
+    "spatial_kernel": {
+      "volume_mm3": 8999.196272587098,
+      "surface_area_mm2": 5915.731137273775,
+      "bbox_mm": {
+        "min": [
+          0,
+          -0.011482201516628265,
+          -24
+        ],
+        "max": [
+          48,
+          4.011482201516628,
+          24
+        ]
+      },
+      "genus": 1
+    }
+  },
+  {
+    "file": "specs/hinge_1.json",
+    "job": "hinge",
+    "parameters": {
+      "L": 41.150000000000006,
+      "W": 34.35,
+      "t": 6.4,
+      "c": 0.4
+    },
+    "closed_form_volume_mm3": 17720.96307771698,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -34.35
+      ],
+      "max": [
+        41.150000000000006,
+        6.4,
+        34.35
+      ]
+    },
+    "expected_genus": 1,
+    "spatial_kernel": {
+      "volume_mm3": 17720.963074352494,
+      "surface_area_mm2": 7847.416405722882,
+      "bbox_mm": {
+        "min": [
+          0,
+          -0.010310657322406769,
+          -34.350000001490116
+        ],
+        "max": [
+          41.150000000000006,
+          6.410310655832291,
+          34.350000001490116
+        ]
+      },
+      "genus": 1
+    }
+  },
+  {
+    "file": "specs/hinge_2.json",
+    "job": "hinge",
+    "parameters": {
+      "L": 98.2,
+      "W": 55.650000000000006,
+      "t": 6.75,
+      "c": 0.8
+    },
+    "closed_form_volume_mm3": 72367.67530359502,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -55.650000000000006
+      ],
+      "max": [
+        98.2,
+        6.75,
+        55.650000000000006
+      ]
+    },
+    "expected_genus": 1,
+    "spatial_kernel": {
+      "volume_mm3": 72367.6753044506,
+      "surface_area_mm2": 26524.568386297477,
+      "bbox_mm": {
+        "min": [
+          0,
+          -0.010874524712562561,
+          -55.649999998509884
+        ],
+        "max": [
+          98.2,
+          6.760874524712563,
+          55.649999998509884
+        ]
+      },
+      "genus": 1
+    }
+  },
+  {
+    "file": "specs/hinge_3.json",
+    "job": "hinge",
+    "parameters": {
+      "L": 43.650000000000006,
+      "W": 40,
+      "t": 3.7,
+      "c": 0.55
+    },
+    "closed_form_volume_mm3": 12695.94733475275,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -40
+      ],
+      "max": [
+        43.650000000000006,
+        3.7,
+        40
+      ]
+    },
+    "expected_genus": 1,
+    "spatial_kernel": {
+      "volume_mm3": 12695.947345192764,
+      "surface_area_mm2": 8349.73344168744,
+      "bbox_mm": {
+        "min": [
+          0,
+          -0.010621033608913422,
+          -40
+        ],
+        "max": [
+          43.650000000000006,
+          3.7106210365891457,
+          40
+        ]
+      },
+      "genus": 1
+    }
   }
 ]

@@ -1,0 +1,56 @@
+{
+  "language": 2,
+  "name": "air_sketch",
+  "units": "mm",
+  "features": [
+    {
+      "$op": "sketch.loops",
+      "id": "outline",
+      "sketched_on": "top",
+      "args": {
+        "loops": [
+          [
+            [
+              "L",
+              -20,
+              -12.5,
+              20,
+              -12.5
+            ],
+            [
+              "L",
+              20,
+              -12.5,
+              20,
+              12.5
+            ],
+            [
+              "L",
+              20,
+              12.5,
+              -20,
+              12.5
+            ],
+            [
+              "L",
+              -20,
+              12.5,
+              -20,
+              -12.5
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "body",
+      "args": {
+        "depth": 10
+      }
+    }
+  ],
+  "notes": {
+    "hand_check": "volume = outline area (shoelace formula, or pi r^2) x height"
+  }
+}

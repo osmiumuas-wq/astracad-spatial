@@ -30,28 +30,28 @@
   "method": "linear static, small displacement, voxel hexahedra with assumed shear strains",
   "spatial_solver": [
     {
-      "cells": 7428,
+      "cells": 6726,
       "cell_mm": 1.3333333333333333,
-      "max_displacement_mm": 3.41853677831819,
-      "von_mises_p99_mpa": 27.193180084228516,
-      "von_mises_max_mpa": 30.55604362487793,
-      "iterations": 734
+      "max_displacement_mm": 4.4007976310654735,
+      "von_mises_p99_mpa": 28.528038024902344,
+      "von_mises_max_mpa": 41.425392150878906,
+      "iterations": 756
     },
     {
-      "cells": 7428,
+      "cells": 6726,
       "cell_mm": 1.3333333333333333,
-      "max_displacement_mm": 3.41853677831819,
-      "von_mises_p99_mpa": 27.193180084228516,
-      "von_mises_max_mpa": 30.55604362487793,
-      "iterations": 734
+      "max_displacement_mm": 4.4007976310654735,
+      "von_mises_p99_mpa": 28.528038024902344,
+      "von_mises_max_mpa": 41.425392150878906,
+      "iterations": 756
     },
     {
-      "cells": 10761,
+      "cells": 10875,
       "cell_mm": 1.1934094621261562,
-      "max_displacement_mm": 3.9802506247119984,
-      "von_mises_p99_mpa": 28.244251251220703,
-      "von_mises_max_mpa": 32.9560546875,
-      "iterations": 955
+      "max_displacement_mm": 3.6892135426455703,
+      "von_mises_p99_mpa": 29.250633239746094,
+      "von_mises_max_mpa": 33.313011169433594,
+      "iterations": 958
     }
   ]
 }
