@@ -39,6 +39,7 @@ import { calibrate, CALIBRATION_READINGS, CARD_MM, correct } from '../engine/cal
 import type { ImportedMesh } from '../engine/step-import.js';
 import { History } from './history.js';
 import { drawingSvg } from '../engine/drawing.js';
+import { answer, Described } from '../engine/describe.js';
 
 export interface BuiltState {
   mesh: MeshData;
@@ -762,6 +763,19 @@ export class App {
   removeSaved(id: string): void {
     this.library.value = this.library.peek().filter((p) => p.id !== id);
     saveLibrary(this.library.peek());
+  }
+
+  /** Build a described part (after its questions are answered). */
+  applyDescribed(d: Described, answers: Record<string, number>): void {
+    const params = answer(d, answers);
+    this.adoptShared({ job: d.job, params, material: d.material ?? this.material.peek() });
+    this.mode.value = 'shape';
+    const job = this.job;
+    const notes = this.job.clamp(params).notes;
+    this.say(
+      `${job.title}${d.shape ? ` (${d.shape})` : ''}: ${d.understood.length ? d.understood.join(', ') : 'default sizes'}${Object.keys(answers).length ? ', and your answers' : ''}.${notes.length ? ` ${notes.join(' ')}` : ''}`,
+      'good',
+    );
   }
 
   /** A three-view A4 drawing of the current part, as SVG text. */

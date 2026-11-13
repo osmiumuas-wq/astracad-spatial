@@ -104,6 +104,13 @@
         transition: background 0.18s, border-color 0.18s, transform 0.18s, box-shadow 0.18s;
       }
       select, input[type='text'] { border-radius: 16px; }
+      textarea, input[type='number'] {
+        font: inherit; color: var(--text); width: 100%; resize: vertical;
+        background: rgba(255, 255, 255, 0.08); border: 1px solid var(--edge); border-radius: 16px; padding: 10px 14px;
+      }
+      textarea:focus-visible, input[type='number']:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+      .describe { display: grid; gap: 6px; margin-top: 6px; }
+      button.go { background: linear-gradient(135deg, #4b8bff, #6f5bff); border-color: rgba(255, 255, 255, 0.4); color: #fff; }
       button { cursor: pointer; }
       button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.15); border-color: rgba(255, 255, 255, 0.4); transform: translateY(-1px); }
       button:active:not(:disabled) { transform: scale(0.97); }

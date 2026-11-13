@@ -15,6 +15,7 @@ import { stressColor } from '../app/palette.js';
 import { App } from '../app/app.js';
 import { Bench } from '../app/bench.js';
 import { CoDesign } from '../app/codesign.js';
+import { describe } from '../engine/describe.js';
 import { FlowSystem } from '../systems/flow-system.js';
 import { HingeSystem } from '../systems/hinge-system.js';
 import { ModeSystem } from '../systems/mode-system.js';
@@ -129,6 +130,61 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
       },
     );
   }
+
+  // ----- describe it ---------------------------------------------------------
+  const descText = h('textarea', {
+    rows: 2,
+    'aria-label': 'Describe a part',
+    placeholder: 'e.g. wall bracket, 100 mm arm, 80 high, 30 wide, 4 thick, M5 screws, PETG',
+  });
+  const descOut = h('div', { class: 'describe' });
+  const descGo = h('button', { type: 'button', class: 'go' }, 'Make it');
+  const runDescribe = (): void => {
+    descOut.replaceChildren();
+    const r = describe(descText.value);
+    if ('error' in r) {
+      descOut.append(h('p', { class: 'note' }, r.error));
+      return;
+    }
+    if (r.understood.length) descOut.append(h('p', { class: 'note' }, `Understood: ${r.understood.join(', ')}.`));
+    if (!r.ask.length) {
+      app.applyDescribed(r, {});
+      return;
+    }
+    // Ask for every key size the text did not give, with a sensible default filled in.
+    const inputs = r.ask.map((q) => {
+      const input = h('input', { type: 'number', step: 'any', value: String(q.value), 'aria-label': q.label });
+      descOut.append(h('label', { class: 'field' }, h('span', {}, `${q.label}${q.unit ? ` (${q.unit})` : ''}`), input));
+      return { q, input };
+    });
+    descOut.append(
+      h('button', { type: 'button', class: 'go', click: () => {
+        const answers: Record<string, number> = {};
+        for (const { q, input } of inputs) {
+          const v = Number(input.value);
+          if (Number.isFinite(v)) answers[q.id] = v;
+        }
+        app.applyDescribed(r, answers);
+        descOut.replaceChildren(h('p', { class: 'note' }, 'Built. Shape it further on the bench.'));
+      } }, 'Build it'),
+    );
+  };
+  descGo.addEventListener('click', runDescribe);
+  descText.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      runDescribe();
+    }
+  });
+  root.append(
+    h('section', {},
+      h('h2', {}, 'Describe a part'),
+      descText,
+      h('div', { class: 'row' }, descGo),
+      descOut,
+      h('p', { class: 'hint' }, 'Plain rules, no AI service: part words, sizes next to their names, A x B x C, M-size screws, a material. Anything missing is asked.'),
+    ),
+  );
 
   // ----- jobs and material ---------------------------------------------------
   const jobChips = h('div', { class: 'chips' });
