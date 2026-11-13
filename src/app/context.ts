@@ -1,0 +1,26 @@
+/**
+ * The handful of long-lived objects every system needs. There is one world,
+ * so a typed module-level record is simpler and safer than `world.globals`.
+ * It is filled in src/index.ts before any system is registered.
+ */
+
+import type { Entity, World } from '@iwsdk/core';
+import type { App } from './app.js';
+import type { Bench } from './bench.js';
+import type { Hands } from './hands.js';
+import type { Sfx } from './sfx.js';
+
+export interface Context {
+  world: World;
+  app: App;
+  bench: Bench;
+  hands: Hands;
+  sfx: Sfx;
+  benchEntity: Entity;
+  turntableEntity: Entity;
+}
+
+export const ctx = {} as Context;
+
+/** Live values for automated checks and the browser console; never read by the app. */
+export const probe: Record<string, unknown> = {};

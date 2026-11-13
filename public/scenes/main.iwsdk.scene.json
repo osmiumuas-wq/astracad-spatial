@@ -1,0 +1,46 @@
+{
+  "version": "iwsdk.scene.v1",
+  "units": "meters",
+  "components": {
+    "com.iwsdk.components.IBLGradient": {
+      "sky": [0.94, 0.96, 1, 1],
+      "equator": [0.72, 0.76, 0.82, 1],
+      "ground": [0.36, 0.38, 0.42, 1],
+      "intensity": 0.55
+    }
+  },
+  "environment": {
+    "toneMapping": "aces",
+    "exposure": 1,
+    "shadows": false
+  },
+  "resources": {},
+  "nodes": [
+    {
+      "id": "key-light",
+      "name": "Key Light",
+      "transform": {
+        "position": [-1.2, 3.2, 1.4],
+        "rotationDeg": [-58, -24, 0]
+      },
+      "components": {
+        "DirectionalLight": {
+          "color": [1, 0.97, 0.92, 1],
+          "intensity": 2.4,
+          "castShadow": false
+        }
+      }
+    },
+    {
+      "id": "fill-light",
+      "name": "Fill Light",
+      "components": {
+        "HemisphereLight": {
+          "skyColor": [0.86, 0.92, 1, 1],
+          "groundColor": [0.42, 0.44, 0.5, 1],
+          "intensity": 0.9
+        }
+      }
+    }
+  ]
+}

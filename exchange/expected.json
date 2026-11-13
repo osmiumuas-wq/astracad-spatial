@@ -1,0 +1,1074 @@
+[
+  {
+    "file": "specs/cradle_0.json",
+    "job": "cradle",
+    "parameters": {
+      "L": 75,
+      "W": 40,
+      "H": 12,
+      "clr": 0.4,
+      "hold": 0.6000000000000001,
+      "t": 2,
+      "floor": 2
+    },
+    "closed_form_volume_mm3": 10623.36,
+    "generic_closed_form_volume_mm3": 10623.36,
+    "closed_form_bbox_mm": {
+      "min": [
+        -39.9,
+        0,
+        -22.4
+      ],
+      "max": [
+        39.9,
+        9.200000000000001,
+        22.4
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 10623.359999085664,
+      "surface_area_mm2": 11121.759999061824,
+      "bbox_mm": {
+        "min": [
+          -39.899999998509884,
+          0,
+          -22.399999998509884
+        ],
+        "max": [
+          39.899999998509884,
+          9.200000000000001,
+          22.399999998509884
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/cradle_1.json",
+    "job": "cradle",
+    "parameters": {
+      "L": 125,
+      "W": 98.15,
+      "H": 41.1,
+      "clr": 0.1,
+      "hold": 0.30000000000000004,
+      "t": 7.45,
+      "floor": 6.800000000000001
+    },
+    "closed_form_volume_mm3": 151698.32865,
+    "generic_closed_form_volume_mm3": 151698.32865,
+    "closed_form_bbox_mm": {
+      "min": [
+        -70.05,
+        0,
+        -56.62500000000001
+      ],
+      "max": [
+        70.05,
+        19.130000000000003,
+        56.62500000000001
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 151698.32864267408,
+      "surface_area_mm2": 46938.563998348414,
+      "bbox_mm": {
+        "min": [
+          -70.04999999701977,
+          0,
+          -56.625
+        ],
+        "max": [
+          70.04999999701977,
+          19.130000000000003,
+          56.625
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/cradle_2.json",
+    "job": "cradle",
+    "parameters": {
+      "L": 123.15,
+      "W": 57.5,
+      "H": 13.4,
+      "clr": 0.75,
+      "hold": 0.75,
+      "t": 5.45,
+      "floor": 7.95
+    },
+    "closed_form_volume_mm3": 96637.79250000003,
+    "generic_closed_form_volume_mm3": 96637.79250000003,
+    "closed_form_bbox_mm": {
+      "min": [
+        -67.775,
+        0,
+        -34.95
+      ],
+      "max": [
+        67.775,
+        18,
+        34.95
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 96637.79250725896,
+      "surface_area_mm2": 30037.45500142634,
+      "bbox_mm": {
+        "min": [
+          -67.77499999850988,
+          0,
+          -34.95000000298023
+        ],
+        "max": [
+          67.77499999850988,
+          18,
+          34.95000000298023
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/cradle_3.json",
+    "job": "cradle",
+    "parameters": {
+      "L": 33.1,
+      "W": 108.75,
+      "H": 72.75,
+      "clr": 1.8,
+      "hold": 0.2,
+      "t": 6.550000000000001,
+      "floor": 4.2
+    },
+    "closed_form_volume_mm3": 57145.72275,
+    "generic_closed_form_volume_mm3": 57145.72275,
+    "closed_form_bbox_mm": {
+      "min": [
+        -24.900000000000002,
+        0,
+        -62.724999999999994
+      ],
+      "max": [
+        24.900000000000002,
+        18.75,
+        62.724999999999994
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 57145.72274408376,
+      "surface_area_mm2": 23404.049999462364,
+      "bbox_mm": {
+        "min": [
+          -24.899999998509884,
+          0,
+          -62.725000001490116
+        ],
+        "max": [
+          24.899999998509884,
+          18.75,
+          62.725000001490116
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/fit-clip_0.json",
+    "job": "fit-clip",
+    "parameters": {
+      "gap": 18,
+      "reach": 30,
+      "t": 3,
+      "w": 14,
+      "r": 1.5,
+      "lip": 1
+    },
+    "closed_form_volume_mm3": 3583.5199157059606,
+    "generic_closed_form_volume_mm3": 3583.5199157059606,
+    "closed_form_bbox_mm": {
+      "min": [
+        -3,
+        0,
+        -7
+      ],
+      "max": [
+        30,
+        24,
+        7
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 3583.5199157360153,
+      "surface_area_mm2": 2958.101820643983,
+      "bbox_mm": {
+        "min": [
+          -3,
+          0,
+          -7
+        ],
+        "max": [
+          30,
+          24,
+          7
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/fit-clip_1.json",
+    "job": "fit-clip",
+    "parameters": {
+      "gap": 56.650000000000006,
+      "reach": 40.150000000000006,
+      "t": 1.4500000000000002,
+      "w": 19.8,
+      "r": 4.95,
+      "lip": 3.8000000000000003
+    },
+    "closed_form_volume_mm3": 4332.41944745362,
+    "generic_closed_form_volume_mm3": 4332.41944745361,
+    "closed_form_bbox_mm": {
+      "min": [
+        -1.4500000000000002,
+        0,
+        -9.9
+      ],
+      "max": [
+        40.150000000000006,
+        59.550000000000004,
+        9.9
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 4332.41944936043,
+      "surface_area_mm2": 6099.846520935987,
+      "bbox_mm": {
+        "min": [
+          -1.4500000029802322,
+          0,
+          -9.9
+        ],
+        "max": [
+          40.149999998509884,
+          59.54999999701977,
+          9.9
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/fit-clip_2.json",
+    "job": "fit-clip",
+    "parameters": {
+      "gap": 58.85,
+      "reach": 32.5,
+      "t": 7.15,
+      "w": 10.950000000000001,
+      "r": 5.1000000000000005,
+      "lip": 0.30000000000000004
+    },
+    "closed_form_volume_mm3": 10961.83790856371,
+    "generic_closed_form_volume_mm3": 10961.83790856371,
+    "closed_form_bbox_mm": {
+      "min": [
+        -7.15,
+        0,
+        -5.4750000000000005
+      ],
+      "max": [
+        32.5,
+        73.15,
+        5.4750000000000005
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 10961.837905980006,
+      "surface_area_mm2": 5143.092843796774,
+      "bbox_mm": {
+        "min": [
+          -7.149999998509884,
+          0,
+          -5.4750000000000005
+        ],
+        "max": [
+          32.5,
+          73.14999999850988,
+          5.4750000000000005
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/fit-clip_3.json",
+    "job": "fit-clip",
+    "parameters": {
+      "gap": 5.25,
+      "reach": 66.7,
+      "t": 0.65,
+      "w": 14.5,
+      "r": 2.0500000000000003,
+      "lip": 2.9000000000000004
+    },
+    "closed_form_volume_mm3": 1372.5153123313446,
+    "generic_closed_form_volume_mm3": 1372.5153123313437,
+    "closed_form_bbox_mm": {
+      "min": [
+        -0.65,
+        0,
+        -7.25
+      ],
+      "max": [
+        66.7,
+        6.55,
+        7.25
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 1372.5153095966248,
+      "surface_area_mm2": 4325.575088045216,
+      "bbox_mm": {
+        "min": [
+          -0.6499999985098839,
+          0,
+          -7.25
+        ],
+        "max": [
+          66.70000000298023,
+          6.549999997019768,
+          7.25
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/phone-stand_0.json",
+    "job": "phone-stand",
+    "parameters": {
+      "slot": 9.5,
+      "tilt": 18,
+      "H": 55,
+      "w": 60,
+      "lipH": 12,
+      "front": 10,
+      "floor": 4,
+      "back": 5
+    },
+    "closed_form_volume_mm3": 56051.68066697488,
+    "generic_closed_form_volume_mm3": 56051.68066697489,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -30
+      ],
+      "max": [
+        41.559795638141765,
+        55,
+        30
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 56051.68066754937,
+      "surface_area_mm2": 13759.448289774175,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -30
+        ],
+        "max": [
+          41.55979564040899,
+          55,
+          30
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/phone-stand_1.json",
+    "job": "phone-stand",
+    "parameters": {
+      "slot": 14.200000000000001,
+      "tilt": 16.25,
+      "H": 68.60000000000001,
+      "w": 63.85,
+      "lipH": 22.150000000000002,
+      "front": 24.6,
+      "floor": 4.5,
+      "back": 8.700000000000001
+    },
+    "closed_form_volume_mm3": 123648.67064047114,
+    "generic_closed_form_volume_mm3": 123648.67064047117,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -31.925
+      ],
+      "max": [
+        66.77434474633844,
+        68.60000000000001,
+        31.925
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 123648.67065841463,
+      "surface_area_mm2": 22767.05272908041,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -31.925
+        ],
+        "max": [
+          66.7743447497487,
+          68.60000000149012,
+          31.925
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/phone-stand_2.json",
+    "job": "phone-stand",
+    "parameters": {
+      "slot": 12.4,
+      "tilt": 24.25,
+      "H": 67.85000000000001,
+      "w": 41.35,
+      "lipH": 9.850000000000001,
+      "front": 15.65,
+      "floor": 4.95,
+      "back": 5.300000000000001
+    },
+    "closed_form_volume_mm3": 66898.39237329306,
+    "generic_closed_form_volume_mm3": 66898.39237329306,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -20.675
+      ],
+      "max": [
+        62.88442367855606,
+        67.85000000000001,
+        20.675
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 66898.39238735012,
+      "surface_area_mm2": 13643.644060101522,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -20.675
+        ],
+        "max": [
+          62.884423680603504,
+          67.85000000149012,
+          20.675
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/phone-stand_3.json",
+    "job": "phone-stand",
+    "parameters": {
+      "slot": 9.450000000000001,
+      "tilt": 18.25,
+      "H": 41.2,
+      "w": 36.95,
+      "lipH": 19.6,
+      "front": 24.900000000000002,
+      "floor": 9.200000000000001,
+      "back": 5.6000000000000005
+    },
+    "closed_form_volume_mm3": 40425.09330755711,
+    "generic_closed_form_volume_mm3": 40425.09330755711,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -18.475
+      ],
+      "max": [
+        51.002537351330574,
+        41.2,
+        18.475
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 40425.09331474554,
+      "surface_area_mm2": 9590.223375453505,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -18.475
+        ],
+        "max": [
+          51.00253735482693,
+          41.20000000298023,
+          18.475
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/wall-bracket_0.json",
+    "job": "wall-bracket",
+    "parameters": {
+      "arm": 70,
+      "height": 70,
+      "t": 4,
+      "w": 24,
+      "g": 14,
+      "d": 4.2
+    },
+    "closed_form_volume_mm3": 15297.164611181352,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -12
+      ],
+      "max": [
+        70,
+        70,
+        12
+      ]
+    },
+    "expected_genus": 2,
+    "spatial_kernel": {
+      "volume_mm3": 15297.16461125232,
+      "surface_area_mm2": 7857.618671006914,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -12
+        ],
+        "max": [
+          70,
+          70,
+          12
+        ]
+      },
+      "genus": 2
+    }
+  },
+  {
+    "file": "specs/wall-bracket_1.json",
+    "job": "wall-bracket",
+    "parameters": {
+      "arm": 58.85,
+      "height": 105.80000000000001,
+      "t": 4.3,
+      "w": 18.55,
+      "g": 11.15,
+      "d": 8.950000000000001
+    },
+    "closed_form_volume_mm3": 13402.362672601523,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -9.275
+      ],
+      "max": [
+        58.85,
+        105.80000000000001,
+        9.275
+      ]
+    },
+    "expected_genus": 2,
+    "spatial_kernel": {
+      "volume_mm3": 13402.362664599963,
+      "surface_area_mm2": 7481.1544412686135,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -9.275
+        ],
+        "max": [
+          58.850000001490116,
+          105.79999999701977,
+          9.275
+        ]
+      },
+      "genus": 2
+    }
+  },
+  {
+    "file": "specs/wall-bracket_2.json",
+    "job": "wall-bracket",
+    "parameters": {
+      "arm": 58.25,
+      "height": 80.10000000000001,
+      "t": 8.15,
+      "w": 23.150000000000002,
+      "g": 41.800000000000004,
+      "d": 8.05
+    },
+    "closed_form_volume_mm3": 43959.86153891794,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -11.575000000000001
+      ],
+      "max": [
+        58.25,
+        80.10000000000001,
+        11.575000000000001
+      ]
+    },
+    "expected_genus": 2,
+    "spatial_kernel": {
+      "volume_mm3": 43959.86153927774,
+      "surface_area_mm2": 9917.562276693436,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -11.575000000000001
+        ],
+        "max": [
+          58.25,
+          80.10000000149012,
+          11.575000000000001
+        ]
+      },
+      "genus": 2
+    }
+  },
+  {
+    "file": "specs/wall-bracket_3.json",
+    "job": "wall-bracket",
+    "parameters": {
+      "arm": 123.75,
+      "height": 78.55000000000001,
+      "t": 7.300000000000001,
+      "w": 10.9,
+      "g": 1.8,
+      "d": 4.95
+    },
+    "closed_form_volume_mm3": 15252.842409919773,
+    "generic_closed_form_volume_mm3": null,
+    "closed_form_bbox_mm": {
+      "min": [
+        0,
+        0,
+        -5.45
+      ],
+      "max": [
+        123.75,
+        78.55000000000001,
+        5.45
+      ]
+    },
+    "expected_genus": 2,
+    "spatial_kernel": {
+      "volume_mm3": 15252.842403676003,
+      "surface_area_mm2": 7399.43116870339,
+      "bbox_mm": {
+        "min": [
+          0,
+          0,
+          -5.45
+        ],
+        "max": [
+          123.75,
+          78.54999999701977,
+          5.45
+        ]
+      },
+      "genus": 2
+    }
+  },
+  {
+    "file": "specs/flange-plate_0.json",
+    "job": "flange-plate",
+    "parameters": {
+      "D": 70,
+      "B": 22,
+      "th": 8,
+      "N": 4,
+      "bcd": 50,
+      "d": 5.2,
+      "cb": 9.5,
+      "cbd": 4
+    },
+    "closed_form_volume_mm3": 26272.636707146867,
+    "generic_closed_form_volume_mm3": 26272.636707146863,
+    "closed_form_bbox_mm": {
+      "min": [
+        -35,
+        0,
+        -35
+      ],
+      "max": [
+        35,
+        8,
+        35
+      ]
+    },
+    "expected_genus": 5,
+    "spatial_kernel": {
+      "volume_mm3": 26272.636708331247,
+      "surface_area_mm2": 9819.398576619606,
+      "bbox_mm": {
+        "min": [
+          -35.01249808818102,
+          0,
+          -35.01249808818102
+        ],
+        "max": [
+          35.01249808818102,
+          8,
+          35.01249808818102
+        ]
+      },
+      "genus": 5
+    }
+  },
+  {
+    "file": "specs/flange-plate_1.json",
+    "job": "flange-plate",
+    "parameters": {
+      "D": 82,
+      "B": 49.800000000000004,
+      "th": 7.75,
+      "N": 4,
+      "bcd": 65.75,
+      "d": 10.950000000000001,
+      "cb": 11.950000000000001,
+      "cbd": 5.45
+    },
+    "closed_form_volume_mm3": 22520.893745853897,
+    "generic_closed_form_volume_mm3": 22520.8937458539,
+    "closed_form_bbox_mm": {
+      "min": [
+        -41,
+        0,
+        -41
+      ],
+      "max": [
+        41,
+        7.75,
+        41
+      ]
+    },
+    "expected_genus": 5,
+    "spatial_kernel": {
+      "volume_mm3": 22520.89374565851,
+      "surface_area_mm2": 10258.744627505093,
+      "bbox_mm": {
+        "min": [
+          -41.014640621840954,
+          0,
+          -41.014640621840954
+        ],
+        "max": [
+          41.014640621840954,
+          7.75,
+          41.014640621840954
+        ]
+      },
+      "genus": 5
+    }
+  },
+  {
+    "file": "specs/flange-plate_2.json",
+    "job": "flange-plate",
+    "parameters": {
+      "D": 111.55000000000001,
+      "B": 22.1,
+      "th": 13.05,
+      "N": 7,
+      "bcd": 93.4,
+      "d": 6.550000000000001,
+      "cb": 14.15,
+      "cbd": 0.2
+    },
+    "closed_form_volume_mm3": 119280.98006223179,
+    "generic_closed_form_volume_mm3": 119280.98006223184,
+    "closed_form_bbox_mm": {
+      "min": [
+        -55.775000000000006,
+        0,
+        -55.775000000000006
+      ],
+      "max": [
+        55.775000000000006,
+        13.05,
+        55.775000000000006
+      ]
+    },
+    "expected_genus": 8,
+    "spatial_kernel": {
+      "volume_mm3": 119280.98006039075,
+      "surface_area_mm2": 25702.56992460666,
+      "bbox_mm": {
+        "min": [
+          -55.79491659998894,
+          0,
+          -55.79491659998894
+        ],
+        "max": [
+          55.79491659998894,
+          13.05,
+          55.79491659998894
+        ]
+      },
+      "genus": 8
+    }
+  },
+  {
+    "file": "specs/flange-plate_3.json",
+    "job": "flange-plate",
+    "parameters": {
+      "D": 66,
+      "B": 29.650000000000002,
+      "th": 10.600000000000001,
+      "N": 7,
+      "bcd": 47.6,
+      "d": 7,
+      "cb": 13.950000000000001,
+      "cbd": 5
+    },
+    "closed_form_volume_mm3": 22087.763544800728,
+    "generic_closed_form_volume_mm3": 22087.76354480073,
+    "closed_form_bbox_mm": {
+      "min": [
+        -33,
+        0,
+        -33
+      ],
+      "max": [
+        33,
+        10.600000000000001,
+        33
+      ]
+    },
+    "expected_genus": 8,
+    "spatial_kernel": {
+      "volume_mm3": 22087.76354463117,
+      "surface_area_mm2": 10506.71141803643,
+      "bbox_mm": {
+        "min": [
+          -33.01283124089241,
+          0,
+          -33.01283124089241
+        ],
+        "max": [
+          33.01283124089241,
+          10.600000000000001,
+          33.01283124089241
+        ]
+      },
+      "genus": 8
+    }
+  },
+  {
+    "file": "specs/knob_0.json",
+    "job": "knob",
+    "parameters": {
+      "bore": 6,
+      "depth": 12,
+      "D": 28,
+      "H": 18,
+      "c": 2
+    },
+    "closed_form_volume_mm3": 10576.695267085637,
+    "generic_closed_form_volume_mm3": 10576.695267085637,
+    "closed_form_bbox_mm": {
+      "min": [
+        -14,
+        0,
+        -14
+      ],
+      "max": [
+        14,
+        18,
+        14
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 10576.695267928333,
+      "surface_area_mm2": 2933.599524434566,
+      "bbox_mm": {
+        "min": [
+          -14.012804463505745,
+          0,
+          -14.012804463505745
+        ],
+        "max": [
+          14.012804463505745,
+          18,
+          14.012804463505745
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/knob_1.json",
+    "job": "knob",
+    "parameters": {
+      "bore": 18.95,
+      "depth": 10.200000000000001,
+      "D": 70.7,
+      "H": 43.1,
+      "c": 3.7
+    },
+    "closed_form_volume_mm3": 164858.09422216297,
+    "generic_closed_form_volume_mm3": 164858.094222163,
+    "closed_form_bbox_mm": {
+      "min": [
+        -35.35,
+        0,
+        -35.35
+      ],
+      "max": [
+        35.35,
+        43.1,
+        35.35
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 164858.0942513587,
+      "surface_area_mm2": 17534.364949577517,
+      "bbox_mm": {
+        "min": [
+          -35.36262307316065,
+          0,
+          -35.36262307316065
+        ],
+        "max": [
+          35.36262307316065,
+          43.100000001490116,
+          35.36262307316065
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/knob_2.json",
+    "job": "knob",
+    "parameters": {
+      "bore": 27.35,
+      "depth": 28.150000000000002,
+      "D": 31.35,
+      "H": 58.85,
+      "c": 1.1
+    },
+    "closed_form_volume_mm3": 28830.53591011585,
+    "generic_closed_form_volume_mm3": 28830.535910115854,
+    "closed_form_bbox_mm": {
+      "min": [
+        -15.675,
+        0,
+        -15.675
+      ],
+      "max": [
+        15.675,
+        58.85,
+        15.675
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 28830.535886532747,
+      "surface_area_mm2": 9696.857844210634,
+      "bbox_mm": {
+        "min": [
+          -15.68759911507368,
+          0,
+          -15.68759911507368
+        ],
+        "max": [
+          15.68759911507368,
+          58.850000001490116,
+          15.68759911507368
+        ]
+      },
+      "genus": 0
+    }
+  },
+  {
+    "file": "specs/knob_3.json",
+    "job": "knob",
+    "parameters": {
+      "bore": 27.5,
+      "depth": 15,
+      "D": 31.5,
+      "H": 17.3,
+      "c": 2.8000000000000003
+    },
+    "closed_form_volume_mm3": 4207.789771757138,
+    "generic_closed_form_volume_mm3": 4207.7897717571395,
+    "closed_form_bbox_mm": {
+      "min": [
+        -15.75,
+        0,
+        -15.75
+      ],
+      "max": [
+        15.75,
+        17.3,
+        15.75
+      ]
+    },
+    "expected_genus": 0,
+    "spatial_kernel": {
+      "volume_mm3": 4207.789772169736,
+      "surface_area_mm2": 4395.193034463104,
+      "bbox_mm": {
+        "min": [
+          -15.762659400701523,
+          0,
+          -15.762659400701523
+        ],
+        "max": [
+          15.762659400701523,
+          17.299999997019768,
+          15.762659400701523
+        ]
+      },
+      "genus": 0
+    }
+  }
+]

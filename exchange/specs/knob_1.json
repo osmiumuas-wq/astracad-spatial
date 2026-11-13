@@ -1,0 +1,55 @@
+{
+  "language": 2,
+  "name": "knob",
+  "units": "mm",
+  "features": [
+    {
+      "$op": "sketch.profile",
+      "id": "half",
+      "sketched_on": "front",
+      "args": {
+        "points": [
+          [
+            9.475,
+            0
+          ],
+          [
+            35.35,
+            0
+          ],
+          [
+            35.35,
+            39.4
+          ],
+          [
+            31.650000000000002,
+            43.1
+          ],
+          [
+            0,
+            43.1
+          ],
+          [
+            0,
+            10.200000000000001
+          ],
+          [
+            9.475,
+            10.200000000000001
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.revolve",
+      "id": "body",
+      "args": {
+        "axis": "v",
+        "angle": 360
+      }
+    }
+  ],
+  "notes": {
+    "hand_check": "pi R^2 (H - c) + pi c (R^2 + R (R - c) + (R - c)^2)/3 - pi rb^2 depth"
+  }
+}

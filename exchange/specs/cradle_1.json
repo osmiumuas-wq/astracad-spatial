@@ -1,0 +1,55 @@
+{
+  "language": 2,
+  "name": "cradle",
+  "units": "mm",
+  "features": [
+    {
+      "$op": "sketch.rectangle",
+      "id": "outline",
+      "sketched_on": "top",
+      "args": {
+        "width": 140.1,
+        "height": 113.25000000000001,
+        "x": -70.05,
+        "y": -56.62500000000001
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "block",
+      "args": {
+        "depth": 19.130000000000003
+      }
+    },
+    {
+      "$op": "ref.plane",
+      "id": "rim",
+      "args": {
+        "base": "top",
+        "offset": 19.130000000000003
+      }
+    },
+    {
+      "$op": "sketch.rectangle",
+      "id": "pocket_sk",
+      "sketched_on": "rim",
+      "args": {
+        "width": 125.2,
+        "height": 98.35000000000001,
+        "x": -62.6,
+        "y": -49.175000000000004
+      }
+    },
+    {
+      "$op": "feature.cut",
+      "id": "pocket",
+      "args": {
+        "depth": 12.330000000000002,
+        "direction": "reverse"
+      }
+    }
+  ],
+  "notes": {
+    "hand_check": "pocket = (L + 2 clr) x (W + 2 clr) x H hold; volume = outer area x (floor + H hold) - pocket"
+  }
+}

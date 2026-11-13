@@ -1,0 +1,313 @@
+/**
+ * Engine worker: the Part Language kernel, the truth gate, the stress solver,
+ * the structural agent's closed loop and the topology optimiser.
+ *
+ * The page runs two of these: one answers builds while a handle is dragged,
+ * the other carries long analysis jobs and can be terminated to cancel them.
+ */
+
+import wasmUrl from 'manifold-3d/manifold.wasm?url';
+import { autoReinforce, StressSummary } from './agents.js';
+import { buildRecord, toBinaryStl } from './exporters.js';
+import { expectVolume } from './expect.js';
+import { FeaResult, solveFea } from './fea.js';
+import { Job, jobById, Params } from './jobs.js';
+import { initKernel, Kernel } from './kernel.js';
+import { materialById } from './materials.js';
+import { LoadSpec, Request, Response, SolveOutcome } from './protocol.js';
+import { fieldSampler, optimise } from './topo.js';
+import { runGate } from './truth.js';
+import { BuildOutput, MeshData, SpecError, Vec3 } from './types.js';
+
+const scope = self as unknown as {
+  postMessage(message: Response, transfer?: Transferable[]): void;
+  onmessage: ((event: MessageEvent<Request>) => void) | null;
+};
+
+const kernelReady = initKernel(() => wasmUrl);
+
+let cache: { key: string; out: BuildOutput } | null = null;
+let grown: { key: string; mesh: MeshData; volume: number } | null = null;
+
+function build(kernel: Kernel, job: Job, params: Params): BuildOutput {
+  const key = `${job.id}|${JSON.stringify(params)}`;
+  if (cache?.key !== key) {
+    cache = { key, out: kernel.build(job.spec(params)) };
+  }
+  return cache.out;
+}
+
+const meshBuffers = (m: MeshData): Transferable[] => [
+  m.positions.buffer,
+  m.normals.buffer,
+  m.indices.buffer,
+  m.edges.buffer,
+];
+
+const copyMesh = (m: MeshData): MeshData => ({
+  positions: m.positions.slice(),
+  normals: m.normals.slice(),
+  indices: m.indices.slice(),
+  edges: m.edges.slice(),
+});
+
+function loadOf(job: Job, params: Params, custom?: LoadSpec): { fixtureLabel: string; load: LoadSpec; fixture: ReturnType<Job['loadCase']>['fixture'] } {
+  const lc = job.loadCase(params);
+  return {
+    fixtureLabel: lc.fixtureLabel,
+    fixture: lc.fixture,
+    load: custom ?? { region: lc.region, dir: lc.dir, newtons: lc.newtons, label: lc.loadLabel },
+  };
+}
+
+function outcome(res: FeaResult, loadLabel: string, fixtureLabel: string): SolveOutcome {
+  return {
+    newtons: res.newtons,
+    stressP99: res.stressP99,
+    stressMax: res.stressMax,
+    maxDisp: res.maxDisp,
+    elements: res.stats.elements,
+    cell: res.cell,
+    vertexDisp: res.vertexDisp,
+    vertexStress: res.vertexStress,
+    loadLabel,
+    fixtureLabel,
+    iterations: res.stats.iterations,
+    converged: res.stats.converged,
+    ms: res.ms,
+  };
+}
+
+async function handle(req: Request): Promise<void> {
+  const kernel = await kernelReady;
+  const job = jobById(req.job);
+  const params = job.clamp(req.params).params;
+
+  if (req.type === 'build') {
+    const spec = job.spec(params);
+    const full = spec.features.length;
+    const upTo = req.upTo ?? full;
+    const out = upTo >= full ? build(kernel, job, params) : kernel.build(spec, upTo);
+    // The gate judges the finished part only; a rolled-back view is a preview.
+    const gate =
+      upTo >= full
+        ? runGate({
+            props: out.props,
+            generic: expectVolume(spec),
+            jobVolume: job.volume(params),
+            jobBox: job.box(params),
+            jobGenus: job.genus(params),
+          })
+        : { verdict: 'kernel-only' as const, checks: [] };
+    const mesh = copyMesh(out.mesh);
+    scope.postMessage(
+      {
+        id: req.id,
+        type: 'built',
+        mesh,
+        props: out.props,
+        gate,
+        features: spec.features.map((f) => ({ id: f.id, op: f.$op })),
+        applied: out.applied.length,
+        ms: out.ms,
+      },
+      meshBuffers(mesh),
+    );
+    return;
+  }
+
+  const material = materialById(req.material);
+  const wallHint = job.roles.wall ? params[job.roles.wall] : undefined;
+
+  if (req.type === 'solve') {
+    const { fixture, fixtureLabel, load } = loadOf(job, params, req.load);
+    const useGrown = req.grown && grown?.key === `${job.id}|${JSON.stringify(params)}`;
+    const out = build(kernel, job, params);
+    const mesh = useGrown && grown ? grown.mesh : out.mesh;
+    const res = solveFea({
+      positions: mesh.positions,
+      indices: mesh.indices,
+      volume: useGrown && grown ? grown.volume : out.props.volume,
+      E: material.E,
+      nu: material.nu,
+      fixture,
+      load,
+      wallHint,
+      targetElements: req.target ?? 3500,
+      tol: 1e-4,
+      onProgress: (iteration, residual) =>
+        scope.postMessage({ id: req.id, type: 'progress', iteration, residual }),
+    });
+    const o = outcome(res, load.label, fixtureLabel);
+    scope.postMessage({ id: req.id, type: 'solved', outcome: o }, [
+      o.vertexDisp.buffer,
+      o.vertexStress.buffer,
+    ]);
+    return;
+  }
+
+  if (req.type === 'reinforce') {
+    const result = autoReinforce(
+      job,
+      params,
+      material,
+      req.loadN,
+      (p) => {
+        const out = build(kernel, job, p);
+        const { fixture, load } = loadOf(job, p, req.load);
+        const res = solveFea({
+          positions: out.mesh.positions,
+          indices: out.mesh.indices,
+          volume: out.props.volume,
+          E: material.E,
+          nu: material.nu,
+          fixture,
+          load,
+          wallHint: job.roles.wall ? p[job.roles.wall] : undefined,
+          targetElements: 3000,
+          tol: 1e-4,
+        });
+        const stress: StressSummary = {
+          newtons: res.newtons,
+          stressP99: res.stressP99,
+          stressMax: res.stressMax,
+          maxDisp: res.maxDisp,
+          elements: res.stats.elements,
+          cell: res.cell,
+        };
+        return { props: out.props, stress };
+      },
+      (step) => scope.postMessage({ id: req.id, type: 'reinforce-step', step }),
+    );
+    scope.postMessage({ id: req.id, type: 'reinforced', steps: result.steps, reached: result.reached });
+    return;
+  }
+
+  if (req.type === 'grow') {
+    const t0 = performance.now();
+    const spec = job.spec(params);
+    const out = build(kernel, job, params);
+    const { fixture, fixtureLabel, load } = loadOf(job, params, req.load);
+    const total = 18;
+    const carve = (field: Parameters<typeof fieldSampler>[0], final = false) => {
+      const g = field.grid;
+      const min: Vec3 = [g.origin[0] - g.h, g.origin[1] - g.h, g.origin[2] - g.h];
+      const max: Vec3 = [
+        g.origin[0] + (g.nx + 1) * g.h,
+        g.origin[1] + (g.ny + 1) * g.h,
+        g.origin[2] + (g.nz + 1) * g.h,
+      ];
+      return kernel.carve(spec, fieldSampler(field), { min, max }, g.h * (final ? 0.85 : 1.3));
+    };
+    const res = optimise({
+      positions: out.mesh.positions,
+      indices: out.mesh.indices,
+      volume: out.props.volume,
+      E: material.E,
+      nu: material.nu,
+      fixture,
+      load,
+      // The optimiser works on a coarse grid; it does not need cells sized to the wall.
+      wallHint: undefined,
+      keep: req.keep,
+      iterations: total,
+      targetElements: 1600,
+      onIteration: (info) => {
+        if (info.iteration % 3 === 0) {
+          try {
+            const frame = carve(info.field);
+            scope.postMessage(
+              { id: req.id, type: 'grow-frame', iteration: info.iteration, of: total, mesh: frame.mesh, props: frame.props },
+              meshBuffers(frame.mesh),
+            );
+          } catch {
+            // A frame that cannot be meshed is skipped; the final one is checked below.
+          }
+        }
+      },
+    });
+    const final = carve(res.field, true);
+    grown = {
+      key: `${job.id}|${JSON.stringify(params)}`,
+      mesh: copyMesh(final.mesh),
+      volume: final.props.volume,
+    };
+    // Prove the grown shape: solve it again from its own mesh.
+    const check = solveFea({
+      positions: final.mesh.positions,
+      indices: final.mesh.indices,
+      volume: final.props.volume,
+      E: material.E,
+      nu: material.nu,
+      fixture,
+      load,
+      wallHint,
+      targetElements: 3000,
+      tol: 1e-4,
+    });
+    const o = outcome(check, load.label, fixtureLabel);
+    scope.postMessage(
+      {
+        id: req.id,
+        type: 'grown',
+        mesh: final.mesh,
+        props: final.props,
+        outcome: o,
+        kept: final.props.volume / out.props.volume,
+        iterations: res.iterations,
+        ms: performance.now() - t0,
+      },
+      [...meshBuffers(final.mesh), o.vertexDisp.buffer, o.vertexStress.buffer],
+    );
+    return;
+  }
+
+  if (req.type === 'export') {
+    const spec = job.spec(params);
+    const out = build(kernel, job, params);
+    const gate = runGate({
+      props: out.props,
+      generic: expectVolume(spec),
+      jobVolume: job.volume(params),
+      jobBox: job.box(params),
+      jobGenus: job.genus(params),
+    });
+    const source = req.grownMesh ?? out.mesh;
+    const stl = toBinaryStl(source.positions, source.indices, `${spec.name} ${gate.verdict}`);
+    const record = await buildRecord({
+      job: job.id,
+      material: material.id,
+      parameters: params,
+      measurements: req.measurements,
+      spec,
+      kernel: out.props,
+      truthGate: gate,
+    });
+    scope.postMessage(
+      { id: req.id, type: 'exported', stl, record, name: req.grownMesh ? `${spec.name}_grown` : spec.name },
+      [stl.buffer],
+    );
+  }
+}
+
+scope.onmessage = (event) => {
+  const req = event.data;
+  handle(req).catch((error: unknown) => {
+    scope.postMessage({
+      id: req.id,
+      type: 'error',
+      message: error instanceof Error ? error.message : String(error),
+      featureId: error instanceof SpecError ? error.featureId : undefined,
+    });
+  });
+};
+
+kernelReady.then(
+  () => scope.postMessage({ id: 0, type: 'ready' }),
+  (error: unknown) =>
+    scope.postMessage({
+      id: 0,
+      type: 'error',
+      message: `The geometry kernel failed to load: ${error instanceof Error ? error.message : String(error)}`,
+    }),
+);

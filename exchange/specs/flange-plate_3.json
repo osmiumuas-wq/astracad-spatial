@@ -1,0 +1,78 @@
+{
+  "language": 2,
+  "name": "flange_plate",
+  "units": "mm",
+  "features": [
+    {
+      "$op": "sketch.loops",
+      "id": "disc",
+      "sketched_on": "top",
+      "args": {
+        "loops": [
+          [
+            [
+              "C",
+              0,
+              0,
+              33
+            ]
+          ],
+          [
+            [
+              "C",
+              0,
+              0,
+              14.825000000000001
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.extrude",
+      "id": "plate",
+      "args": {
+        "depth": 10.600000000000001
+      }
+    },
+    {
+      "$op": "ref.plane",
+      "id": "deck",
+      "args": {
+        "base": "top",
+        "offset": 10.600000000000001
+      }
+    },
+    {
+      "$op": "feature.hole",
+      "id": "bolt",
+      "sketched_on": "deck",
+      "args": {
+        "diameter": 7,
+        "depth": 10.600000000000001,
+        "direction": "reverse",
+        "type": "counterbore",
+        "cbore_diameter": 13.950000000000001,
+        "cbore_depth": 5,
+        "centers": [
+          [
+            23.8,
+            0
+          ]
+        ]
+      }
+    },
+    {
+      "$op": "feature.pattern.circular",
+      "id": "bolts",
+      "args": {
+        "feature": "bolt",
+        "count": 7,
+        "axis": "Y"
+      }
+    }
+  ],
+  "notes": {
+    "hand_check": "pi (D^2 - B^2)/4 th - N [pi d^2/4 th + pi (cb^2 - d^2)/4 cbd]"
+  }
+}

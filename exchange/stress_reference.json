@@ -1,0 +1,57 @@
+{
+  "spec": "specs/wall-bracket_0.json",
+  "parameters": {
+    "arm": 70,
+    "height": 70,
+    "t": 4,
+    "w": 24,
+    "g": 14,
+    "d": 4.2
+  },
+  "material": {
+    "name": "PLA",
+    "E_mpa": 3500,
+    "nu": 0.36
+  },
+  "fixture": {
+    "description": "Back face screwed to the wall",
+    "all_nodes_fixed_on": "the face x = 0"
+  },
+  "load": {
+    "description": "Hanging load at the arm tip",
+    "total_newtons": 50,
+    "direction": [
+      0,
+      -1,
+      0
+    ],
+    "applied_on": "the top face (y = height) for x from 0.72 * arm to arm, full width, spread evenly"
+  },
+  "method": "linear static, small displacement, voxel hexahedra with assumed shear strains",
+  "spatial_solver": [
+    {
+      "cells": 7428,
+      "cell_mm": 1.3333333333333333,
+      "max_displacement_mm": 3.41853677831819,
+      "von_mises_p99_mpa": 27.193180084228516,
+      "von_mises_max_mpa": 30.55604362487793,
+      "iterations": 734
+    },
+    {
+      "cells": 7428,
+      "cell_mm": 1.3333333333333333,
+      "max_displacement_mm": 3.41853677831819,
+      "von_mises_p99_mpa": 27.193180084228516,
+      "von_mises_max_mpa": 30.55604362487793,
+      "iterations": 734
+    },
+    {
+      "cells": 10761,
+      "cell_mm": 1.1934094621261562,
+      "max_displacement_mm": 3.9802506247119984,
+      "von_mises_p99_mpa": 28.244251251220703,
+      "von_mises_max_mpa": 32.9560546875,
+      "iterations": 955
+    }
+  ]
+}

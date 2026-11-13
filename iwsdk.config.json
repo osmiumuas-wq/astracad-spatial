@@ -1,0 +1,59 @@
+{
+  "$schema": "./node_modules/@iwsdk/core/dist/schemas/iwsdk-project.v1.schema.json",
+  "version": "iwsdk.project.v1",
+  "scene": "./public/scenes/main.iwsdk.scene.json",
+  "assets": {
+    "module": "./src/assets"
+  },
+  "components": {
+    "module": "./src/components"
+  },
+  "world": {
+    "xr": {
+      "mode": "ar",
+      "offer": "always",
+      "referenceSpace": "local-floor",
+      "features": {
+        "handTracking": true,
+        "anchors": true,
+        "planeDetection": true,
+        "hitTest": true,
+        "depthSensing": {
+          "usage": "gpu-optimized",
+          "format": "float32"
+        },
+        "gazeTracking": true
+      }
+    },
+    "input": {
+      "canvasPointerEvents": true
+    },
+    "render": {
+      "fov": 42,
+      "near": 0.01,
+      "far": 60,
+      "stencil": true,
+      "camera": {
+        "position": [0.2, 1.33, 0.02],
+        "lookAt": [0.06, 1.05, -0.5]
+      }
+    },
+    "features": {
+      "locomotion": false,
+      "grabbing": false,
+      "physics": false,
+      "sceneUnderstanding": true,
+      "environmentRaycast": true,
+      "spatialUI": {
+        "kit": "horizon",
+        "preferredColorScheme": "dark"
+      }
+    }
+  },
+  "dev": {
+    "emulator": {
+      "device": "metaQuest3",
+      "environment": "home_office"
+    }
+  }
+}
