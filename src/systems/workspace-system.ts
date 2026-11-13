@@ -32,6 +32,7 @@ import type { Mode } from '../app/app.js';
 import { CALIBRATION_READINGS, CARD_MM } from '../engine/calibration.js';
 import { CaptureSystem } from './capture-system.js';
 import { FlowSystem } from './flow-system.js';
+import { DrawingSystem } from './drawing-system.js';
 import { HingeSystem } from './hinge-system.js';
 import { ModeSystem } from './mode-system.js';
 import { PrintSystem } from './print-system.js';
@@ -199,11 +200,12 @@ export class WorkspaceSystem extends createSystem({
     );
     row(
       [
-        ['act:job', 'Next part', () => this.nextJob()],
-        ['act:mat', 'PLA', () => this.nextMaterial()],
-        ['act:save', 'Save', () => { if (app.save()) sfx.play('save'); }],
-        ['act:share', 'Share', () => { this.qrOpen = !this.qrOpen; this.coOpen = false; this.refreshShare(); }],
-        ['act:co', 'Co-design', () => { this.coOpen = !this.coOpen; this.qrOpen = false; this.refreshShare(); }],
+        ['act:job', 'Next part', () => this.nextJob(), 0.052],
+        ['act:mat', 'PLA', () => this.nextMaterial(), 0.052],
+        ['act:save', 'Save', () => { if (app.save()) sfx.play('save'); }, 0.052],
+        ['act:share', 'Share', () => { this.qrOpen = !this.qrOpen; this.coOpen = false; this.refreshShare(); }, 0.052],
+        ['act:co', 'Co-design', () => { this.coOpen = !this.coOpen; this.qrOpen = false; this.refreshShare(); }, 0.052],
+        ['act:drawing', 'Drawing', () => void this.world.getSystem(DrawingSystem)?.toggle(), 0.052],
       ],
       -0.015,
     );

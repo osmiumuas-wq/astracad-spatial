@@ -235,6 +235,13 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
           download(res.bytes, `${app.job.id}${colors ? '_stress' : ''}.3mf`, 'model/3mf');
           app.say(colors ? `3MF saved with ${res.colors} stress colours.` : '3MF saved. Run a load test first to include stress colours.', 'good');
         } }, 'Download 3MF'),
+        h('button', { type: 'button', title: 'Front, top and right views with dimensions and a title block (A4, SVG)', click: async () => {
+          const d = await app.makeDrawing();
+          if (d) {
+            download(d.svg, `${d.name}_drawing.svg`, 'image/svg+xml');
+            app.say(`Drawing saved${d.holes ? ` with ${d.holes} through-hole callout${d.holes === 1 ? '' : 's'}` : ''}. Open it in a browser to print or save as PDF.`, 'good');
+          }
+        } }, 'Download drawing'),
       ),
       h('div', { class: 'share' }, qr, h('div', {}, h('p', { class: 'note' }, 'Scan to open this exact part on another device. The link holds the part; no server is involved.'), link)),
     ),

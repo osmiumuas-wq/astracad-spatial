@@ -38,6 +38,7 @@ import { dailyBrief, dailyMet } from '../engine/daily.js';
 import { calibrate, CALIBRATION_READINGS, CARD_MM, correct } from '../engine/calibration.js';
 import type { ImportedMesh } from '../engine/step-import.js';
 import { History } from './history.js';
+import { drawingSvg } from '../engine/drawing.js';
 
 export interface BuiltState {
   mesh: MeshData;
@@ -761,6 +762,38 @@ export class App {
   removeSaved(id: string): void {
     this.library.value = this.library.peek().filter((p) => p.id !== id);
     saveLibrary(this.library.peek());
+  }
+
+  /** A three-view A4 drawing of the current part, as SVG text. */
+  async makeDrawing(): Promise<{ svg: string; name: string; holes: number } | null> {
+    const built = this.built.peek();
+    if (!built || this.rollback.peek() !== null) {
+      this.say('A drawing is made of the finished part.', 'warn');
+      return null;
+    }
+    const job = this.job;
+    const params = this.params.peek();
+    const mat = this.materialData;
+    try {
+      const res = await this.engine.run<'viewed'>({ type: 'views', job: job.id, params });
+      const b = job.box(params).box;
+      const unit = (u: string): string => (u === '' ? '' : ` ${u}`);
+      const { svg, holes } = drawingSvg(res.views, {
+        title: job.title,
+        name: job.id,
+        material: `${mat.name} (typical values)`,
+        massG: (built.props.volume / 1000) * mat.density,
+        volume: built.props.volume,
+        verdict: built.gate.verdict === 'verified' ? 'Verified: closed form and kernel agree' : built.gate.verdict === 'kernel-only' ? 'Kernel only' : 'Refused',
+        date: today(),
+        params: job.params.map((d) => `${d.label} = ${d.unit === '' ? Math.round(params[d.id]) : params[d.id].toFixed(2)}${unit(d.unit)}`),
+        exact: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]],
+      });
+      return { svg, name: job.id, holes: holes.reduce((s, h) => s + h.count, 0) };
+    } catch (e) {
+      this.say(e instanceof Error ? e.message : String(e), 'bad');
+      return null;
+    }
   }
 
   /** Build the STL and the JSON record for the current part. */

@@ -817,6 +817,32 @@ export class Kernel {
   }
 
   /**
+   * Silhouettes for a three-view drawing (third-angle, mm): each view is the
+   * solid's shadow along the viewing direction, as outer loops and holes.
+   * front: looking along -Z (sheet x = X, y = Y); top: looking down -Y
+   * (x = X, y = -Z); right: looking along -X (x = -Z, y = Y). A hole shows
+   * only where it goes right through in that direction.
+   */
+  views(spec: PartSpec): DrawingViews {
+    const arena: Disposable[] = [];
+    const keep = <T extends Disposable>(o: T): T => {
+      arena.push(o);
+      return o;
+    };
+    try {
+      const { solid } = this.construct(spec, spec.features.length, keep);
+      const polys = (m: Manifold): Vec2[][] => keep(m.project()).toPolygons().map((p) => p.map((q): Vec2 => [q[0], q[1]]));
+      return {
+        front: polys(solid),
+        top: polys(keep(solid.rotate([90, 0, 0]))),
+        right: polys(keep(solid.rotate([0, -90, 0]))),
+      };
+    } finally {
+      release(arena);
+    }
+  }
+
+  /**
    * Carve a solid with a scalar field (used by the topology optimiser): keeps
    * the part of `spec`'s solid where `field` is above `level`. The outer faces
    * stay the exact CAD faces; only the carved surfaces are new.
@@ -844,6 +870,13 @@ export class Kernel {
       release(arena);
     }
   }
+}
+
+/** Silhouette loops (mm, sheet axes) of the three standard views. */
+export interface DrawingViews {
+  front: Vec2[][];
+  top: Vec2[][];
+  right: Vec2[][];
 }
 
 /** Layer outlines of a part printed with `up` as the build direction. */

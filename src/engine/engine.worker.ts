@@ -119,6 +119,11 @@ async function handle(req: Request): Promise<void> {
     return;
   }
 
+  if (req.type === 'views') {
+    scope.postMessage({ id: req.id, type: 'viewed', views: kernel.views(job.spec(params)) });
+    return;
+  }
+
   if (req.type === 'flow') {
     const out = build(kernel, job, params);
     const res = solveFlow(out.mesh.positions, out.mesh.indices, req.wind);
