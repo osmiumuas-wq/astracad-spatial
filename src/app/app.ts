@@ -37,6 +37,7 @@ import {
 import { dailyBrief, dailyMet } from '../engine/daily.js';
 import { calibrate, CALIBRATION_READINGS, CARD_MM, correct } from '../engine/calibration.js';
 import type { ImportedMesh } from '../engine/step-import.js';
+import { History } from './history.js';
 
 export interface BuiltState {
   mesh: MeshData;
@@ -133,6 +134,8 @@ export class App {
 
   private noticeId = 0;
   private retestAfterBuild = false;
+  /** Undo and redo of the part (job, dimensions, material). */
+  readonly history: History;
 
   constructor() {
     this.engine.onBuilt = (b) => this.onBuilt(b);
@@ -149,7 +152,16 @@ export class App {
       this.material.value = shared.material;
       this.loadN.value = shared.job.loadCase(shared.params).newtons;
     }
+    this.history = new History(this);
     this.requestBuild();
+  }
+
+  undo(): void {
+    if (this.history.undo()) this.say('Undone.', 'info');
+  }
+
+  redo(): void {
+    if (this.history.redo()) this.say('Redone.', 'info');
   }
 
   get job(): Job {

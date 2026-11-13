@@ -144,7 +144,25 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
   // ----- parameters ----------------------------------------------------------
   const paramBox = h('div', { class: 'params' });
   const clampNote = h('p', { class: 'note' });
-  root.append(h('section', {}, h('h2', {}, 'Dimensions'), paramBox, clampNote));
+  const btnUndo = h('button', { type: 'button', title: 'Undo (Ctrl+Z)', click: () => app.undo() }, 'Undo');
+  const btnRedo = h('button', { type: 'button', title: 'Redo (Ctrl+Y or Ctrl+Shift+Z)', click: () => app.redo() }, 'Redo');
+  root.append(h('section', {}, h('h2', {}, 'Dimensions'), h('div', { class: 'row' }, btnUndo, btnRedo), paramBox, clampNote));
+  effect(() => {
+    btnUndo.disabled = !app.history.canUndo.value;
+    btnRedo.disabled = !app.history.canRedo.value;
+  });
+  window.addEventListener('keydown', (ev) => {
+    const typing = ev.target instanceof HTMLInputElement && ev.target.type === 'text';
+    if (typing || !(ev.ctrlKey || ev.metaKey)) return;
+    const k = ev.key.toLowerCase();
+    if (k === 'z' && !ev.shiftKey) {
+      ev.preventDefault();
+      app.undo();
+    } else if (k === 'y' || (k === 'z' && ev.shiftKey)) {
+      ev.preventDefault();
+      app.redo();
+    }
+  });
 
   // ----- proof ---------------------------------------------------------------
   const verdict = h('div', { class: 'verdict' });

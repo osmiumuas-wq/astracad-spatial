@@ -209,6 +209,8 @@ export class WorkspaceSystem extends createSystem({
     );
     row(
       [
+        ['act:undo', 'Undo', () => app.undo(), 0.05],
+        ['act:redo', 'Redo', () => app.redo(), 0.05],
         ['act:daily', 'Daily job', () => app.startDaily()],
         ['act:place', 'Bring bench here', () => this.place(), 0.08],
         ['act:settings', 'Access', () => { this.settingsOpen = !this.settingsOpen; this.refreshSettings(); }],
@@ -611,6 +613,8 @@ export class WorkspaceSystem extends createSystem({
     setButton('mode:sketch', { toggled: mode === 'sketch' });
     setButton('mode:capture', { toggled: mode === 'capture' });
     setButton('act:swing', { visible: app.jobId.value === 'hinge' });
+    setButton('act:undo', { disabled: !app.history.canUndo.value });
+    setButton('act:redo', { disabled: !app.history.canRedo.value });
     setButton('act:grow', { label: grown ? 'Back to solid' : 'Grow bone', disabled: busy !== null && busy.kind !== 'grow' });
     setButton('act:mat', { label: mat.name.split(' ')[0] });
     setButton('act:save', { disabled: app.built.value?.gate.verdict === 'refused' });
