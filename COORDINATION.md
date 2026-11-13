@@ -31,4 +31,29 @@ Built so far, with measured numbers: PLAN.md section 4b. Nothing has run on a Qu
 
 ## Results
 
-(none yet)
+**Task 1, Devpost text: done.** `docs/DEVPOST.md`, argued for Best Productivity Experience; items in [brackets] wait
+for the headset pass.
+
+**Task 2, phrase corpus: done.** `tests/phrases.test.ts`, 133 sentences over every part (edits, spoken numbers,
+counts, materials, actions, new parts, 10 that must not be understood). First run 126/133 (94.7 %); the misses
+showed real gaps ("shorten", "bolt circle 60" read as a count, "bore depth" read as "bore", "plate height" and "swing
+the hinge" read as new parts). After fixing the rules: 133/133. The corpus was written by Claude, not collected from
+users.
+
+**Task 3, CalculiX stress check: done.** `python scripts/verify/ccx_bracket.py <ccx.exe> <work dir>` with
+`solvers/fea/Library/bin/ccx.exe`. Conforming C3D8I hexahedra, refined 552 -> 2 448 -> 8 262 elements; tip
+deflection changed 0.6 % at the last step. Holes in the clamped back plate left out; load a uniform pressure on the
+stated patch (470.4 mm2).
+
+| | CalculiX (converged) | Spatial solver, default grid (1.33 mm) | Difference |
+|---|---|---|---|
+| Max deflection | 4.458 mm | 3.419 mm | -23 % |
+| P99 von Mises (load patch excluded) | 28.33 MPa | 27.19 MPa | -4 % |
+
+The finer spatial grid (1.19 mm) reads 3.98 mm (-11 %). Reading: the safety factor, which comes from stress, is
+within 4 % on this part; deflection on 4 mm walls reads too stiff and must be called a preview.
+
+**Task 4, second-kernel volumes: done.** `<python with OCP> scripts/verify/occ_volumes.py astracad-gen/src` builds
+each of the 24 exchange specs with OpenCASCADE (`astracad_geom.occ_build`, imported unchanged). 24/24 within 1e-5 of
+the closed form; worst 6.4e-16. The browser's Manifold kernel agrees with OpenCASCADE to within 2.0e-9 on every
+spec. (`exchange/results/` is git-ignored; rerun the scripts to regenerate.)

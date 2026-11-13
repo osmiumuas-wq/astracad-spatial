@@ -14,7 +14,7 @@
  */
 
 import { Job, Params } from './jobs.js';
-import { MATERIAL_WORDS, RULES } from './describe.js';
+import { JOB_WORDS, MATERIAL_WORDS, RULES } from './describe.js';
 
 export type Action =
   | 'undo' | 'redo' | 'test' | 'stronger' | 'grow' | 'solid' | 'flow' | 'vibration' | 'drawing'
@@ -100,26 +100,35 @@ export function wordsToDigits(text: string): string {
   return out.join(' ').replace(/\bmillimet(?:er|re)s?\b/gu, 'mm').replace(/\bdegrees?\b/gu, 'deg');
 }
 
-/** Which parameter of `job` a phrase names: rule words first, then the parameter's own label words. */
-function paramNamed(job: Job, phrase: string): string | undefined {
+/** Which parameter of `job` a phrase names, and the words that named it. */
+function paramNamed(job: Job, phrase: string): { id: string; words: string } | undefined {
   const rule = RULES[job.id];
   const candidates: [string, string[]][] = [];
   if (rule) for (const [id, words] of Object.entries(rule.words)) candidates.push([id, words]);
   for (const d of job.params) candidates.push([d.id, [d.label.toLowerCase(), ...d.label.toLowerCase().split(' ').filter((w) => w.length > 3)]]);
   if (job.id === 'sketch') candidates.push(['h', ['height', 'tall', 'thick(?:ness)?', 'high']]);
-  let best: { id: string; at: number } | undefined;
+  // The longest name wins ("bore depth" over "bore", "bolt circle" over "bolt"), then the earliest.
+  let best: { id: string; at: number; len: number; words: string } | undefined;
   for (const [id, words] of candidates) {
     for (const w of words) {
-      const m = new RegExp(String.raw`(?:^|[^a-z])(?:${w})s?(?![a-z])`, 'u').exec(phrase);
-      if (m && (!best || m.index < best.at)) best = { id, at: m.index };
+      const m = new RegExp(String.raw`(?:^|[^a-z])((?:${w})s?)(?![a-z])`, 'u').exec(phrase);
+      if (!m) continue;
+      const len = m[1].length;
+      if (!best || len > best.len || (len === best.len && m.index < best.at)) best = { id, at: m.index, len, words: m[1] };
     }
-    if (best?.id === id) break;
   }
-  return best?.id;
+  return best && { id: best.id, words: best.words };
 }
 
-const GROW = /\b(longer|wider|taller|higher|thicker|deeper|bigger|larger|more|increase|add|raise|up)\b/u;
-const SHRINK = /\b(shorter|narrower|lower|thinner|shallower|smaller|less|fewer|decrease|reduce|remove|cut|down)\b/u;
+const GROW = /\b(longer|lengthen|wider|widen|taller|higher|raise|thicker|thicken|deeper|deepen|bigger|larger|more|increase|add|up)\b/u;
+const SHRINK = /\b(shorter|shorten|narrower|narrow|lower|thinner|thin|shallower|smaller|less|fewer|decrease|reduce|remove|cut|down)\b/u;
+const PART_NOUN = /\b(bracket|flange|knob|cradle|holder|tray|clip|stand|hinge|block|box|plate|bar|disc|disk|cylinder|puck|rod|spacer|cube)\b/u;
+
+/** The job a part noun in the sentence refers to, as the describe rules read it. */
+function jobNamed(text: string): string | undefined {
+  const hit = JOB_WORDS.find(([re]) => re.test(text));
+  return hit ? (hit[1].startsWith('sketch:') ? 'sketch' : hit[1]) : undefined;
+}
 
 /** Turn one sentence into a command for the current job. */
 export function parseCommand(input: string, job: Job, params: Params): Command {
@@ -127,10 +136,13 @@ export function parseCommand(input: string, job: Job, params: Params): Command {
   // A sentence naming a new part is a description, unless it is clearly an edit of this one.
   const action = ACTIONS.find(([re]) => re.test(text));
   const num = /(\d+(?:\.\d+)?)/u.exec(text);
-  // "two more bolts" / "one fewer hole": a count, not a size (checked before sizes,
-  // because "hole" also names the bolt-hole diameter).
+  // An action without a number ("swing the hinge", "test it") is an action even if it names the part.
+  if (action && !num) return { kind: 'action', action: action[1], text: input };
+  // "two more bolts" / "one fewer hole" / "6 bolts": a count. A singular noun with a size
+  // ("bolt hole 6.6", "bolt circle 60") names a dimension instead.
   const count = job.params.find((d) => d.unit === '');
-  if (count && /\b(bolts?|holes?|screws?|spokes?)\b/u.test(text) && num && !/\bmm\b/u.test(text)) {
+  const countWords = /\b(more|fewer|less)\b/u.test(text) || /\b(bolts|holes|screws|spokes)\b/u.test(text);
+  if (count && countWords && /\b(bolts?|holes?|screws?|spokes?)\b/u.test(text) && num && !/\bmm\b/u.test(text)) {
     const v = Number(num[1]);
     const next = /\bmore\b/u.test(text) ? params[count.id] + v : /\b(fewer|less)\b/u.test(text) ? params[count.id] - v : v;
     return { kind: 'edit', changes: { [count.id]: next }, text: input };
@@ -144,13 +156,21 @@ export function parseCommand(input: string, job: Job, params: Params): Command {
     [/\b(deeper|shallower)\b/u, 'depth'],
   ];
   const implied = COMPARATIVE.find(([re]) => re.test(text))?.[1];
-  const target = paramNamed(job, text) ?? (implied ? paramNamed(job, ` ${implied} `) : undefined);
+  const named = paramNamed(job, text) ?? (implied ? paramNamed(job, ` ${implied} `) : undefined);
+  const target = named?.id;
   const editWords = GROW.test(text) || SHRINK.test(text) || /\b(set|make|change|double|twice|half|halve|to)\b/u.test(text);
 
-  // Naming a part type without edit words asks for a new part ("a flange 90 diameter with a 30 bore");
-  // with them it edits this one ("make the bracket arm 20 longer").
-  const PART_NOUN = /\b(bracket|flange|knob|cradle|holder|tray|clip|stand|hinge|block|box|plate|bar|disc|disk|cylinder|puck|rod|spacer|cube)\b/u;
-  if (PART_NOUN.test(text) && !editWords) return { kind: 'describe', text: wordsToDigits(input) };
+  // A part noun asks for a new part when it follows "a", "new" or "another", or names a different part
+  // than the one on the bench, or nothing of this part is named. Words that are part of a dimension's
+  // name ("plate height") are not a part noun.
+  const rest = named ? text.replace(named.words, ' ') : text;
+  if (PART_NOUN.test(rest)) {
+    const fresh = new RegExp(String.raw`\b(a|an|new|another)\s+(?:\w+\s+){0,3}?${PART_NOUN.source.replace(/\\b/gu, '')}`, 'u').test(rest);
+    const other = jobNamed(rest);
+    if (fresh || (other && other !== job.id) || !target || (!editWords && !num)) {
+      return { kind: 'describe', text: wordsToDigits(input) };
+    }
+  }
   if (target && (num || /\b(double|twice|half|halve)\b/u.test(text))) {
     const cur = params[target];
     let next: number | undefined;

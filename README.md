@@ -110,9 +110,10 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
 
 ## Honest limits
 
-- Stress results are a design preview: linear statics on a voxel grid, typical datasheet material values. Deflection
-  agrees with beam theory to a few percent on simple members; on thin walls the grid size moves results by up to
-  about 15 %.
+- Stress results are a design preview: linear statics on a voxel grid, typical datasheet material values. Checked
+  against CalculiX on the wall bracket (scripts/verify/ccx_bracket.py): peak stress within 4 %, but deflection reads
+  23 % low at the default grid (11 % at a finer one) because 4 mm walls are only a few cells thick. On simple members
+  deflection agrees with beam theory to a few percent.
 - The headset kernel builds sketches, extrudes, cuts, revolves, holes and patterns. Fillets, shells, lofts and sweeps
   are refused by name and belong to desktop AstraCAD.
 - Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step.
