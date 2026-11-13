@@ -50,6 +50,12 @@ export class PartView {
   private readonly heat = { value: 0 };
   /** Strength of the cyan rim light at grazing angles. */
   private readonly rim = { value: 0.55 };
+  /** Clash check: show where the part is inside or behind real things in red, instead of hiding it. */
+  private readonly clashOn = { value: false };
+  private readonly clashTime = { value: 0 };
+  private ownCompile: unknown = null;
+  private occlusionCompile: unknown = null;
+  private clashCompile: unknown = null;
 
   constructor() {
     const material = new MeshStandardMaterial({
@@ -74,11 +80,14 @@ export class PartView {
         }
         #ifdef USE_COLOR
           totalEmissiveRadiance += vColor.rgb * uHeat;
-        #endif`,
+        #endif
+`,
       );
     };
     material.onBeforeCompile = own;
-    material.customProgramCacheKey = () => (material.onBeforeCompile === own ? 'astra-part-v1' : 'astra-part-v1-occluded');
+    this.ownCompile = own;
+    material.customProgramCacheKey = () =>
+      material.onBeforeCompile === own ? 'astra-part-v1' : material.onBeforeCompile === this.clashCompile ? 'astra-part-v1-clash' : 'astra-part-v1-occluded';
     this.mesh = new Mesh(new BufferGeometry(), material);
     this.mesh.name = 'Part';
     this.mesh.frustumCulled = false;
@@ -173,6 +182,54 @@ export class PartView {
     if (this.seatReady) {
       this.pivot.position.lerp(this.seatTarget, 1 - Math.exp(-delta * 9));
     }
+    this.clashTime.value += delta;
+    this.wrapOcclusion();
+  }
+
+  /** Turn the clash check on or off (it needs IWSDK depth occlusion attached to the part). */
+  setClash(on: boolean): void {
+    this.clashOn.value = on;
+  }
+
+  /**
+   * IWSDK's depth occlusion replaces this material's compile hook with one
+   * that discards fragments behind real surfaces. Wrap it once: in clash mode
+   * those fragments are kept and pulse red instead (also as an emissive glow),
+   * so a part held against a real machine shows exactly where it runs into it.
+   */
+  private wrapOcclusion(): void {
+    const m = this.mesh.material as MeshStandardMaterial & { onBeforeCompile: (s: unknown, r: unknown) => void };
+    const cb = m.onBeforeCompile as unknown;
+    if (cb === this.ownCompile || cb === this.clashCompile || cb === this.occlusionCompile) return;
+    // A new hook from IWSDK: keep it, and patch the shader text it produces.
+    const iwsdk = m.onBeforeCompile.bind(m);
+    this.occlusionCompile = cb;
+    const wrapped = (shader: { uniforms: Record<string, unknown>; fragmentShader: string; defines?: Record<string, unknown> }, renderer: unknown): void => {
+      iwsdk(shader, renderer);
+      const block = '  if (occlusion_value < 0.01) {\n      discard;\n  }\n  diffuseColor.a *= occlusion_value;';
+      if (!shader.fragmentShader.includes(block)) return;
+      shader.uniforms.uClash = this.clashOn;
+      shader.uniforms.uClashTime = this.clashTime;
+      shader.defines = { ...(shader.defines ?? {}), ASTRA_CLASH: '' };
+      shader.fragmentShader = `uniform bool uClash;\nuniform float uClashTime;\n${shader.fragmentShader}`
+        .replace('vec4 diffuseColor = vec4( diffuse, opacity );\nif (occlusionEnabled) {', 'vec4 diffuseColor = vec4( diffuse, opacity );\nfloat clashGlow = 0.0;\nif (occlusionEnabled) {')
+        .replace(
+          block,
+          `  if (uClash) {
+    // Red where the part is inside or behind a real surface, pulsing. The final pixel is blended
+    // after lighting and tone mapping (below), so highlights cannot wash it out to pink.
+    float behind = smoothstep(0.15, 0.85, 1.0 - occlusion_value);
+    float pulse = 0.7 + 0.3 * sin(uClashTime * 9.0);
+    clashGlow = behind * pulse * 0.9;
+  } else {
+${block}
+  }`,
+        )
+        .replace('#include <dithering_fragment>', 'gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(1.0, 0.1, 0.14), clashGlow);\n#include <dithering_fragment>');
+    };
+    this.clashCompile = wrapped;
+    m.onBeforeCompile = wrapped as typeof m.onBeforeCompile;
+    m.needsUpdate = true;
   }
 
   setLook(look: PartLook): void {

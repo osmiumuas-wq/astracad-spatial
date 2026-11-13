@@ -250,6 +250,7 @@ export class WorkspaceSystem extends createSystem({
       ['reduceMotion', 'Less motion'],
       ['handed', 'Left-handed'],
       ['occlusion', 'Real occlusion'],
+      ['clash', 'Clash check'],
     ];
     toggles.forEach(([key, label], i) => {
       const b = makeButton(setEntity, { key: `set:${key}`, label, width: 0.06, height: 0.022 }, () => {
@@ -758,7 +759,7 @@ export class WorkspaceSystem extends createSystem({
     const s = ctx.app.settings.peek();
     setButton('act:settings', { toggled: this.settingsOpen });
     setButton('act:calib', { visible: this.settingsOpen });
-    for (const key of ['colorSafe', 'captions', 'sound', 'dwell', 'largeText', 'highContrast', 'reduceMotion', 'handed', 'occlusion'] as const) {
+    for (const key of ['colorSafe', 'captions', 'sound', 'dwell', 'largeText', 'highContrast', 'reduceMotion', 'handed', 'occlusion', 'clash'] as const) {
       setButton(`set:${key}`, {
         visible: this.settingsOpen,
         toggled: key === 'handed' ? s.handed === 'left' : Boolean(s[key]),

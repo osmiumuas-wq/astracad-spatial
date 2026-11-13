@@ -107,7 +107,7 @@ version" items ship as the nearest thing that is true; "cannot" items are explai
 | 7 | Pinch-and-extract | Build | Three measurements make a glowing box rise out of the real object and fly to the bench |
 | 8 | Calipers | Done | Live spread shown, never a fixed +/- figure |
 | 9 | Cradle inversion | Done | Cradle job with 0.4 mm clearance |
-| 10 | Clash with the real world | Partial | Real occlusion (depth sensing hides the part behind real hands and objects), off by default. The red clash tint is not built |
+| 10 | Clash with the real world | Done | Access, Clash check: where the part is inside or behind a real surface (headset depth map) it pulses red instead of vanishing. Emulator: bracket sunk 6 cm into the floor showed a red band exactly below the floor line. Also Real occlusion (hide behind real things). Both off by default until checked on a headset |
 | 11 | Micrometer dial | Done + build | Dial ring (done); thumb swipes on the index finger, Quest microgestures, step 0.05 mm (build) |
 | 12 | Push-pull handles | Done | 1 mm snaps |
 | 13 | Knife-hand slicer | Done | |
@@ -165,6 +165,7 @@ Day 2 progress (emulator-checked through the IWSDK CLI unless noted):
 | 19 (more) | Exploded view of the hinge (Explode button, or "pull it apart"): leaf B moves off the pin to show the pin and its clearance bore; shown in emulated XR |
 | 1, 4 (check) | Second kernel: OpenCASCADE (desktop `astracad_geom.occ_build`) built all 24 exchange specs; 24/24 within 1e-5 of the closed forms (worst 6.4e-16); the browser's Manifold kernel within 2.0e-9 of OpenCASCADE on every spec |
 | 4 (check) | CalculiX on the wall bracket (C3D8I, converged to 0.6 %): 4.458 mm deflection, 28.33 MPa P99. Spatial solver first read 3.419 mm (-23 %), 27.19 MPa (-4 %). Cause found: faces cutting mid-cell (arm faces at y = 66, 70 on a 1.333 mm grid from y = 0) overstate bending stiffness (I = 3h^3 vs 2.25h^3 for three cells). Fixes: the stress grid's origin now moves so flat faces land on cell boundaries, and the element is now the incompatible-mode hexahedron (as C3D8I). Now 4.401 mm (-1.3 %) and 28.53 MPa (+0.7 %); pinned by tests/ccx-reference.test.ts |
+| Perf (desktop, emulated XR) | 104 draw calls, 27 k triangles (incl. the emulator's room, not drawn on a headset); app systems under 0.2 ms per frame, all systems 1.2 ms (IWSDK input 0.6 ms), render 2.6 ms CPU. Not measured on a Quest |
 | Commands (check) | Phrase corpus, 133 sentences: 94.7 % on first run, 100 % after fixing the gaps it found |
 | Laser | Laser tape: Measure pressed again switches to WebXR hit tests along the hand ray; two pinches measure between real surfaces and bind to the selected dimension. Emulator: floor points aimed 600 mm apart read 597 mm (the rug is 6 mm up) |
 | 23 | Bench look: cyan rim light at grazing angles and glowing cyan edges on the part; stressed areas glow hotter from a third of yield to full at yield (shown on the wall bracket at 85 % of yield in emulated XR) |

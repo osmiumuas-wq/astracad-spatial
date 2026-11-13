@@ -116,7 +116,10 @@ World.create(
   world.registerSystem(DepthSensingSystem, { configData: { enableOcclusion: true, enableDepthTexture: true } });
   const pivotEntity = world.createTransformEntity(bench.part.pivot, { parent: turntableEntity, persistent: true });
   effect(() => {
-    const on = app.settings.value.occlusion;
+    const s = app.settings.value;
+    // Clash check needs the same depth data; it shows hidden parts in red instead of hiding them.
+    const on = s.occlusion || s.clash;
+    bench.part.setClash(s.clash);
     if (on && !pivotEntity.hasComponent(DepthOccludable)) pivotEntity.addComponent(DepthOccludable);
     if (!on && pivotEntity.hasComponent(DepthOccludable)) pivotEntity.removeComponent(DepthOccludable);
   });

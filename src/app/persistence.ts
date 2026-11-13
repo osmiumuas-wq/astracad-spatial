@@ -60,6 +60,8 @@ export interface Settings {
   dwell: boolean;
   /** Real hands and objects in front of the part hide it (headset depth sensing). */
   occlusion: boolean;
+  /** Show in red where the part is inside or behind real things (depth sensing). */
+  clash: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -72,6 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   dwell: false,
   occlusion: false,
+  clash: false,
 };
 
 export const DEFAULT_PROGRESS: Progress = {

@@ -99,7 +99,8 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
 11. Capture: tap Capture, trace round the base of a box on the table with a pinch, then pinch its top. Compare the
     part's size with a ruler.
 12. Access, then Real occlusion: hold a hand between your eyes and the part; the part should hide behind it.
-    Check the frame rate with it on.
+    Then Clash check: push the bench into a real object (Bring bench here near it); the part should glow red where
+    it is inside the object. Check the frame rate with either on.
 13. Measure, then Measure again (it reads Laser): point at a wall and pinch, then at the opposite wall. Compare
     with a tape measure.
 14. Drawing: the sheet should spring out of the part and be readable. On the flat page, Download drawing and print it.
