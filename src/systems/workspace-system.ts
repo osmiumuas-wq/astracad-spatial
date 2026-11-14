@@ -10,10 +10,14 @@
  */
 
 import {
+  Box3,
   createSystem,
   effect,
   Entity,
   Group,
+  Matrix4,
+  Mesh,
+  Object3D,
   Quaternion,
   Vector3,
   VisibilityState,
@@ -23,10 +27,10 @@ import { AGENTS, Finding } from '../engine/agents.js';
 import { dailyBrief } from '../engine/daily.js';
 import { JOBS, paramDef } from '../engine/jobs.js';
 import { MATERIALS } from '../engine/materials.js';
-import { ctx } from '../app/context.js';
+import { ctx, probe } from '../app/context.js';
 import { CSS } from '../app/palette.js';
 import { today, Settings } from '../app/persistence.js';
-import { Line, makeButton, setButton, setUiStyle, TextPanel, tickPanels } from '../app/ui3d.js';
+import { buttonMesh, highlightButton, Line, makeButton, setButton, setUiStyle, TextPanel, tickPanels } from '../app/ui3d.js';
 import { drawQr } from '../flat/flat-ui.js';
 import type { Mode } from '../app/app.js';
 import { CALIBRATION_READINGS, CARD_MM } from '../engine/calibration.js';
@@ -60,6 +64,8 @@ const COACH: { skill: string; text: string }[] = [
   { skill: 'save', text: 'Tap Save. The part goes on your shelf.' },
 ];
 
+const FIX_KEYS = ['fix:marcus', 'fix:elena', 'fix:viktor'];
+
 const SEVERITY_COLOR: Record<string, string> = {
   ok: CSS.green,
   info: CSS.cyan,
@@ -84,6 +90,13 @@ export class WorkspaceSystem extends createSystem({
   private co!: TextPanel;
   private note!: TextPanel;
   private noteUntil = 0;
+  /** null until the device's field of view is known; true for a narrow view (glasses). */
+  private compact: boolean | null = null;
+  private readonly box = new Box3();
+  private readonly part = new Box3();
+  private readonly inv = new Matrix4();
+  private readonly mat = new Matrix4();
+  private homes: { g: Object3D; p: Vector3; q: Quaternion; s: number }[] = [];
   private coCanvas!: HTMLCanvasElement;
   private coOpen = false;
   private settingsOpen = false;
@@ -634,7 +647,9 @@ export class WorkspaceSystem extends createSystem({
       return;
     }
     if (!p.coachDone) {
-      const step = COACH.findIndex((c) => !(p.skills as Record<string, number | undefined>)[c.skill]);
+      // "Pinch a Fix" is only asked for while an agent offers one; a sound part has nothing to fix.
+      const fixOffered = !app.busy.value && app.findings.value.some((f) => !!f.fix);
+      const step = COACH.findIndex((c) => !(p.skills as Record<string, number | undefined>)[c.skill] && (c.skill !== 'fix' || fixOffered));
       if (step < 0) {
         app.finishCoach();
         return;
@@ -767,11 +782,155 @@ export class WorkspaceSystem extends createSystem({
     }
   }
 
+  /**
+   * Field-of-view-aware layout. The device's real view comes from its
+   * projection matrix. A narrow view (Meta VR Glasses: 37 deg to each side,
+   * 25 deg up) cannot hold panels that sit high and wide around the bench, so
+   * the guidance text (coach, notices, captions) then follows the view with a
+   * lag, slightly above its centre, and the side panels move in towards the
+   * bench. Quest keeps the room-fixed layout.
+   */
+  private detectLayout(): void {
+    const xr = this.world.renderer.xr as unknown as { getCamera(): { cameras?: { projectionMatrix: { elements: ArrayLike<number> } }[] } };
+    const sub = xr.getCamera().cameras?.[0];
+    if (!sub) return;
+    const e = sub.projectionMatrix.elements;
+    if (!e[0] || !e[5]) return;
+    const deg = (t: number): number => (Math.atan(t) * 180) / Math.PI;
+    const up = deg((1 + e[9]) / e[5]);
+    const down = deg((1 - e[9]) / e[5]);
+    const right = deg((1 + e[8]) / e[0]);
+    const left = deg((1 - e[8]) / e[0]);
+    // Real glasses report their narrow view in the projection. The desktop emulator keeps a 90 deg
+    // projection and draws the device's view as a mask over the page instead; honour that too, so
+    // desktop tests see what the device would.
+    const emulatedMask = typeof document !== 'undefined' && !!document.querySelector('[data-webxr-visibility-mask]');
+    this.compact = up < 32 || Math.min(left, right) < 42 || emulatedMask;
+    probe.layout = { compact: this.compact, up: Math.round(up), down: Math.round(down), left: Math.round(left), right: Math.round(right) };
+    if (!this.compact) return;
+    // Side clusters (behind the bench, beside it) move in and forward, then face the eye again.
+    const eye = ctx.bench.root.localToWorld(this.tmp.set(0, 0.34, 0.42)).clone();
+    for (const g of this.ui.children) {
+      if (Math.abs(g.position.x) < 0.15 || g.position.z > 0.05) continue;
+      this.homes.push({ g, p: g.position.clone(), q: g.quaternion.clone(), s: g.scale.x });
+      // Same depth (closer would only make them wider in the view), a little smaller, then moved in
+      // until the outer edge is within 32 deg of the middle of the bench, as seen from the seat.
+      const side = Math.sign(g.position.x);
+      g.position.y -= 0.02;
+      g.scale.multiplyScalar(0.82);
+      g.userData.baseScale = g.scale.x;
+      g.updateMatrixWorld(true);
+      g.lookAt(eye);
+      const b = this.localBox(g);
+      const outer = side > 0 ? b.max.x : -b.min.x;
+      const depth = 0.42 - (b.min.z + b.max.z) / 2;
+      const over = outer - Math.tan((32 * Math.PI) / 180) * depth;
+      if (over > 0) {
+        g.position.x = side * Math.max(0.17, Math.abs(g.position.x) - over);
+        g.updateMatrixWorld(true);
+        g.lookAt(eye);
+      }
+    }
+    for (const p of [this.coach, this.note, this.caption]) {
+      this.homes.push({ g: p.group, p: p.group.position.clone(), q: p.group.quaternion.clone(), s: p.group.scale.x });
+    }
+  }
+
+  /**
+   * The button the getting-started guide wants pressed next, or null when the
+   * next step is a gesture on the part itself (its handles are already amber).
+   */
+  private guideTarget(): string | null {
+    const { app } = ctx;
+    const p = app.progress.peek();
+    if (p.coachDone || this.qrOpen || this.coOpen) return null;
+    const mode = app.mode.peek();
+    if (app.calibrating.peek() || mode === 'capture' || mode === 'sketch') return null;
+    const skills = p.skills as Record<string, number | undefined>;
+    let fixOffered = false;
+    if (!app.busy.peek()) for (const f of app.findings.peek()) if (f.fix) fixOffered = true;
+    let next = '';
+    for (const c of COACH) {
+      if (!skills[c.skill] && (c.skill !== 'fix' || fixOffered)) {
+        next = c.skill;
+        break;
+      }
+    }
+    switch (next) {
+      case 'shape':
+      case 'dial':
+        return mode === 'shape' ? null : 'mode:shape';
+      case 'measure':
+        return mode === 'measure' ? null : 'mode:measure';
+      case 'test':
+        return mode === 'test' ? null : 'mode:test';
+      case 'fix':
+        for (const k of FIX_KEYS) if (buttonMesh(k)?.visible) return k;
+        return null;
+      case 'save':
+        return 'act:save';
+      default:
+        return null;
+    }
+  }
+
+  /** Bounds of every mesh under `g` (shown or not), in the bench's own frame. */
+  private localBox(g: Object3D): Box3 {
+    const box = this.box.makeEmpty();
+    const root = ctx.bench.root;
+    root.updateMatrixWorld(true);
+    this.inv.copy(root.matrixWorld).invert();
+    g.updateMatrixWorld(true);
+    g.traverse((o) => {
+      const m = o as Mesh;
+      if (!m.isMesh) return;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      this.part.copy(m.geometry.boundingBox!).applyMatrix4(this.mat.multiplyMatrices(this.inv, m.matrixWorld));
+      box.union(this.part);
+    });
+    return box;
+  }
+
+  /** In the compact layout, ease the guidance panels to a spot just above the centre of the view. */
+  private followView(delta: number): void {
+    const head = this.player.head;
+    head.getWorldPosition(this.head);
+    head.getWorldQuaternion(this.q);
+    const k = 1 - Math.exp(-delta * 3.5);
+    const place = (g: Group, upDeg: number): void => {
+      // 0.45 m ahead (nearer than the side panels, so never behind them), `upDeg` above the view centre.
+      const a = (upDeg * Math.PI) / 180;
+      this.fwd.set(0, Math.sin(a), -Math.cos(a)).applyQuaternion(this.q).multiplyScalar(0.45).add(this.head);
+      ctx.bench.root.worldToLocal(this.fwd);
+      g.position.lerp(this.fwd, k);
+      g.updateMatrixWorld(true);
+      g.lookAt(this.head);
+    };
+    place(this.coach.group, 9);
+    place(this.note.group, 16);
+    place(this.caption.group, 3);
+  }
+
+  private restoreLayout(): void {
+    for (const h of this.homes) {
+      h.g.position.copy(h.p);
+      h.g.quaternion.copy(h.q);
+      h.g.scale.setScalar(h.s);
+      delete h.g.userData.baseScale;
+    }
+    this.homes = [];
+    this.compact = null;
+  }
+
   update(delta: number): void {
     this.elapsed += delta;
     if (this.world.visibilityState.peek() === VisibilityState.NonImmersive) {
+      if (this.compact !== null) this.restoreLayout();
       return;
     }
+    if (this.compact === null && this.placedAt > 0) this.detectLayout();
+    if (this.compact) this.followView(delta);
+    highlightButton(this.guideTarget());
     tickPanels(delta, ctx.app.settings.peek().reduceMotion);
     const showNote = this.elapsed < this.noteUntil;
     if (showNote !== this.note.group.visible) this.note.group.visible = showNote;

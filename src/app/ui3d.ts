@@ -261,6 +261,73 @@ export function setButton(
   drawButton(b);
 }
 
+// ---------------------------------------------------------------------------
+// Beacon: a soft pulsing ring behind the one button the guide wants pressed next
+// ---------------------------------------------------------------------------
+
+let beacon: Mesh<PlaneGeometry, MeshBasicMaterial> | null = null;
+let beaconCanvas: HTMLCanvasElement | null = null;
+let beaconKey = '';
+let beaconT = 0;
+
+function drawBeacon(width: number, height: number): void {
+  const pad = 0.006;
+  const c = beaconCanvas!;
+  c.width = Math.round((width + pad * 2) * PX_PER_M * 0.5);
+  c.height = Math.round((height + pad * 2) * PX_PER_M * 0.5);
+  const g = c.getContext('2d') as CanvasRenderingContext2D;
+  g.clearRect(0, 0, c.width, c.height);
+  const inset = (pad * PX_PER_M * 0.5) / 2;
+  g.shadowColor = CSS.amber;
+  g.shadowBlur = inset * 2.2;
+  g.strokeStyle = CSS.amber;
+  g.lineWidth = Math.max(4, inset * 0.95);
+  g.beginPath();
+  g.roundRect(inset, inset, c.width - inset * 2, c.height - inset * 2, (c.height - inset * 2) / 2);
+  // Twice: the second pass makes the glow read on a bright room.
+  g.stroke();
+  g.stroke();
+  beacon!.material.map!.needsUpdate = true;
+  beacon!.scale.set(width + pad * 2, height + pad * 2, 1);
+}
+
+/**
+ * Put the guide's beacon on `key` (or remove it with null). Cheap to call every
+ * frame: it only does work when the target changes.
+ */
+export function highlightButton(key: string | null): void {
+  const k = key ?? '';
+  if (k === beaconKey) return;
+  beaconKey = k;
+  if (!beacon) {
+    beaconCanvas = document.createElement('canvas');
+    const texture = new CanvasTexture(beaconCanvas);
+    texture.colorSpace = SRGBColorSpace;
+    texture.minFilter = LinearFilter;
+    texture.generateMipmaps = false;
+    beacon = new Mesh(
+      new PlaneGeometry(1, 1),
+      new MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false, depthWrite: false, side: DoubleSide }),
+    );
+    beacon.name = 'Guide beacon';
+    beacon.renderOrder = 11;
+    // Never catches a ray meant for the button.
+    beacon.raycast = () => {};
+  }
+  beacon.removeFromParent();
+  const b = k ? buttons.get(k) : undefined;
+  if (!b) return;
+  const { width, height } = b.mesh.geometry.parameters;
+  drawBeacon(width, height);
+  beacon.position.set(0, 0, -0.0006);
+  beaconT = 0;
+  b.mesh.add(beacon);
+}
+
+export function highlightedButton(): string {
+  return beaconKey;
+}
+
 export function buttonMesh(key: string): Mesh | undefined {
   return buttons.get(key)?.mesh;
 }
@@ -291,12 +358,18 @@ const panels: TextPanel[] = [];
  * (the Less motion setting).
  */
 export function tickPanels(delta: number, still: boolean): void {
+  if (beacon?.parent) {
+    beaconT += delta;
+    const wave = 0.5 + 0.5 * Math.sin(beaconT * 4.2);
+    beacon.material.opacity = still ? 0.9 : 0.45 + 0.55 * wave;
+  }
   for (const p of panels) {
     if (p.popAt < 0) continue;
     p.popAt += delta;
     const t = p.popAt;
     const s = still || t > 0.8 ? 1 : 1 - 0.06 * Math.exp(-7 * t) * Math.cos(14 * t);
-    p.group.scale.setScalar(s);
+    // A layout may have shrunk the panel (the compact view for glasses): pop around that size.
+    p.group.scale.setScalar(s * ((p.group.userData.baseScale as number | undefined) ?? 1));
     p.mesh.position.z = still ? 0 : 0.012 * Math.exp(-5 * t) * Math.sin(Math.min(Math.PI, t * 9));
     if (s === 1) {
       p.popAt = -1;

@@ -57,7 +57,7 @@ overstate bending stiffness; the grid now lines up with the part's faces.) An in
 potential-flow solve on a voxel grid, within 4 % of the textbook sphere solution two cells from the surface. Voice
 uses the browser's recogniser where there is one, and otherwise runs Whisper on the device, so audio never leaves
 it. STEP files are read by OpenCASCADE compiled to WebAssembly. Co-design uses WebRTC; a public broker only
-introduces the two browsers. 81 automated tests run before every deploy.
+introduces the two browsers. 83 automated tests run before every deploy.
 
 ## How hands are used
 
@@ -65,6 +65,20 @@ Everything works with bare hands: pinch, pull, twist, push, slice with a flat ha
 feature history on your forearm. Every button also answers a hand ray, gaze-and-pinch on Meta VR Glasses, a
 controller, a mouse, and dwell for people who cannot pinch. One-handed mode, a colour-safe stress map, captions on
 every sound and large text are in the Access menu.
+
+## The first five minutes, on any headset
+
+A six-step guide starts the first session: pull a handle, turn the dial, measure something real, test the part, take
+an agent's fix, save. The one button it wants next carries a soft pulsing amber ring, so nobody hunts through the tool
+strip. It never asks for the impossible: when no agent has a fix to offer, that step waits until one does.
+
+The layout reads the headset's real field of view from its projection. On Meta VR Glasses (37 degrees to each side,
+25 up) the guide and notices follow your view with a gentle lag, just above its centre, and the side panels shrink a
+little and move in until their outer edges fit. Quest 3 keeps the room-fixed layout.
+
+Nothing fails silently. If the geometry worker hangs or crashes it is replaced and the part rebuilt; a crashed
+analysis worker is replaced for the next job; a background error is shown once in plain words; a save the browser
+refuses (storage full) is reported instead of claimed.
 
 ## Challenges
 
@@ -74,7 +88,7 @@ cells and grid sizes tied to wall thickness; before that, results moved 30 % wit
 
 ## What is next
 
-Gears and general mates for assemblies, a red clash highlight from the depth map, full feature recognition for
+Gears and general mates for assemblies, full feature recognition for
 imported STEP files, and the desktop AstraCAD bridge for drawings and production solvers.
 
 ## Built with

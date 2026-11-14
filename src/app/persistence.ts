@@ -100,25 +100,28 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
-function write(key: string, value: unknown): void {
+/** Returns false when the browser would not keep it (storage full or blocked). */
+function write(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    return true;
   } catch {
     // Storage full or blocked (private mode): the session still works, it just forgets.
+    return false;
   }
 }
 
 export const loadSettings = (): Settings => read('settings', DEFAULT_SETTINGS);
-export const saveSettings = (s: Settings): void => write('settings', s);
+export const saveSettings = (s: Settings): boolean => write('settings', s);
 export const loadProgress = (): Progress => read('progress', DEFAULT_PROGRESS);
-export const saveProgress = (p: Progress): void => write('progress', p);
+export const saveProgress = (p: Progress): boolean => write('progress', p);
 export const loadLibrary = (): SavedPart[] => read<SavedPart[]>('library', []);
-export const saveLibrary = (l: SavedPart[]): void => write('library', l.slice(0, 24));
+export const saveLibrary = (l: SavedPart[]): boolean => write('library', l.slice(0, 24));
 export const loadThings = (): Thing[] => read<Thing[]>('things', []);
-export const saveThings = (t: Thing[]): void => write('things', t.slice(0, 12));
+export const saveThings = (t: Thing[]): boolean => write('things', t.slice(0, 12));
 
 export const loadCalibration = (): Partial<Record<'span' | 'tape' | 'laser', Calibration>> => read('calibration', {});
-export const saveCalibration = (c: Partial<Record<'span' | 'tape' | 'laser', Calibration>>): void => write('calibration', c);
+export const saveCalibration = (c: Partial<Record<'span' | 'tape' | 'laser', Calibration>>): boolean => write('calibration', c);
 
 export const today = (): string => new Date().toISOString().slice(0, 10);
 

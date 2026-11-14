@@ -42,6 +42,31 @@ World.create(
 
   world.renderer.localClippingEnabled = true;
 
+  // Reliability: nothing fails silently. An unexpected error is shown once (not a stream of them),
+  // kept for the debug probe, and the session carries on; the part and shelf are untouched.
+  let lastErrorAt = -Infinity;
+  const report = (what: unknown): void => {
+    const text = what instanceof Error ? what.message : String(what ?? 'unknown');
+    if (/cancelled/i.test(text)) return;
+    const errors = (probe.errors as string[] | undefined) ?? [];
+    probe.errors = errors;
+    if (errors.length < 20) errors.push(text);
+    if (performance.now() - lastErrorAt > 15000) {
+      lastErrorAt = performance.now();
+      app.say('Something went wrong in the background. Your part is safe; try that step again.', 'warn');
+    }
+  };
+  window.addEventListener('error', (ev) => report(ev.error ?? ev.message));
+  window.addEventListener('unhandledrejection', (ev) => report(ev.reason));
+  // The headset can take the graphics context back (memory pressure, a system overlay). Three.js
+  // restores it; the user is told why the view blinked.
+  const canvas = world.renderer.domElement;
+  canvas.addEventListener('webglcontextlost', (ev) => {
+    ev.preventDefault();
+    app.say('The headset paused the graphics. Restoring the view...', 'warn');
+  });
+  canvas.addEventListener('webglcontextrestored', () => app.say('View restored.', 'good'));
+
   // Flat-page placement; an immersive session re-places the bench at the user's hands.
   bench.root.position.set(0.06, 1.0, -0.5);
   const benchEntity = world.createTransformEntity(bench.root, { persistent: true });

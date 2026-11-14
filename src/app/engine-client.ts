@@ -30,6 +30,11 @@ export class CancelledError extends Error {
   }
 }
 
+/** Longest a single build may take before its worker is treated as hung. */
+const BUILD_TIMEOUT_MS = 20000;
+/** Worker replacements allowed in one session before the kernel is declared unusable. */
+const MAX_RESTARTS = 3;
+
 const spawn = (): Worker =>
   new Worker(new URL('../engine/engine.worker.ts', import.meta.url), { type: 'module' });
 
@@ -51,27 +56,82 @@ export class EngineClient {
   /** Called once when the kernel cannot start at all. */
   onFatal: (message: string) => void = () => {};
 
+  /** Called when a worker died and was replaced; the app tells the user, the part is rebuilt. */
+  onRecovered: (what: 'build' | 'analysis') => void = () => {};
+  /** The last build asked for, kept so a replaced build worker can redo it. */
+  private last: { job: string; params: Params; upTo?: number } | null = null;
+  private buildStarted = 0;
+  private restarts = 0;
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+
   constructor() {
-    this.builder.onmessage = (ev: MessageEvent<Response>) => this.fromBuilder(ev.data);
-    this.builder.onerror = (ev) => this.onFatal(ev.message || 'The engine worker failed to start.');
+    this.wireBuilder();
     this.wireAnalysis();
+    // A build normally takes milliseconds. One still running after this long has hung (or the
+    // WebAssembly heap is gone): replace the worker and build again.
+    if (typeof setInterval !== 'undefined') {
+      this.watchdog = setInterval(() => {
+        if (this.building && performance.now() - this.buildStarted > BUILD_TIMEOUT_MS) this.restartBuilder();
+      }, 2000);
+    }
+  }
+
+  private wireBuilder(): void {
+    this.builderReady = false;
+    this.builder.onmessage = (ev: MessageEvent<Response>) => this.fromBuilder(ev.data);
+    this.builder.onerror = (ev) => {
+      ev.preventDefault?.();
+      // Before the first ready, or after repeated failures, the kernel cannot run here at all.
+      if (!this.everReady || this.restarts >= MAX_RESTARTS) {
+        this.onFatal(ev.message || 'The engine worker failed to start.');
+        return;
+      }
+      this.restartBuilder();
+    };
+  }
+
+  private everReady = false;
+
+  /** Replace a crashed or hung build worker and redo the newest build. */
+  private restartBuilder(): void {
+    this.restarts++;
+    this.builder.terminate();
+    this.builder = spawn();
+    this.building = false;
+    this.wireBuilder();
+    if (!this.wanted && this.last) this.wanted = { ...this.last, params: { ...this.last.params } };
+    this.onRecovered('build');
   }
 
   private wireAnalysis(): void {
     this.analysisReady = false;
     this.analysis.onmessage = (ev: MessageEvent<Response>) => this.fromAnalysis(ev.data);
     this.analysis.onerror = (ev) => {
+      ev.preventDefault?.();
       const error = new Error(ev.message || 'The analysis worker failed.');
       for (const p of this.pending.values()) {
         p.reject(error);
       }
       this.pending.clear();
+      // A worker that threw may have a broken WebAssembly heap: start a clean one for the next job.
+      this.analysis.terminate();
+      this.analysisQueue = [];
+      this.analysis = spawn();
+      this.wireAnalysis();
+      this.onRecovered('analysis');
     };
+  }
+
+  dispose(): void {
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.builder.terminate();
+    this.analysis.terminate();
   }
 
   private fromBuilder(msg: Response): void {
     if (msg.type === 'ready') {
       this.builderReady = true;
+      this.everReady = true;
       this.pump();
       return;
     }
@@ -101,7 +161,9 @@ export class EngineClient {
     }
     const req = this.wanted;
     this.wanted = null;
+    this.last = req;
     this.building = true;
+    this.buildStarted = performance.now();
     const message: Request = { id: this.nextId++, type: 'build', ...req };
     this.builder.postMessage(message);
   }

@@ -35,7 +35,8 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (35 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export):
+Engine tests (83 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+CalculiX, modal, flow, STEP, hinge, drawing, describe, spoken commands, voice, co-design, calibration):
 
 ```bash
 npx vitest run
@@ -108,6 +109,10 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
     model downloads once) and how long later ones take. Try "test it" and "show the drawing".
 16. Access, then Calibrate with a card: measure a bank card's long edge three times. Then measure something else and
     check the +/- figure against a ruler.
+17. First run: clear the site's data in Quest Browser, enter, and follow the Getting started guide. The button it
+    wants next should carry a pulsing amber ring. Note anything that is not obvious.
+18. Meta VR Glasses, if available: enter and look at the bench. The guide should float just above the centre of the
+    view, and the proof and agent panels should fit either side without being cut off.
 
 ## Honest limits
 

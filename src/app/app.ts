@@ -150,6 +150,15 @@ export class App {
     this.engine.onFatal = (message) => {
       this.fatal.value = message;
     };
+    this.engine.onRecovered = (what) => {
+      this.say(
+        what === 'build'
+          ? 'The geometry engine stopped and was restarted. Your part is being rebuilt.'
+          : 'The analysis stopped and was restarted. Run it again when ready.',
+        'warn',
+      );
+      if (what === 'analysis') this.busy.value = null;
+    };
     const shared = decodeShare(globalThis.location?.hash ?? '');
     if (shared) {
       this.jobId.value = shared.job.id;
@@ -739,7 +748,7 @@ export class App {
       fits: this.bound.peek().length ? this.things.peek()[0]?.name : undefined,
     };
     this.library.value = [part, ...this.library.peek()].slice(0, 24);
-    saveLibrary(this.library.peek());
+    const stored = saveLibrary(this.library.peek());
     this.progress.value = bumpStreak(this.progress.peek());
     const brief = dailyBrief(today());
     const stress = this.stress.peek();
@@ -758,12 +767,17 @@ export class App {
     }
     saveProgress(this.progress.peek());
     this.award('save');
-    this.say(
-      daily.met
-        ? `Saved, and today's job is met: ${part.grams.toFixed(1)} g.`
-        : `Saved to your shelf: ${job.title}, ${part.grams.toFixed(1)} g.`,
-      'good',
-    );
+    if (!stored) {
+      // Do not claim a save the browser refused: the shelf holds it only until the page closes.
+      this.say('On your shelf for this session, but the browser would not store it (storage full or blocked). Share or download it to keep it.', 'warn');
+    } else {
+      this.say(
+        daily.met
+          ? `Saved, and today's job is met: ${part.grams.toFixed(1)} g.`
+          : `Saved to your shelf: ${job.title}, ${part.grams.toFixed(1)} g.`,
+        'good',
+      );
+    }
     return part;
   }
 
