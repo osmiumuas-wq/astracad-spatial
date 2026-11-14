@@ -12,6 +12,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+// `--shot <pixels>` sizes the emulator's view square (default 800), for recording video.
+const shotAt = process.argv.indexOf('--shot');
+const shot = shotAt > 0 ? ['--screenshot-width', process.argv[shotAt + 1], '--screenshot-height', process.argv[shotAt + 1]] : [];
 const child = spawn(
   process.execPath,
   [
@@ -22,6 +25,7 @@ const child = spawn(
     '--ai-mode',
     'agent',
     '--allow-browser-automation',
+    ...shot,
     '--workspace',
     root,
   ],

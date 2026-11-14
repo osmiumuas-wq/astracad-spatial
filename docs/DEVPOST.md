@@ -29,7 +29,11 @@ hands, and every number on screen backed by a check you can see.
   0.4 mm print clearance.
 - **Shape it with your fingers.** Pull handles in 1 mm snaps; twist a dial, or swipe your thumb along your index
   finger, in 0.05 mm steps. Draw an outline in the air and pull it up into a solid. Or just say it: "make the arm
-  20 mm longer", "double the thickness", "two more bolts", "in aluminium".
+  20 mm longer", "double the thickness", "two more bolts", "in aluminium", or in your own words: "a box to keep my
+  Raspberry Pi in, 90 by 65 by 30" becomes a verified project box.
+- **Real CAD features.** Fillets, shells, sweeps and lofts, each built exactly and verified in closed form: a project
+  box with rounded corners and shelled walls, a pull handle swept round two bends (checked by Pappus' theorem), a
+  lofted foot (checked by the prismatoid formula). Eleven part templates in all.
 - **Prove it.** Every change passes a truth gate: the kernel's volume is compared with a closed-form formula for the
   part (agreement better than 1e-8; the gate refuses anything past 1e-5). Push the part with an open palm and a stress
   preview lights up under your hand; rule-based agents (structure, manufacturing, cost) explain what they see, and
@@ -56,8 +60,14 @@ overstate bending stiffness; the grid now lines up with the part's faces.) An in
 1e-15, and our browser kernel matches OpenCASCADE to 2e-9. Flow is a
 potential-flow solve on a voxel grid, within 4 % of the textbook sphere solution two cells from the surface. Voice
 uses the browser's recogniser where there is one, and otherwise runs Whisper on the device, so audio never leaves
-it. STEP files are read by OpenCASCADE compiled to WebAssembly. Co-design uses WebRTC; a public broker only
-introduces the two browsers. 83 automated tests run before every deploy.
+it. Sentences the word rules do not know go to a small on-device language model (all-MiniLM-L6-v2, 23 MB) that
+picks the part or action meant; it never supplies numbers, and on 25 sentences it had never seen it got 24 right,
+asked on 1 and got none wrong. Fillets, shells, lofts and sweeps are built so they can be checked exactly: a sweep is
+one seamless mesh whose inner bend rings are offset so its volume equals Pappus' theorem. The speech and language
+models ship with the app, and a service worker keeps everything on the device, so it runs offline once loaded. The
+bench is held by a WebXR anchor, and a frame-rate governor raises foveation, drops to 72 Hz and thins effects before
+the frame rate can fall. STEP files are read by OpenCASCADE compiled to WebAssembly. Co-design uses WebRTC; a public
+broker only introduces the two browsers. 112 automated tests run before every deploy.
 
 ## How hands are used
 
@@ -93,8 +103,15 @@ imported STEP files, and the desktop AstraCAD bridge for drawings and production
 
 ## Built with
 
-Meta Immersive Web SDK, WebXR, three.js, Manifold, OpenCASCADE (occt-import-js), transformers.js (Whisper), PeerJS,
-TypeScript, Vite, Vitest, GitHub Pages.
+Meta Immersive Web SDK, WebXR (anchors, hit test, planes, depth, hands, gaze), three.js, Manifold, OpenCASCADE
+(occt-import-js), transformers.js (Whisper tiny, all-MiniLM-L6-v2), ONNX Runtime Web, PeerJS, TypeScript, Vite,
+Vitest, GitHub Pages.
+
+## Video
+
+98 seconds, every shot the real app recorded in Meta's XR emulator (IWER) on a PC, driven by scripted hand and head
+input (scripts/video). Captions say what each scene shows and what it does not: the voice scene feeds a synthesised
+recording of the sentence to the on-device recogniser because the emulator has no microphone.
 
 ## Try it
 

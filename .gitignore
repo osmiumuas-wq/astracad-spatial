@@ -48,3 +48,4 @@ pids/
 artifacts/
 exchange/results/
 opencode.json
+scripts/video/*.json
