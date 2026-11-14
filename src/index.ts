@@ -24,6 +24,7 @@ import { ModeSystem } from './systems/mode-system.js';
 import { TipSystem } from './systems/tip-system.js';
 import { ExploreSystem } from './systems/explore-system.js';
 import { PointSystem } from './systems/point-system.js';
+import { CutawaySystem } from './systems/cutaway-system.js';
 import { ReferenceSystem } from './systems/reference-system.js';
 import { ForearmSystem } from './systems/forearm-system.js';
 import { GhostSystem } from './systems/ghost-system.js';
@@ -131,6 +132,7 @@ World.create(
   world.registerSystem(TipSystem, { priority: 29 });
   world.registerSystem(ExploreSystem, { priority: 33 });
   world.registerSystem(PointSystem, { priority: 34 });
+  world.registerSystem(CutawaySystem, { priority: 35 });
   world.registerSystem(ReferenceSystem, { priority: 26 });
   world.registerSystem(HingeSystem, { priority: 27 });
   world.registerSystem(DrawingSystem, { priority: 28 });

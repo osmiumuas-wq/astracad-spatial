@@ -40,6 +40,7 @@ export type Request =
     }
   | { id: number; type: 'reinforce'; job: string; params: Params; material: string; loadN: number; load?: LoadSpec }
   | { id: number; type: 'grow'; job: string; params: Params; material: string; keep: number; load?: LoadSpec }
+  | { id: number; type: 'lattice'; job: string; params: Params }
   | {
       id: number;
       type: 'export';
@@ -95,6 +96,7 @@ export type Response =
       ms: number;
     }
   | { id: number; type: 'exported'; stl: Uint8Array; record: PartRecord; name: string }
+  | { id: number; type: 'latticed'; mesh: MeshData; props: KernelProps; before: number; cell: number; wall: number; skin: number; ms: number }
   | { id: number; type: 'sliced'; segments: Float32Array; starts: Uint32Array; height: number; printLayers: number; layerHeight: number; up: Vec3; upLabel: string; minutes: number }
   | { id: number; type: 'flowed'; points: Float32Array; speeds: Float32Array; starts: Uint32Array; h: number; cells: number; iterations: number; ms: number; wind: Wind }
   | { id: number; type: 'moded'; frequencies: number[]; shapes: Float32Array[]; cell: number; elements: number; ms: number; fixtureLabel: string }

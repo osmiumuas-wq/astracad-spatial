@@ -18,6 +18,7 @@ import { initKernel, Kernel } from './kernel.js';
 import { materialById } from './materials.js';
 import { LoadSpec, Request, Response, SolveOutcome } from './protocol.js';
 import { fieldSampler, optimise } from './topo.js';
+import { insideDistance, latticeField, latticeFor, maxDepth } from './lattice.js';
 import { runGate } from './truth.js';
 import { BuildOutput, MeshData, SpecError, Vec3 } from './types.js';
 
@@ -143,6 +144,30 @@ async function handle(req: Request): Promise<void> {
     scope.postMessage(
       { id: req.id, type: 'sliced', ...layers, up: best.up, upLabel: best.label, minutes: cost.minutes ?? 0 },
       [layers.segments.buffer, layers.starts.buffer],
+    );
+    return;
+  }
+
+  if (req.type === 'lattice') {
+    const t0 = performance.now();
+    const spec = job.spec(params);
+    const out = build(kernel, job, params);
+    const b = out.props.bbox;
+    const size = Math.max(b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]);
+    const ls = latticeFor(size);
+    // Grid and mesh resolution: fine enough for the sheets, coarse enough for a headset (and the WebAssembly heap).
+    const h = Math.max(0.6, size / 110);
+    const grid = insideDistance(out.mesh.positions, out.mesh.indices, h);
+    // A core needs the skin on both sides and room for a sheet between.
+    // A core worth having: past the skin there must be room for most of a cell.
+    const need = ls.skin + ls.cell * 0.4;
+    if (maxDepth(grid) < need) {
+      throw new SpecError(`Too thin for a lattice core: its thickest section is ${(2 * maxDepth(grid)).toFixed(1)} mm; a gyroid core needs about ${(2 * need).toFixed(0)} mm. Lattices suit chunky parts.`);
+    }
+    const res = kernel.carve(spec, latticeField(grid, ls), { min: [b.min[0] - 1, b.min[1] - 1, b.min[2] - 1], max: [b.max[0] + 1, b.max[1] + 1, b.max[2] + 1] }, h * 1.1);
+    scope.postMessage(
+      { id: req.id, type: 'latticed', mesh: res.mesh, props: res.props, before: out.props.volume, cell: ls.cell, wall: ls.wall, skin: ls.skin, ms: performance.now() - t0 },
+      meshBuffers(res.mesh),
     );
     return;
   }

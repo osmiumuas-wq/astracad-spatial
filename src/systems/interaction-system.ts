@@ -866,6 +866,7 @@ export class InteractionSystem extends createSystem({
   private setSlice(on: boolean): void {
     if (on === this.slicing) return;
     this.slicing = on;
+    ctx.app.slicing = on;
     probe.slicing = on;
     ctx.bench.part.setClip(on ? this.clip : null);
     if (on) {

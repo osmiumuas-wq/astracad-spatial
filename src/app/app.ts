@@ -117,6 +117,10 @@ export class App {
   /** World point the last measurement of a full set was taken at (starts the extract flight). */
   readonly extractFrom: Signal<[number, number, number] | null> = signal(null);
   readonly grown: Signal<GrownState | null> = signal(null);
+  /** Show a lattice core cut open (src/systems/cutaway-system.ts). */
+  readonly cutaway = signal(false);
+  /** The knife-hand slice is open (it owns the clip plane meanwhile). */
+  slicing = false;
   readonly agentLog: Signal<string[]> = signal([]);
   readonly notice: Signal<Notice | null> = signal(null);
   readonly fatal: Signal<string | null> = signal(null);
@@ -622,7 +626,40 @@ export class App {
     }
   }
 
+  /**
+   * Lattice core: keep a skin and fill the inside with a gyroid sheet. Shown and
+   * exported like a grown shape. It is not stress-tested again: the solver's
+   * cells are coarser than the lattice walls, so the app says so.
+   */
+  async lattice(): Promise<void> {
+    const key = this.key();
+    this.engine.cancelAnalysis();
+    this.busy.value = { kind: 'grow', label: 'Filling the core with a gyroid lattice', progress: -1 };
+    try {
+      const res = await this.engine.run<'latticed'>({ type: 'lattice', job: this.jobId.peek(), params: this.params.peek() });
+      if (key !== this.key()) return;
+      this.grown.value = { mesh: res.mesh, props: res.props, kept: res.props.volume / res.before, final: true, iteration: 1, of: 1 };
+      this.cutaway.value = true;
+      this.stress.value = null;
+      this.busy.value = null;
+      this.refreshFindings();
+      const d = this.materialData.density / 1000;
+      this.say(
+        `Gyroid core, ${res.cell.toFixed(0)} mm cells, ${res.wall.toFixed(1)} mm sheets behind a ${res.skin.toFixed(1)} mm skin: ` +
+          `${(res.before * d).toFixed(1)} g to ${(res.props.volume * d).toFixed(1)} g (${((1 - res.props.volume / res.before) * 100).toFixed(0)} % lighter). ` +
+          'Not re-tested: the stress solver is too coarse for lattice walls. Export takes the lattice.',
+        'good',
+      );
+    } catch (e) {
+      if (!(e instanceof CancelledError)) {
+        this.busy.value = null;
+        this.say(e instanceof Error ? e.message : String(e), 'warn');
+      }
+    }
+  }
+
   clearGrown(): void {
+    this.cutaway.value = false;
     if (this.grown.peek()) {
       this.grown.value = null;
       this.stress.value = null;
@@ -803,7 +840,10 @@ export class App {
   }
 
   /** Actions that live in systems (drawing, flow, vibration...), registered at start-up. */
-  readonly actions: Partial<Record<Action, () => void>> = {};
+  readonly actions: Partial<Record<Action, () => void>> = {
+    // Lattice core: a toggle; a second press (or any grown shape) goes back to solid.
+    lattice: () => (this.grown.peek()?.final ? this.clearGrown() : void this.lattice()),
+  };
 
   /**
    * One sentence, typed or spoken: edit the part, change material, run an
