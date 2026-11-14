@@ -42,6 +42,7 @@ export type Request =
   | { id: number; type: 'grow'; job: string; params: Params; material: string; keep: number; load?: LoadSpec }
   | { id: number; type: 'lattice'; job: string; params: Params }
   | { id: number; type: 'template'; job: string; params: Params }
+  | { id: number; type: 'gcode'; job: string; params: Params; material: string; grown?: boolean }
   | {
       id: number;
       type: 'export';
@@ -97,6 +98,21 @@ export type Response =
       ms: number;
     }
   | { id: number; type: 'exported'; stl: Uint8Array; record: PartRecord; name: string }
+  | {
+      id: number;
+      type: 'gcoded';
+      gcode: string;
+      name: string;
+      grams: number;
+      filamentMm: number;
+      seconds: number;
+      layers: number;
+      upLabel: string;
+      /** Toolpaths in part millimetres for the preview: xyz pairs, rgb per vertex, the first segment of each layer. */
+      segments: Float32Array;
+      colors: Float32Array;
+      starts: Uint32Array;
+    }
   | { id: number; type: 'templated'; loops: Vec2[][]; holes: { c: Vec2; d: number }[]; outline: Vec2[]; normal: Vec3; label: string }
   | { id: number; type: 'latticed'; mesh: MeshData; props: KernelProps; before: number; cell: number; wall: number; skin: number; ms: number }
   | { id: number; type: 'sliced'; segments: Float32Array; starts: Uint32Array; height: number; printLayers: number; layerHeight: number; up: Vec3; upLabel: string; minutes: number }

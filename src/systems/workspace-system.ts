@@ -42,6 +42,7 @@ const LAB: [string, string, Action][] = [
   ['lab:explore', 'Explore', 'explore'],
   ['lab:lattice', 'Lattice core', 'lattice'],
   ['lab:template', 'Drill template', 'template'],
+  ['lab:gcode', 'Slice G-code', 'gcode'],
 ];
 import { CALIBRATION_READINGS, CARD_MM } from '../engine/calibration.js';
 import { CaptureSystem } from './capture-system.js';

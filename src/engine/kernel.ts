@@ -962,6 +962,72 @@ export class Kernel {
   }
 
   /**
+   * Toolpath regions for FDM printing with `up` as the build direction: per
+   * layer, the perimeter loops (the section offset inward by half a line, then
+   * a line at a time) and the inside split into solid skin (where the layers
+   * `skins` above or below are not both material) and sparse fill. The part is
+   * centred on a bed of `bed` mm with its lowest point at z = 0. Loops are
+   * returned as plain polygons; hatching is done by src/engine/gcode.ts.
+   */
+  toolpaths(
+    spec: PartSpec,
+    up: Vec3,
+    o: { layer: number; line: number; walls: number; skins: number; bed: [number, number] },
+  ): { layers: { z: number; walls: Vec2[][]; skin: Vec2[][]; sparse: Vec2[][] }[]; toPart: (u: number, v: number, w: number) => Vec3 } {
+    const arena: Disposable[] = [];
+    const keep = <T extends Disposable>(x: T): T => {
+      arena.push(x);
+      return x;
+    };
+    try {
+      const { solid } = this.construct(spec, spec.features.length, keep);
+      const z = norm(up);
+      const helper: Vec3 = Math.abs(z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      const x = norm(cross(helper, z));
+      const y = cross(z, x);
+      const toLocal: Mat4 = [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, 0, 0, 0, 1];
+      const turned = keep(solid.transform(toLocal));
+      const b = turned.boundingBox();
+      // Onto the bed: centred, lowest point at z = 0.
+      const shift: Vec3 = [o.bed[0] / 2 - (b.min[0] + b.max[0]) / 2, o.bed[1] / 2 - (b.min[1] + b.max[1]) / 2, -b.min[2]];
+      const placed = keep(turned.translate(shift));
+      // Bed coordinates back to part coordinates (for showing the toolpaths on the bench).
+      const toPart = (u: number, v: number, w: number): Vec3 => {
+        const a = u - shift[0];
+        const c = v - shift[1];
+        const d = w - shift[2];
+        return [x[0] * a + y[0] * c + z[0] * d, x[1] * a + y[1] * c + z[1] * d, x[2] * a + y[2] * c + z[2] * d];
+      };
+      const height = b.max[2] - b.min[2];
+      const n = Math.max(1, Math.round(height / o.layer));
+      const sections: CrossSection[] = [];
+      for (let i = 0; i < n; i++) sections.push(keep(placed.slice((i + 0.5) * o.layer)));
+      // An empty section: a slice below the part.
+      const empty = keep(placed.slice(-1));
+      const at = (i: number): CrossSection => (i < 0 || i >= n ? empty : sections[i]);
+      const polys = (cs: CrossSection): Vec2[][] => cs.toPolygons().map((p) => p.map((q): Vec2 => [q[0], q[1]]));
+      const out: { z: number; walls: Vec2[][]; skin: Vec2[][]; sparse: Vec2[][] }[] = [];
+      for (let i = 0; i < n; i++) {
+        const cs = sections[i];
+        const walls: Vec2[][] = [];
+        for (let w = 0; w < o.walls; w++) {
+          walls.push(...polys(keep(keep(cs.offset(-(o.line / 2 + w * o.line), 'Miter')).simplify(0.01))));
+        }
+        const inner = keep(cs.offset(-(o.walls * o.line) + o.line * 0.15, 'Miter'));
+        // Material in every layer within `skins` above and below: sparse; the rest of the inside: solid skin.
+        let covered = inner;
+        for (let k = 1; k <= o.skins; k++) covered = keep(keep(covered.intersect(at(i + k))).intersect(at(i - k)));
+        const sparse = keep(covered.offset(-o.line * 0.5, 'Miter'));
+        const skin = keep(inner.subtract(sparse));
+        out.push({ z: (i + 1) * o.layer, walls, skin: polys(skin), sparse: polys(sparse) });
+      }
+      return { layers: out, toPart };
+    } finally {
+      release(arena);
+    }
+  }
+
+  /**
    * The section of the part `depth` mm inside its face that looks along
    * `normal` (a unit axis): outer loops and holes, in the face's own 2D frame
    * (x, y in mm; `x` and `y` are those axes in part coordinates). Used for a

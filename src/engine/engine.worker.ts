@@ -20,6 +20,7 @@ import { LoadSpec, Request, Response, SolveOutcome } from './protocol.js';
 import { fieldSampler, optimise } from './topo.js';
 import { insideDistance, latticeField, latticeFor, maxDepth } from './lattice.js';
 import { describeHoles, mountingNormal, templateOf } from './template.js';
+import { DEFAULT_PRINTER, hatch, Layer, Path, PrinterSettings, toGcode } from './gcode.js';
 import { runGate } from './truth.js';
 import { BuildOutput, MeshData, SpecError, Vec3 } from './types.js';
 
@@ -145,6 +146,54 @@ async function handle(req: Request): Promise<void> {
     scope.postMessage(
       { id: req.id, type: 'sliced', ...layers, up: best.up, upLabel: best.label, minutes: cost.minutes ?? 0 },
       [layers.segments.buffer, layers.starts.buffer],
+    );
+    return;
+  }
+
+  if (req.type === 'gcode') {
+    const mat = materialById(req.material);
+    if (mat.process !== 'fdm') {
+      throw new SpecError(`${mat.name} is machined, not printed; G-code here is for FDM plastics (PLA, PETG, ABS).`);
+    }
+    const out = build(kernel, job, params);
+    const best = rankOrientations(out.mesh.positions, out.mesh.indices)[0];
+    const temps: Record<string, [number, number]> = { pla: [210, 60], petg: [240, 80], abs: [250, 100] };
+    const [nozzleTemp, bedTemp] = temps[mat.id] ?? [210, 60];
+    const s: PrinterSettings = { ...DEFAULT_PRINTER, nozzleTemp, bedTemp, density: mat.density };
+    const tp = kernel.toolpaths(job.spec(params), best.up, { layer: s.layer, line: s.line, walls: s.walls, skins: s.skins, bed: s.bed });
+    const layers: Layer[] = tp.layers.map((L, i) => {
+      const paths: Path[] = L.walls.map((pts) => ({ kind: 'wall' as const, pts, closed: true }));
+      const angle = i % 2 ? -Math.PI / 4 : Math.PI / 4;
+      for (const seg of hatch(L.skin, angle, s.line)) paths.push({ kind: 'skin', pts: seg, closed: false });
+      for (const seg of hatch(L.sparse, angle, s.line / s.infill)) paths.push({ kind: 'infill', pts: seg, closed: false });
+      return { z: L.z, paths };
+    });
+    const g = toGcode(layers, s, job.title);
+    // Preview: every path as line segments in part millimetres, coloured by kind.
+    const col: Record<string, [number, number, number]> = { wall: [1, 0.69, 0.13], skin: [0.24, 0.86, 0.52], infill: [0.21, 0.82, 1] };
+    const segs: number[] = [];
+    const cols: number[] = [];
+    const starts: number[] = [];
+    for (const L of layers) {
+      starts.push(segs.length / 6);
+      for (const p of L.paths) {
+        const c = col[p.kind];
+        const n = p.closed ? p.pts.length : p.pts.length - 1;
+        for (let k = 0; k < n; k++) {
+          const a = tp.toPart(p.pts[k][0], p.pts[k][1], L.z - s.layer / 2);
+          const q = p.pts[(k + 1) % p.pts.length];
+          const bb = tp.toPart(q[0], q[1], L.z - s.layer / 2);
+          segs.push(...a, ...bb);
+          cols.push(...c, ...c);
+        }
+      }
+    }
+    const segments = new Float32Array(segs);
+    const colors = new Float32Array(cols);
+    const startArr = Uint32Array.from(starts);
+    scope.postMessage(
+      { id: req.id, type: 'gcoded', gcode: g.gcode, name: `${job.id}-${mat.id}`, grams: g.grams, filamentMm: g.filamentMm, seconds: g.seconds, layers: g.layers, upLabel: best.label, segments, colors, starts: startArr },
+      [segments.buffer, colors.buffer, startArr.buffer],
     );
     return;
   }
