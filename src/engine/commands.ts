@@ -19,7 +19,7 @@ import { JOB_WORDS, MATERIAL_WORDS, RULES } from './describe.js';
 export type Action =
   | 'undo' | 'redo' | 'test' | 'stronger' | 'grow' | 'solid' | 'flow' | 'vibration' | 'drawing'
   | 'print' | 'save' | 'share' | 'measure' | 'laser' | 'capture' | 'sketch' | 'shape' | 'next' | 'swing' | 'help'
-  | 'editable' | 'explode' | 'tip' | 'explore' | 'lattice' | 'template' | 'gcode';
+  | 'editable' | 'explode' | 'tip' | 'explore' | 'lattice' | 'template' | 'gcode' | 'scan';
 
 export type Command =
   | { kind: 'action'; action: Action; text: string }
@@ -45,6 +45,7 @@ const ACTIONS: [RegExp, Action][] = [
   [/\bshare\b|\bqr\b/u, 'share'],
   [/\blaser\b/u, 'laser'],
   [/\bmeasure\b/u, 'measure'],
+  [/\b(ray scan|scan (it|this|the object)|how big is (it|this))\b/u, 'scan'],
   [/\bcapture\b|\bscan\b/u, 'capture'],
   [/\bsketch\b|\bdraw (a|an|the)\b/u, 'sketch'],
   [/\bswing\b|\bopen the hinge\b/u, 'swing'],
