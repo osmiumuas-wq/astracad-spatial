@@ -95,12 +95,69 @@
    "at": 98.0
   },
   {
+   "kind": "app",
+   "src": "measure",
+   "in": 13.5,
+   "dur": 7.0,
+   "at": 108.0
+  },
+  {
+   "kind": "app",
+   "src": "sketch",
+   "in": 15.5,
+   "dur": 7.0,
+   "at": 115.0
+  },
+  {
+   "kind": "app",
+   "src": "grow",
+   "in": 17.5,
+   "dur": 6.0,
+   "at": 122.0
+  },
+  {
+   "kind": "app",
+   "src": "modes",
+   "in": 39.7,
+   "dur": 4.5,
+   "at": 128.0,
+   "note": "TIME CUT  ·  THE SOLVE TOOK 36 S"
+  },
+  {
+   "kind": "app",
+   "src": "hinge",
+   "in": 2.5,
+   "dur": 6.0,
+   "at": 132.5
+  },
+  {
+   "kind": "app",
+   "src": "codesign",
+   "in": 12.3,
+   "dur": 5.0,
+   "at": 138.5
+  },
+  {
+   "kind": "app",
+   "src": "access",
+   "in": 3.5,
+   "dur": 4.0,
+   "at": 143.5
+  },
+  {
+   "kind": "app",
+   "src": "glasses",
+   "in": 1.0,
+   "dur": 6.0,
+   "at": 147.5
+  },
+  {
    "kind": "blender",
    "src": "lineup",
    "in": 0.0,
    "dur": 10.0,
    "label": "render",
-   "at": 108.0
+   "at": 153.5
   },
   {
    "kind": "blender",
@@ -111,13 +168,13 @@
    "title": "AstraCAD Spatial",
    "subtitle": "osmiumuas-wq.github.io/astracad-spatial",
    "title_at": 2.4,
-   "at": 118.0
+   "at": 163.5
   },
   {
    "kind": "card",
    "src": "credits",
    "dur": 7.0,
-   "at": 126.0
+   "at": 171.5
   }
  ],
  "voice": [
@@ -162,13 +219,45 @@
    99.0
   ],
   [
+   "m1_measure",
+   108.3
+  ],
+  [
+   "m2_sketch",
+   115.3
+  ],
+  [
+   "m3_grow",
+   122.3
+  ],
+  [
+   "m4_modes",
+   128.3
+  ],
+  [
+   "m5_hinge",
+   132.8
+  ],
+  [
+   "m6_codesign",
+   138.8
+  ],
+  [
+   "m7_access",
+   143.8
+  ],
+  [
+   "m8_glasses",
+   147.8
+  ],
+  [
    "n11_lineup",
-   109.0
+   154.5
   ],
   [
    "n12_finale",
-   120.6
+   166.1
   ]
  ],
- "total": 133.0
+ "total": 178.5
 }

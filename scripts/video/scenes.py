@@ -171,6 +171,145 @@ def scene_drawing():
     rec.wait()
 
 
+def scene_measure():
+    """Measure mode: hold a span between both hands and keep still; the reading locks."""
+    reset('cradle')
+    hands_down()
+    head_set(BENCH, at=NEAR)
+    tg = targets()
+    rec = Recording('measure', 22)
+    press('hand-left', 'Button mode:measure', tg)
+    rest('hand-left')
+    head_to((0.0, 1.3, -0.4), 0.8)
+    for dev, x in (('hand-left', -0.045), ('hand-right', 0.045)):
+        pose(dev, 'pinch', 0.2)
+        hand(dev, (x, 1.32, -0.36), dur=0.8)
+    pinch('hand-left', 1, 0.2)
+    pinch('hand-right', 1, 0.2)
+    time.sleep(2.6)
+    # The reading locks and the part takes the size: look up at the confirmation.
+    head_to((0.0, 1.47, -0.5), 1.1)
+    time.sleep(3.0)
+    pinch('hand-left', 0, 0.2)
+    pinch('hand-right', 0, 0.2)
+    hands_down()
+    head_to(BENCH, 1.1)
+    rec.wait()
+
+
+def scene_sketch():
+    """Air sketch: pinch above the bench, draw a closed outline, let go: it becomes a solid."""
+    reset('cradle')
+    hands_down()
+    head_set(BENCH, at=NEAR)
+    tg = targets()
+    rec = Recording('sketch', 24)
+    press('hand-right', 'Button mode:sketch', tg)
+    head_to(BENCH, 0.6)
+    y = 1.29
+    pts = [(-0.045, y, -0.37), (0.045, y, -0.37), (0.045, y, -0.47), (-0.045, y, -0.47), (-0.045, y, -0.37)]
+    pose('hand-right', 'default', 0.2)
+    hand('hand-right', pts[0], dur=0.7)
+    pinch('hand-right', 1, 0.15)
+    for p in pts[1:]:
+        hand('hand-right', p, dur=0.6)
+    time.sleep(0.3)
+    pinch('hand-right', 0, 0.15)
+    rest('hand-right')
+    time.sleep(3.0)
+    rec.wait()
+
+
+def scene_grow():
+    """Grow bone: topology optimisation removes material the load does not need."""
+    reset('wall-bracket')
+    hands_down()
+    head_set(BENCH, at=(0.05, 1.42, -0.2))
+    tg = targets()
+    rec = Recording('grow', 24)
+    press('hand-right', 'Button act:grow', tg)
+    rest('hand-right')
+    head_to((0.0, 1.22, -0.42), 1.5, at=(0.05, 1.4, -0.26))
+    time.sleep(10)
+    rec.wait()
+
+
+def scene_modes():
+    """Vibration: the part's natural frequencies, each mode shape animated."""
+    reset('wall-bracket')
+    hands_down()
+    head_set(BENCH, at=NEAR)
+    tg = targets()
+    rec = Recording('modes', 58)
+    press('hand-left', 'Button act:modes', tg)
+    rest('hand-left')
+    head_to((0.0, 1.22, -0.42), 1.5, at=(0.05, 1.4, -0.26))
+    time.sleep(7)
+    rec.wait()
+
+
+def scene_hinge():
+    """The print-in-place hinge swings to where its leaves meet, then explodes apart."""
+    reset('hinge')
+    hands_down()
+    head_set(BENCH, at=NEAR)
+    later(1500, "a.runCommand('swing the hinge');")
+    later(7500, "a.runCommand('explode it');")
+    rec = Recording('hinge', 13)
+    head_to((0.0, 1.22, -0.42), 1.6, at=(0.05, 1.4, -0.26))
+    time.sleep(9)
+    rec.wait()
+
+
+def scene_codesign():
+    """Co-design: start a room; a partner joins by code or QR from a headset or a phone."""
+    reset('knob')
+    hands_down()
+    head_set(BENCH, at=NEAR)
+    tg = targets()
+    rec = Recording('codesign', 18)
+    press('hand-right', 'Button act:co', tg)
+    rest('hand-right')
+    time.sleep(1.0)
+    tg = targets()
+    host = next((k for k in tg if k.startswith('Button co:host')), None)
+    if host:
+        press('hand-right', host, tg)
+        rest('hand-right')
+    head_to((0.27, 1.45, -0.45), 1.3)
+    time.sleep(4)
+    rec.wait()
+
+
+def scene_access():
+    """Access settings: captions, dwell, large text, high contrast, one-handed, colour-safe map."""
+    reset('cradle')
+    hands_down()
+    head_set(BENCH, at=NEAR)
+    tg = targets()
+    rec = Recording('access', 14)
+    press('hand-right', 'Button act:settings', tg)
+    rest('hand-right')
+    head_to((0.0, 1.42, -0.45), 1.3)
+    time.sleep(4.5)
+    rec.wait()
+
+
+def scene_glasses():
+    """Meta VR Glasses (emulator device switched beforehand): the compact layout for a narrow view."""
+    reset('cradle', guide=True)
+    hands_down()
+    head_set(BENCH)
+    rec = Recording('glasses', 12)
+    time.sleep(0.8)
+    head_to((0.15, 1.25, -0.42), 1.8)
+    time.sleep(1.2)
+    head_to((-0.12, 1.3, -0.45), 2.0)
+    time.sleep(1.2)
+    head_to(BENCH, 1.6)
+    rec.wait()
+
+
 SCENES = {
     'arrive': scene_arrive,
     'shape': scene_shape,
@@ -179,6 +318,14 @@ SCENES = {
     'parts': scene_parts,
     'flow': scene_flow,
     'drawing': scene_drawing,
+    'measure': scene_measure,
+    'sketch': scene_sketch,
+    'grow': scene_grow,
+    'modes': scene_modes,
+    'hinge': scene_hinge,
+    'codesign': scene_codesign,
+    'access': scene_access,
+    'glasses': scene_glasses,
 }
 
 if __name__ == '__main__':

@@ -109,9 +109,16 @@ Vitest, GitHub Pages.
 
 ## Video
 
-98 seconds, every shot the real app recorded in Meta's XR emulator (IWER) on a PC, driven by scripted hand and head
-input (scripts/video). Captions say what each scene shows and what it does not: the voice scene feeds a synthesised
-recording of the sentence to the on-device recogniser because the emulator has no microphone.
+2 minutes 58 seconds (scripts/video, edit list in scripts/video/edl.json). Two kinds of shot, each labelled on screen:
+
+- REAL APP: the app itself, recorded in Meta's XR emulator (IWER) on a PC, driven by scripted hand and head input. Not
+  yet filmed on a headset. The voice scene feeds a synthesised recording of the sentence to the on-device recogniser,
+  because the emulator has no microphone. One clip is shortened: the vibration solve took 36 s, and the cut is marked
+  on screen.
+- RENDER: product shots made in Blender from the STL files the app exported, each part verified by the app's truth gate.
+
+Narration is a synthetic voice (Kokoro TTS). The music is original, synthesised for the film. The closing card repeats
+these disclosures and the honest limits: hand measurements are good to millimetres; stress and flow are design previews.
 
 ## Try it
 

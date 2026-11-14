@@ -132,6 +132,7 @@ def chip_image(text):
 
 
 CHIP_APP = chip_image('REAL APP  ·  META XR EMULATOR')
+NOTES = {}
 CHIP_RENDER = chip_image('RENDER  ·  BLENDER  ·  FROM THE APP\'S EXPORTED PART')
 
 
@@ -225,6 +226,11 @@ def clip_frame(clip, src, local):
     f = src.frame(clip.get('in', 0) + local).copy()
     if clip['kind'] == 'app':
         f = overlay(f, CHIP_APP, 40, 36, 1)
+        if clip.get('note'):
+            # An honest marker for any time cut inside a clip (for example a long solve).
+            if id(clip) not in NOTES:
+                NOTES[id(clip)] = chip_image(clip['note'])
+            f = overlay(f, NOTES[id(clip)], 40, 86, 1)
     elif clip['kind'] == 'blender':
         f = overlay(f, CHIP_RENDER, 40, 36, 1)
         # A gentle vignette for the renders.

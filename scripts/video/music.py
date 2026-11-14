@@ -155,13 +155,14 @@ def main():
         R[i:j] += r[: j - i]
 
     marks = {c['src'] + ('_end' if i == 13 else ''): c['at'] for i, c in enumerate(EDL['clips'])}
-    title = 13.0
-    act1 = 19.5
-    lift = 65.0
-    test = 73.0
-    lineup = 108.0
-    finale = 118.0
-    credits = 126.0
+    at = lambda src, nth=0: [c['at'] for c in EDL['clips'] if c['src'] == src][nth]
+    title = at('finale', 0)
+    act1 = at('arrive')
+    lift = at('hero_handle')
+    test = at('test')
+    lineup = at('lineup')
+    finale = at('finale', 1)
+    credits = at('credits')
 
     # Cold open: a dark drone on D, opening slowly.
     add(pad_layer(0.0, title, [38, 50, 57, 62], 0.10, cutoff=650, attack=4.0, release=1.5))
