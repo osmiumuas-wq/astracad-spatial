@@ -19,6 +19,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   Plane,
+  Quaternion,
   Vector3,
 } from '@iwsdk/core';
 import { Box3 as PartBox, MeshData } from '../engine/types.js';
@@ -44,6 +45,14 @@ export class PartView {
   private colors: Float32Array = new Float32Array(0);
   private seatTarget = new Vector3();
   private seatReady = false;
+  /** Where the seat has eased to (the pivot adds any tilt on top). */
+  private readonly seatPos = new Vector3();
+  /** Tilt about a floor edge (the tip test): unit axis in the part frame, a point on it (mm), angle (rad). */
+  private readonly tiltAxis = new Vector3(1, 0, 0);
+  private readonly tiltPoint = new Vector3();
+  private tiltAngle = 0;
+  private readonly tiltQ = new Quaternion();
+  private readonly tiltV = new Vector3();
   private readonly tint = new Color(COLORS.part);
 
   /** 0 to 1: how strongly stressed areas glow (rises as the load nears yield). */
@@ -100,6 +109,11 @@ export class PartView {
     this.pivot.name = 'Part pivot';
     this.pivot.add(this.mesh, this.edges);
     this.applyScale();
+  }
+
+  /** The undeformed vertex positions (mm) and triangle indices of the current part. */
+  solid(): { positions: Float32Array; indices: ArrayLike<number> } {
+    return { positions: this.base, indices: (this.mesh.geometry.getIndex()?.array ?? new Uint32Array(0)) as ArrayLike<number> };
   }
 
   /** Metres per millimetre at the current zoom. */
@@ -172,15 +186,38 @@ export class PartView {
       -((this.box.min[2] + this.box.max[2]) / 2) * s,
     );
     if (immediate || !this.seatReady) {
+      this.seatPos.copy(this.seatTarget);
       this.pivot.position.copy(this.seatTarget);
       this.seatReady = true;
     }
   }
 
+  /**
+   * Tilt the part about a line on its floor (part frame, mm), keeping that line
+   * where it is: the part rocks on a footprint edge. Angle 0 stands it back up.
+   */
+  setTilt(point: Vector3, axis: Vector3, angle: number): void {
+    this.tiltPoint.copy(point);
+    this.tiltAxis.copy(axis).normalize();
+    this.tiltAngle = angle;
+  }
+
   /** Ease towards the seat; call every frame. */
   update(delta: number): void {
     if (this.seatReady) {
-      this.pivot.position.lerp(this.seatTarget, 1 - Math.exp(-delta * 9));
+      this.seatPos.lerp(this.seatTarget, 1 - Math.exp(-delta * 9));
+      this.pivot.position.copy(this.seatPos);
+      if (this.tiltAngle !== 0) {
+        // Rotate about the edge: the edge point stays put, s*A - R(s*A) is the shift.
+        this.tiltQ.setFromAxisAngle(this.tiltAxis, this.tiltAngle);
+        this.pivot.quaternion.copy(this.tiltQ);
+        this.tiltV.copy(this.tiltPoint).multiplyScalar(this.scale);
+        this.pivot.position.add(this.tiltV);
+        this.tiltV.applyQuaternion(this.tiltQ);
+        this.pivot.position.sub(this.tiltV);
+      } else if (this.pivot.quaternion.w !== 1) {
+        this.pivot.quaternion.identity();
+      }
     }
     this.clashTime.value += delta;
     this.wrapOcclusion();

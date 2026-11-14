@@ -34,6 +34,13 @@ import { today, Settings } from '../app/persistence.js';
 import { buttonMesh, highlightButton, Line, makeButton, setButton, setUiStyle, TextPanel, tickPanels } from '../app/ui3d.js';
 import { drawQr } from '../flat/flat-ui.js';
 import type { Mode } from '../app/app.js';
+import type { Action } from '../engine/commands.js';
+
+/** The Lab strip: newer tools, each an app action registered by its system. */
+const LAB: [string, string, Action][] = [
+  ['lab:tip', 'Tip test', 'tip'],
+  ['lab:explore', 'Explore', 'explore'],
+];
 import { CALIBRATION_READINGS, CARD_MM } from '../engine/calibration.js';
 import { CaptureSystem } from './capture-system.js';
 import { FlowSystem } from './flow-system.js';
@@ -103,6 +110,7 @@ export class WorkspaceSystem extends createSystem({
   private coCanvas!: HTMLCanvasElement;
   private coOpen = false;
   private settingsOpen = false;
+  private labOpen = false;
   private captionText = '';
   private captionUntil = 0;
   private placedAt = -1;
@@ -245,7 +253,8 @@ export class WorkspaceSystem extends createSystem({
         ['act:redo', 'Redo', () => app.redo(), 0.05],
         ['act:daily', 'Daily job', () => app.startDaily()],
         ['act:place', 'Bring bench here', () => this.place(), 0.08],
-        ['act:settings', 'Access', () => { this.settingsOpen = !this.settingsOpen; this.refreshSettings(); }],
+        ['act:settings', 'Access', () => { this.settingsOpen = !this.settingsOpen; this.labOpen = false; this.refreshSettings(); this.refreshLab(); }],
+        ['act:lab', 'Lab', () => { this.labOpen = !this.labOpen; this.settingsOpen = false; this.refreshLab(); this.refreshSettings(); }, 0.045],
       ],
       -0.045,
     );
@@ -284,6 +293,17 @@ export class WorkspaceSystem extends createSystem({
       this.refreshSettings();
       app.startCalibration();
     }).position.set(0, 0.042 - 5 * 0.028, 0);
+
+    // ----- the Lab (newer tools, a strip of their own on the left) -----------
+    const labStrip = new Group();
+    labStrip.position.set(-0.215, 0.012, 0.19);
+    labStrip.rotation.set(-0.95, 0.35, 0, 'YXZ');
+    this.ui.add(labStrip);
+    const labEntity = this.world.createTransformEntity(labStrip, { parent: this.uiEntity, persistent: true });
+    LAB.forEach(([key, label, action], i) => {
+      const b = makeButton(labEntity, { key, label, width: 0.06, height: 0.022 }, () => app.actions[action]?.());
+      b.position.set((i % 2) * 0.066 - 0.033, 0.042 - Math.floor(i / 2) * 0.028, 0);
+    });
 
     // ----- coach skip --------------------------------------------------------
     const coachBtns = new Group();
@@ -383,6 +403,7 @@ export class WorkspaceSystem extends createSystem({
         setUiStyle(s.highContrast, s.largeText ? 1.25 : 1);
         sfx.enabled = s.sound;
         this.refreshSettings();
+        this.refreshLab();
         this.drawProof();
         this.drawAgents();
         this.drawCoach();
@@ -774,6 +795,11 @@ export class WorkspaceSystem extends createSystem({
     ]);
     this.qr.drawImage(this.qrCanvas, 22, 120);
     ctx.app.award('save');
+  }
+
+  private refreshLab(): void {
+    setButton('act:lab', { toggled: this.labOpen });
+    for (const [key] of LAB) setButton(key, { visible: this.labOpen });
   }
 
   private refreshSettings(): void {

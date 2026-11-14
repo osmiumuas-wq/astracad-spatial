@@ -19,7 +19,7 @@ import { JOB_WORDS, MATERIAL_WORDS, RULES } from './describe.js';
 export type Action =
   | 'undo' | 'redo' | 'test' | 'stronger' | 'grow' | 'solid' | 'flow' | 'vibration' | 'drawing'
   | 'print' | 'save' | 'share' | 'measure' | 'laser' | 'capture' | 'sketch' | 'shape' | 'next' | 'swing' | 'help'
-  | 'editable' | 'explode';
+  | 'editable' | 'explode' | 'tip' | 'explore';
 
 export type Command =
   | { kind: 'action'; action: Action; text: string }
@@ -48,6 +48,8 @@ const ACTIONS: [RegExp, Action][] = [
   [/\bcapture\b|\bscan\b/u, 'capture'],
   [/\bsketch\b|\bdraw (a|an|the)\b/u, 'sketch'],
   [/\bswing\b|\bopen the hinge\b/u, 'swing'],
+  [/\bexplore\b|\b(show me )?(options|variants|alternatives)\b/u, 'explore'],
+  [/\btip test\b|\bwill it (tip|fall|topple)( over)?\b|\btopple\b|\bstab(le|ility)\b/u, 'tip'],
   [/\bnext part\b/u, 'next'],
   [/\bshape mode\b|\bstop measuring\b/u, 'shape'],
   [/\b(help|what can i say)\b/u, 'help'],
