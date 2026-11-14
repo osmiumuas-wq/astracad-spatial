@@ -49,3 +49,4 @@ artifacts/
 exchange/results/
 opencode.json
 scripts/video/*.json
+__pycache__/
