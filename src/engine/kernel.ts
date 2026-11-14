@@ -3,9 +3,13 @@
  *
  * Reads the same typed JSON as desktop AstraCAD (JSON, never code; an unknown
  * operation or argument is an error, never ignored) and builds a watertight
- * triangle solid with the Manifold kernel. Operations that need a B-rep
- * (query fillets, shells, sweeps, lofts) are refused by name so the user is
- * told to build them on the desktop pipeline instead of getting a wrong part.
+ * triangle solid with the Manifold kernel. Fillets (of an extrusion's
+ * outline), shells (of an extrusion), lofts (ruled, through parallel profiles)
+ * and sweeps (along a polyline with bends) are built exactly and checked in
+ * closed form (src/engine/advanced.ts). Operations that still need a B-rep
+ * (fillets of arbitrary edges, chamfers, mirrors, general booleans) are refused
+ * by name so the user is told to build them on the desktop pipeline instead of
+ * getting a wrong part.
  */
 
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d';
@@ -23,6 +27,7 @@ import {
   sketchLoops,
   tessellateLoop,
 } from './sketch.js';
+import { extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
   BuildOutput,
   Feature,
@@ -70,16 +75,16 @@ const ARG_SETS: Record<string, readonly string[]> = {
     'count2', 'spacing2', 'direction2',
   ],
   'feature.pattern.circular': ['feature', 'features', 'count', 'angle', 'axis', 'center'],
+  'feature.fillet': ['radius', 'feature', 'edges'],
+  'feature.shell': ['thickness', 'feature', 'open'],
+  'feature.loft': ['sketches'],
+  'feature.sweep': ['sketch', 'path', 'bend_radius'],
   'doc.note': ['text'],
 };
 
 /** Operations that exist in the language but need the desktop B-rep kernels. */
 const DESKTOP_ONLY = new Set([
   'feature.cut_revolve',
-  'feature.sweep',
-  'feature.loft',
-  'feature.shell',
-  'feature.fillet',
   'feature.chamfer',
   'feature.mirror',
   'body.boolean',
@@ -228,6 +233,23 @@ export class Kernel {
       let pending: string | null = null;
       let body: Manifold | null = null;
       const applied: string[] = [];
+      const count = Math.max(0, Math.min(upTo, spec.features.length));
+      const mods = extrudeModifiers(spec.features, count);
+
+      const takeNamed = (key: string, f: Feature) => {
+        const sk = sketches.get(key);
+        if (!sk) {
+          throw new SpecError(`unknown sketch "${key}"`, f.id);
+        }
+        if (sk.used) {
+          throw new SpecError('sketch was already used by another feature', f.id);
+        }
+        sk.used = true;
+        if (key === pending) {
+          pending = null;
+        }
+        return sk;
+      };
 
       const takeSketch = (f: Feature) => {
         const key = typeof f.args.sketch === 'string' ? f.args.sketch : pending;
@@ -295,7 +317,6 @@ export class Kernel {
         return 2 * far * Math.SQRT2 * 1.75 + 10;
       };
 
-      const count = Math.max(0, Math.min(upTo, spec.features.length));
       for (let i = 0; i < count; i++) {
         const f = spec.features[i];
         const a = f.args ?? {};
@@ -326,7 +347,9 @@ export class Kernel {
                 throw new SpecError('depth must be positive');
               }
             }
-            const cs = section(sk.loops);
+            const mod = isCut ? undefined : mods.get(f.id);
+            const loops = mod?.fillet ? filletLoops(sk.loops, mod.fillet) : sk.loops;
+            const cs = section(loops);
             let z = zRange(a.direction, depth, isCut ? 'both' : 'normal', f.id);
             if (isCut) {
               z = [
@@ -334,10 +357,35 @@ export class Kernel {
                 isVoid(cs, [z[1], z[1] + VOID_PROBE], sk.frame) ? z[1] + VOID_PROBE : z[1],
               ];
             }
+            let solid = prism(cs, z, sk.frame);
+            if (mod?.shell) {
+              const { cut } = shellRange(z, a.direction, mod.shell.t, mod.shell.open, VOID_PROBE);
+              const cavity = prism(section(offsetLoops(loops, mod.shell.t)), cut, sk.frame);
+              solid = keep(solid.subtract(cavity));
+            }
             const tool: Tool = {
-              solid: prism(cs, z, sk.frame),
+              solid,
               op: isCut ? 'sub' : 'add',
             };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.fillet' || f.$op === 'feature.shell') {
+            // Applied to the named extrusion when it was built (see extrudeModifiers).
+          } else if (f.$op === 'feature.loft') {
+            const ids = a.sketches;
+            if (!Array.isArray(ids) || ids.length < 2 || ids.some((k) => typeof k !== 'string')) {
+              throw new SpecError('"sketches" must list at least two sketch ids');
+            }
+            const plan = loftPlan((ids as string[]).map((k) => takeNamed(k, f)));
+            const tool: Tool = { solid: this.loftSolid(plan, keep), op: 'add' };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.sweep') {
+            const sk = takeSketch(f);
+            const radius = a.bend_radius === undefined ? undefined : numArg(a.bend_radius, 'bend_radius');
+            const plan = sweepPlan(sk.frame, sk.loops, a.path as Vec3[], radius);
+            if (plan.steps.length === 0) throw new SpecError('the sweep path has no length');
+            const tool: Tool = { solid: this.sweepSolid(plan, keep), op: 'add' };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
           } else if (f.$op === 'feature.revolve') {
@@ -454,6 +502,95 @@ export class Kernel {
       }
       return { solid, applied };
     }
+  }
+
+  /**
+   * A sweep as one closed mesh through its rings (see sweepRings): one surface,
+   * so straight runs and bends join without seams.
+   */
+  private sweepSolid(plan: ReturnType<typeof sweepPlan>, keep: <T extends Disposable>(o: T) => T): Manifold {
+    const { Manifold: M, Mesh, triangulate } = this.m;
+    // Outside loop counter-clockwise about the path, openings clockwise, so every face points out of the material.
+    const outer = outerIndex(plan.loops);
+    const polys = plan.loops.map((loop, i) => {
+      const p = tessellateLoop(loop);
+      let a = 0;
+      for (let k = 0; k < p.length; k++) {
+        const q = p[(k + 1) % p.length];
+        a += p[k][0] * q[1] - q[0] * p[k][1];
+      }
+      return (i === outer) === a > 0 ? p : [...p].reverse();
+    });
+    const stations = sweepRings(plan, polys);
+    const per = polys.reduce((s, p) => s + p.length, 0);
+    const verts: number[] = [];
+    for (const st of stations) for (const loop of st) for (const p of loop) verts.push(p[0], p[1], p[2]);
+    const tris: number[] = [];
+    for (let k = 0; k + 1 < stations.length; k++) {
+      let base = 0;
+      for (const poly of polys) {
+        const n = poly.length;
+        for (let j = 0; j < n; j++) {
+          const a = k * per + base + j;
+          const b = k * per + base + ((j + 1) % n);
+          const c = (k + 1) * per + base + ((j + 1) % n);
+          const d = (k + 1) * per + base + j;
+          const m = verts.length / 3;
+          for (let q = 0; q < 3; q++) verts.push((verts[a * 3 + q] + verts[b * 3 + q] + verts[c * 3 + q] + verts[d * 3 + q]) / 4);
+          tris.push(m, a, b, m, b, c, m, c, d, m, d, a);
+        }
+        base += n;
+      }
+    }
+    const caps = triangulate(polys);
+    const last = (stations.length - 1) * per;
+    for (const t of caps) {
+      tris.push(t[0], t[2], t[1]);
+      tris.push(last + t[0], last + t[1], last + t[2]);
+    }
+    const mesh = new Mesh({ numProp: 3, vertProperties: new Float32Array(verts), triVerts: new Uint32Array(tris) });
+    const solid = keep(new M(mesh));
+    const status = solid.status();
+    if (status !== 'NoError') {
+      throw new SpecError(`the sweep is not a valid solid (${status}); the path may run into itself`);
+    }
+    return solid;
+  }
+
+  /** A ruled solid through the loft's rings: side quads split into four triangles about their centre. */
+  private loftSolid(plan: ReturnType<typeof loftPlan>, keep: <T extends Disposable>(o: T) => T): Manifold {
+    const { Manifold: M, Mesh, triangulate } = this.m;
+    const rings = plan.rings;
+    const k = rings.length;
+    const n = rings[0].length;
+    const verts: number[] = [];
+    for (const ring of rings) for (const p of ring) verts.push(p[0], p[1], p[2]);
+    const tris: number[] = [];
+    // Quad centres: the average of the corners makes the four triangles enclose the bilinear patch's volume exactly.
+    for (let i = 0; i + 1 < k; i++) {
+      for (let j = 0; j < n; j++) {
+        const a = i * n + j;
+        const b = i * n + ((j + 1) % n);
+        const c = (i + 1) * n + ((j + 1) % n);
+        const d = (i + 1) * n + j;
+        const m = verts.length / 3;
+        for (let q = 0; q < 3; q++) verts.push((verts[a * 3 + q] + verts[b * 3 + q] + verts[c * 3 + q] + verts[d * 3 + q]) / 4);
+        tris.push(m, a, b, m, b, c, m, c, d, m, d, a);
+      }
+    }
+    // End caps, from the 2D outlines (counter-clockwise about the loft axis).
+    const first = triangulate([plan.flat[0]]);
+    for (const t of first) tris.push(t[0], t[2], t[1]);
+    const last = triangulate([plan.flat[k - 1]]);
+    const off = (k - 1) * n;
+    for (const t of last) tris.push(off + t[0], off + t[1], off + t[2]);
+    const mesh = new Mesh({ numProp: 3, vertProperties: new Float32Array(verts), triVerts: new Uint32Array(tris) });
+    const solid = keep(new M(mesh));
+    const status = solid.status();
+    if (status !== 'NoError') {
+      throw new SpecError(`the loft is not a valid solid (${status}); profiles may twist through each other`);
+    }
+    return solid;
   }
 
   private revolve(
@@ -748,8 +885,15 @@ export class Kernel {
 
     const box = solid.boundingBox();
     const pieces = solid.decompose();
-    const components = pieces.length;
-    pieces.forEach((p) => p.delete());
+    // A sealed cavity (a shell closed on every side) is a separate inward-facing surface:
+    // it has negative volume and is part of its body, not a body of its own.
+    let components = 0;
+    let cavities = 0;
+    for (const p of pieces) {
+      if (p.volume() > 0) components++;
+      else cavities++;
+      p.delete();
+    }
     const props: KernelProps = {
       volume: solid.volume(),
       surfaceArea: solid.surfaceArea(),
@@ -763,6 +907,7 @@ export class Kernel {
       areaCheck: area2 / 2,
       status: String(solid.status()),
       components,
+      cavities,
     };
     return {
       mesh: { positions, normals, indices, edges: new Float32Array(edgeList) },

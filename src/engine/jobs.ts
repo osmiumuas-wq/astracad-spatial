@@ -1031,7 +1031,209 @@ export function hingeLimit(p: Params): number {
   return 180;
 }
 
-export const JOBS: readonly Job[] = [cradle, fitClip, phoneStand, wallBracket, flangePlate, knob, airSketch, hinge];
+// ---------------------------------------------------------------------------
+// 9. Project box (fillet + shell)
+// ---------------------------------------------------------------------------
+
+const roundLoss = (r: number): number => r * r * (1 - Math.PI / 4);
+
+const boxParams: ParamDef[] = [
+  { id: 'W', label: 'Width', unit: 'mm', min: 30, max: 160, step: 1, fine: 0.05, value: 70, measure: 'tape', fit: 1, prompt: 'Pinch both ends of the board it must hold' },
+  { id: 'D', label: 'Depth', unit: 'mm', min: 20, max: 120, step: 1, fine: 0.05, value: 50 },
+  { id: 'H', label: 'Height', unit: 'mm', min: 10, max: 80, step: 1, fine: 0.05, value: 30 },
+  { id: 't', label: 'Wall', unit: 'mm', min: 1.2, max: 5, step: 0.2, fine: 0.05, value: 2 },
+  { id: 'r', label: 'Corner radius', unit: 'mm', min: 0.5, max: 15, step: 0.5, fine: 0.05, value: 6 },
+];
+
+const projectBox: Job = {
+  id: 'project-box',
+  title: 'Project box',
+  blurb: 'A rounded, open-top enclosure: filleted corners, shelled walls.',
+  params: boxParams,
+  clamp(input) {
+    const p = baseClamp(boxParams, input);
+    const notes: string[] = [];
+    limit(p, 'r', Math.min(p.W, p.D) / 2 - 1, 0.5, notes, 'Corner radius reduced to fit the box.');
+    limit(p, 't', Math.min(Math.min(p.W, p.D) / 2 - 3, p.H - 2), 1.2, notes, 'Wall made thinner to leave room inside.');
+    return { params: p, notes };
+  },
+  spec(p) {
+    const { W, D, H, t, r } = p;
+    return {
+      language: 2,
+      name: 'project_box',
+      units: 'mm',
+      features: [
+        { $op: 'sketch.rectangle', id: 'outline', sketched_on: 'top', args: { width: W, height: D, x: -W / 2, y: -D / 2 } },
+        { $op: 'feature.extrude', id: 'body', args: { depth: H } },
+        { $op: 'feature.fillet', id: 'corners', args: { radius: r, feature: 'body', edges: 'profile' } },
+        { $op: 'feature.shell', id: 'hollow', args: { thickness: t, feature: 'body', open: 'far' } },
+      ],
+      notes: {
+        hand_check:
+          'outer area W D - 4 r^2 (1 - pi/4); inner (W-2t)(D-2t) - 4 max(r-t,0)^2 (1 - pi/4); volume = outer x H - inner x (H - t)',
+      },
+    };
+  },
+  volume(p) {
+    const outer = p.W * p.D - 4 * roundLoss(p.r);
+    const ri = Math.max(0, p.r - p.t);
+    const inner = (p.W - 2 * p.t) * (p.D - 2 * p.t) - 4 * roundLoss(ri);
+    return outer * p.H - inner * (p.H - p.t);
+  },
+  box(p) {
+    return { box: { min: [-p.W / 2, 0, -p.D / 2], max: [p.W / 2, p.H, p.D / 2] }, tol: EXACT_BOX_TOL };
+  },
+  genus: () => 0,
+  handles: [
+    { param: 'W', at: (p) => [p.W / 2, p.H / 2, 0], axis: [1, 0, 0], gain: 2 },
+    { param: 'D', at: (p) => [0, p.H / 2, p.D / 2], axis: [0, 0, 1], gain: 2 },
+    { param: 'H', at: (p) => [0, p.H, p.D / 2 - p.t / 2], axis: [0, 1, 0], gain: 1 },
+  ],
+  loadCase(p) {
+    return {
+      fixtureLabel: 'Standing on its base',
+      fixture: [{ kind: 'box', min: [-p.W, -1, -p.D], max: [p.W, 0.01, p.D] }],
+      loadLabel: 'Pressing down on the front rim',
+      region: { kind: 'box', min: [-p.W / 4, p.H - 0.5, p.D / 2 - p.t - 0.01], max: [p.W / 4, p.H + 1, p.D / 2 + 1] },
+      dir: [0, -1, 0],
+      newtons: 30,
+    };
+  },
+  roles: { wall: 't', stiffen: ['t', 'r'], fit: 'W' },
+};
+
+// ---------------------------------------------------------------------------
+// 10. Pull handle (sweep)
+// ---------------------------------------------------------------------------
+
+const handleParams: ParamDef[] = [
+  { id: 'S', label: 'Screw spacing', unit: 'mm', min: 40, max: 200, step: 1, fine: 0.05, value: 96, measure: 'tape', prompt: 'Pinch both screw holes on the drawer' },
+  { id: 'h', label: 'Stand-off', unit: 'mm', min: 20, max: 60, step: 1, fine: 0.05, value: 32 },
+  { id: 'd', label: 'Bar diameter', unit: 'mm', min: 6, max: 20, step: 0.5, fine: 0.05, value: 12 },
+  { id: 'R', label: 'Bend radius', unit: 'mm', min: 4, max: 30, step: 0.5, fine: 0.05, value: 12 },
+];
+
+const pullHandle: Job = {
+  id: 'pull-handle',
+  title: 'Pull handle',
+  blurb: 'A round bar swept round two bends: a drawer or door pull.',
+  params: handleParams,
+  clamp(input) {
+    const p = baseClamp(handleParams, input);
+    const notes: string[] = [];
+    limit(p, 'R', Math.min(p.h, p.S / 2) - 0.5, p.d / 2 + 1, notes, 'Bend radius kept between the bar and the handle size.');
+    return { params: p, notes };
+  },
+  spec(p) {
+    const { S, h, d, R } = p;
+    return {
+      language: 2,
+      name: 'pull_handle',
+      units: 'mm',
+      features: [
+        { $op: 'sketch.circle', id: 'bar', sketched_on: 'front', args: { radius: d / 2, x: -S / 2, y: 0 } },
+        {
+          $op: 'feature.sweep',
+          id: 'handle',
+          args: { path: [[-S / 2, 0, 0], [-S / 2, 0, h], [S / 2, 0, h], [S / 2, 0, 0]], bend_radius: R },
+        },
+      ],
+      notes: {
+        hand_check: 'A = pi d^2/4; volume = A (2(h - R) + S - 2R) + 2 x (pi/2) A R (Pappus, bar centre on the path)',
+      },
+    };
+  },
+  volume(p) {
+    const A = (Math.PI * p.d * p.d) / 4;
+    return A * (2 * (p.h - p.R) + p.S - 2 * p.R) + Math.PI * A * p.R;
+  },
+  box(p) {
+    const r = p.d / 2;
+    return {
+      box: { min: [-p.S / 2 - r, -r, 0], max: [p.S / 2 + r, r, p.h + r] },
+      tol: compensationBulge(r) + compensationBulge(p.R + r) + EXACT_BOX_TOL,
+    };
+  },
+  genus: () => 0,
+  handles: [
+    { param: 'S', at: (p) => [p.S / 2, 0, p.h / 2], axis: [1, 0, 0], gain: 2 },
+    { param: 'h', at: (p) => [0, 0, p.h + p.d / 2], axis: [0, 0, 1], gain: 1 },
+  ],
+  loadCase(p) {
+    return {
+      fixtureLabel: 'Both feet screwed to the drawer',
+      fixture: [{ kind: 'box', min: [-p.S, -p.d, -1], max: [p.S, p.d, 0.5] }],
+      loadLabel: 'A hand pulling the middle of the bar',
+      region: { kind: 'box', min: [-p.S / 4, -p.d, p.h - p.d], max: [p.S / 4, p.d, p.h + p.d] },
+      dir: [0, 0, 1],
+      newtons: 60,
+    };
+  },
+  roles: { stiffen: ['d', 'R'], fit: 'S' },
+};
+
+// ---------------------------------------------------------------------------
+// 11. Tapered foot (loft)
+// ---------------------------------------------------------------------------
+
+const footParams: ParamDef[] = [
+  { id: 'D', label: 'Base diameter', unit: 'mm', min: 20, max: 90, step: 1, fine: 0.05, value: 48 },
+  { id: 'd', label: 'Top diameter', unit: 'mm', min: 10, max: 80, step: 1, fine: 0.05, value: 30, measure: 'span', prompt: 'Span the leg it goes under' },
+  { id: 'H', label: 'Height', unit: 'mm', min: 8, max: 80, step: 1, fine: 0.05, value: 25 },
+];
+
+const taperedFoot: Job = {
+  id: 'tapered-foot',
+  title: 'Tapered foot',
+  blurb: 'A lofted foot for a table or cabinet leg, wide at the floor.',
+  params: footParams,
+  clamp(input) {
+    return { params: baseClamp(footParams, input), notes: [] };
+  },
+  spec(p) {
+    return {
+      language: 2,
+      name: 'tapered_foot',
+      units: 'mm',
+      features: [
+        { $op: 'ref.plane', id: 'top_face', args: { base: 'top', offset: p.H } },
+        { $op: 'sketch.circle', id: 'base', sketched_on: 'top', args: { radius: p.D / 2 } },
+        { $op: 'sketch.circle', id: 'top', sketched_on: 'top_face', args: { radius: p.d / 2 } },
+        { $op: 'feature.loft', id: 'foot', args: { sketches: ['base', 'top'] } },
+      ],
+      notes: { hand_check: 'frustum: pi H (R^2 + R r + r^2) / 3' },
+    };
+  },
+  volume(p) {
+    const R = p.D / 2;
+    const r = p.d / 2;
+    return (Math.PI * p.H * (R * R + R * r + r * r)) / 3;
+  },
+  box(p) {
+    const R = Math.max(p.D, p.d) / 2;
+    return { box: { min: [-R, 0, -R], max: [R, p.H, R] }, tol: compensationBulge(R) + EXACT_BOX_TOL };
+  },
+  genus: () => 0,
+  handles: [
+    { param: 'D', at: (p) => [p.D / 2, 0, 0], axis: [1, 0, 0], gain: 2 },
+    { param: 'd', at: (p) => [p.d / 2, p.H, 0], axis: [1, 0, 0], gain: 2 },
+    { param: 'H', at: (p) => [0, p.H, 0], axis: [0, 1, 0], gain: 1 },
+  ],
+  loadCase(p) {
+    return {
+      fixtureLabel: 'Standing on the floor',
+      fixture: [{ kind: 'box', min: [-p.D, -1, -p.D], max: [p.D, 0.01, p.D] }],
+      loadLabel: 'The weight of the furniture on top',
+      region: { kind: 'box', min: [-p.d, p.H - 0.5, -p.d], max: [p.d, p.H + 1, p.d] },
+      dir: [0, -1, 0],
+      newtons: 300,
+    };
+  },
+  roles: { stiffen: ['D', 'd'], fit: 'd' },
+};
+
+export const JOBS: readonly Job[] = [cradle, fitClip, phoneStand, wallBracket, flangePlate, knob, airSketch, hinge, projectBox, pullHandle, taperedFoot];
 
 export const jobById = (id: string): Job => JOBS.find((j) => j.id === id) ?? JOBS[0];
 

@@ -56,6 +56,8 @@ export interface KernelProps {
   areaCheck: number;
   status: string;
   components: number;
+  /** Sealed inner voids (a shell closed on every side); not counted as bodies. */
+  cavities?: number;
 }
 
 export interface BuildOutput {

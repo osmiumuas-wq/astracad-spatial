@@ -55,7 +55,8 @@ function near(parts: string[], words: string[]): number | undefined {
       if (!m) continue;
       const nums = [...c.matchAll(/(?<![a-z\d.])(\d+(?:\.\d+)?)/gu)].filter((n) => {
         const i = n.index ?? 0;
-        return !/^\s*(?:mm)?\s*[x×*]/u.test(c.slice(i + n[0].length)) && !/[x×*]\s*$/u.test(c.slice(0, i));
+        // A size like "80 x 50": the x must stand alone, not end a word ("box 80").
+        return !/^\s*(?:mm)?\s*[x×*](?![a-z])/u.test(c.slice(i + n[0].length)) && !/(?:^|[^a-z])[x×*]\s*$/u.test(c.slice(0, i));
       });
       if (!nums.length) continue;
       nums.sort((a, b) => Math.abs((a.index ?? 0) - m.index) - Math.abs((b.index ?? 0) - m.index));
@@ -89,6 +90,9 @@ export const MATERIAL_WORDS: [RegExp, string][] = [
 
 export const JOB_WORDS: [RegExp, string][] = [
   [/\bhinge\b/u, 'hinge'],
+  [/\bproject box\b|\benclosure\b|\b(?:box|case)\b.*\b(?:hollow|open|rounded|walls?)\b/u, 'project-box'],
+  [/\b(?:pull|drawer|door|cabinet) handle\b|\bhandle\b|\bpull\b/u, 'pull-handle'],
+  [/\bfoot\b|\bfeet\b|\bleg tip\b|\btapered\b/u, 'tapered-foot'],
   [/\bknob\b|\bdial cap\b/u, 'knob'],
   [/\bflange\b|\bbolt circle\b|\bpcd\b/u, 'flange-plate'],
   [/\b(?:phone|tablet)\b.*\bstand\b|\bstand\b.*\b(?:phone|tablet)\b/u, 'phone-stand'],
@@ -132,6 +136,19 @@ export const RULES: Record<string, { words: Record<string, string[]>; triple?: s
     triple: ['L', 'W', 't'],
     key: ['L'],
   },
+  'project-box': {
+    words: { W: ['width', 'wide', 'long', 'length'], D: ['depth', 'deep'], H: ['height', 'high', 'tall'], t: ['wall', 'thick(?:ness)?'], r: ['corners?', 'radius', 'round(?:ed)?'] },
+    triple: ['W', 'D', 'H'],
+    key: ['W', 'D', 'H'],
+  },
+  'pull-handle': {
+    words: { S: ['spacing', 'centres', 'centers', 'between', 'screws', 'long', 'length'], h: ['stand-?off', 'clearance', 'deep', 'depth', 'out'], d: ['bar', 'dia(?:meter)?', 'thick(?:ness)?', 'rod'], R: ['bend', 'radius'] },
+    key: ['S'],
+  },
+  'tapered-foot': {
+    words: { D: ['base', 'bottom', 'floor'], d: ['top', 'leg'], H: ['height', 'high', 'tall'] },
+    key: ['D', 'd', 'H'],
+  },
 };
 
 export function describe(input: string): Described | { error: string } {
@@ -140,7 +157,7 @@ export function describe(input: string): Described | { error: string } {
   const parts = clauses(text);
   const hit = JOB_WORDS.find(([re]) => re.test(text));
   if (!hit) {
-    return { error: 'Which part? Try: bracket, flange, knob, cradle, clip, phone stand, hinge, block or disc.' };
+    return { error: 'Which part? Try: bracket, flange, knob, cradle, clip, phone stand, hinge, project box, pull handle, foot, block or disc.' };
   }
   const understood: string[] = [];
   const material = MATERIAL_WORDS.find(([re]) => re.test(text))?.[1];

@@ -20,6 +20,17 @@ import {
   sketchLoops,
   tessellateLoop,
 } from './sketch.js';
+import {
+  extrudeModifiers,
+  ExtrudeMods,
+  filletLoops,
+  loftPlan,
+  loftVolume,
+  momentAboutLine,
+  offsetLoops,
+  shellRange,
+  sweepPlan,
+} from './advanced.js';
 import { Feature, PartSpec, Seg, Vec2, Vec3 } from './types.js';
 
 export interface Expectation {
@@ -118,6 +129,12 @@ export function expectVolume(spec: PartSpec): Expectation {
   const removals: Removal[] = [];
   /** Volume removed by each hole feature, per instance, for patterns. */
   const holeSeeds = new Map<string, { circles: Removal[]; perInstance: number[] }>();
+  let mods: Map<string, ExtrudeMods>;
+  try {
+    mods = extrudeModifiers(spec.features, spec.features.length);
+  } catch (e) {
+    return unknown(e instanceof Error ? e.message : String(e), terms);
+  }
 
   const takeSketch = (f: Feature) => {
     const key: string | null = typeof f.args.sketch === 'string' ? f.args.sketch : pending;
@@ -178,10 +195,91 @@ export function expectVolume(spec: PartSpec): Expectation {
       }
       const depth = numArg(a.depth, 'depth');
       const [z0, z1] = range(a.direction, depth, 'normal');
-      const area = sketchIntegrals(sk.loops).area;
+      const mod = mods.get(f.id);
+      let loops = sk.loops;
+      let inner: Seg[][] | null = null;
+      let cavity: [number, number] | null = null;
+      try {
+        if (mod?.fillet) loops = filletLoops(sk.loops, mod.fillet);
+        if (mod?.shell) {
+          inner = offsetLoops(loops, mod.shell.t);
+          cavity = shellRange([z0, z1], a.direction, mod.shell.t, mod.shell.open, 0).solid;
+        }
+      } catch (e) {
+        return unknown(`"${f.id}": ${e instanceof Error ? e.message : String(e)}`, terms);
+      }
+      const area = sketchIntegrals(loops).area;
       volume = area * (z1 - z0);
-      terms.push(`${f.id}: area ${fmt(area)} x height ${fmt(z1 - z0)} = ${fmt(volume)}`);
-      prism = { frame: sk.frame, polys: sk.loops.map(tessellateLoop), z0, z1 };
+      terms.push(
+        `${f.id}: area ${fmt(area)}${mod?.fillet ? ` (corners rounded r ${fmt(mod.fillet)})` : ''} x height ${fmt(z1 - z0)} = ${fmt(volume)}`,
+      );
+      if (inner && cavity) {
+        const innerArea = sketchIntegrals(inner).area;
+        const removed = innerArea * (cavity[1] - cavity[0]);
+        volume -= removed;
+        terms.push(`${f.id}: shell ${fmt(mod!.shell!.t)} mm, cavity area ${fmt(innerArea)} x ${fmt(cavity[1] - cavity[0])} = -${fmt(removed)}`);
+        // A hollow body: later holes may break into the cavity, which this checker does not derive.
+        revolved = true;
+        continue;
+      }
+      prism = { frame: sk.frame, polys: loops.map(tessellateLoop), z0, z1 };
+      continue;
+    }
+
+    if (f.$op === 'feature.fillet' || f.$op === 'feature.shell') {
+      continue; // folded into the extrusion it names
+    }
+
+    if (f.$op === 'feature.loft') {
+      if (prism || revolved) {
+        return unknown(`"${f.id}": a second boss may overlap the first`, terms);
+      }
+      const ids = Array.isArray(a.sketches) ? (a.sketches as string[]) : [];
+      const sections = ids.map((k) => sketches.get(k));
+      if (sections.length < 2 || sections.some((x) => !x)) {
+        return unknown(`"${f.id}": the loft needs at least two known sketches`, terms);
+      }
+      let lv: { volume: number | null; terms: string[] };
+      try {
+        lv = loftVolume(loftPlan(sections as { frame: Frame; loops: Seg[][] }[]));
+      } catch (e) {
+        return unknown(`"${f.id}": ${e instanceof Error ? e.message : String(e)}`, terms);
+      }
+      if (lv.volume === null) {
+        return unknown(`"${f.id}": profiles of different kinds or corner counts are resampled; that loft has no closed form`, terms);
+      }
+      terms.push(...lv.terms.map((t) => `${f.id}: ${t}`));
+      volume = lv.volume;
+      revolved = true;
+      continue;
+    }
+
+    if (f.$op === 'feature.sweep') {
+      const sk = takeSketch(f);
+      if (!sk) {
+        return unknown('no sketch to sweep', terms);
+      }
+      if (prism || revolved) {
+        return unknown(`"${f.id}": a second boss may overlap the first`, terms);
+      }
+      let plan: ReturnType<typeof sweepPlan>;
+      try {
+        plan = sweepPlan(sk.frame, sk.loops, a.path as Vec3[], a.bend_radius === undefined ? undefined : numArg(a.bend_radius, 'bend_radius'));
+      } catch (e) {
+        return unknown(`"${f.id}": ${e instanceof Error ? e.message : String(e)}`, terms);
+      }
+      const integ = sketchIntegrals(plan.loops);
+      let straight = 0;
+      for (const r of plan.runs) straight += r.length;
+      volume = integ.area * straight;
+      terms.push(`${f.id}: profile area ${fmt(integ.area)} x straight length ${fmt(straight)} = ${fmt(volume)}`);
+      for (const b of plan.bends) {
+        const moment = momentAboutLine(integ, b.p0, b.ax);
+        const part = ((b.angle * Math.PI) / 180) * moment;
+        volume += part;
+        terms.push(`${f.id}: bend, Pappus ${fmt((b.angle * Math.PI) / 180)} rad x first moment ${fmt(moment)} = ${fmt(part)}`);
+      }
+      revolved = true;
       continue;
     }
 
