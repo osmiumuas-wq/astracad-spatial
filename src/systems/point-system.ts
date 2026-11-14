@@ -78,7 +78,7 @@ export class PointSystem extends createSystem({}) {
       }
     }
     if (!best) return;
-    app.pointed = { param: best, at: performance.now() };
+    app.pointed = { param: best, at: performance.now(), mm: [this.local.x, this.local.y, this.local.z] };
     probe.pointed = best;
     const def = paramDef(app.job, best);
     if (best !== this.lastParam) {

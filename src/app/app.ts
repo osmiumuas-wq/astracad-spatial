@@ -851,11 +851,88 @@ export class App {
    * spoken when the user talked).
    */
   /** Point and say: the parameter under the hand ray, and when it was last pointed at (ms). */
-  pointed: { param: string; at: number } | null = null;
+  pointed: { param: string; at: number; mm?: [number, number, number] } | null = null;
+
+  private gcs: Promise<import('@salusoft89/planegcs').GcsWrapper> | null = null;
+
+  /**
+   * Give one side of an air-sketched outline a length; FreeCAD's solver keeps the
+   * rest of the drawing's intent (square corners, equal sides). `edge` is 0-based.
+   */
+  async dimensionSketch(edge: number, length: number): Promise<void> {
+    const p = this.params.peek();
+    if (this.jobId.peek() !== 'sketch' || p.kind !== 0) {
+      this.say('Side lengths are for a drawn outline (an air sketch with straight sides).', 'info');
+      return;
+    }
+    const n = Math.round(p.n);
+    if (edge < 0 || edge >= n) {
+      this.say(`This outline has ${n} sides.`, 'warn');
+      return;
+    }
+    const pts: [number, number][] = Array.from({ length: n }, (_, i) => [p[`x${i}`], p[`y${i}`]]);
+    try {
+      this.gcs ??= (async () => {
+        const [{ make_gcs_wrapper }, { default: wasm }] = await Promise.all([
+          import('@salusoft89/planegcs'),
+          import('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url'),
+        ]);
+        return make_gcs_wrapper(wasm);
+      })();
+      const gcs = await this.gcs;
+      const { solveOutline } = await import('../engine/constrain.js');
+      const r = solveOutline(gcs, pts, [{ edge, length }]);
+      if (!r.ok) {
+        this.say(`That length conflicts with the rest of the outline${r.conflicting.length ? ` (${r.conflicting.join(', ')})` : ''}.`, 'warn');
+        return;
+      }
+      const next: Params = {};
+      r.pts.forEach(([x, y], i) => {
+        next[`x${i}`] = Math.round(x * 100) / 100;
+        next[`y${i}`] = Math.round(y * 100) / 100;
+      });
+      this.setParams(next);
+      const kept = r.applied.filter((c) => c.kind !== 'equal').length;
+      const eq = r.applied.length - kept;
+      const reply = `Side ${edge + 1} set to ${length} mm. Kept ${kept} square edge${kept === 1 ? '' : 's'}${eq ? ` and ${eq} equal pair${eq === 1 ? '' : 's'}` : ''}.`;
+      this.say(reply, 'good');
+      this.speakReply(reply);
+    } catch (e) {
+      this.say(e instanceof Error ? e.message : String(e), 'bad');
+    }
+  }
 
   runCommand(sentence: string): string {
     const job = this.job;
     const before = { ...this.params.peek() };
+    // "this side 40" on an air-sketched outline: a driving dimension for the constraint solver.
+    const side = wordsToDigits(sentence).toLowerCase().match(/\b(?:(this|that)\s+(?:side|edge|line)|side\s+(\d+))\b[^\d]*(\d+(?:\.\d+)?)/u);
+    if (side && this.jobId.peek() === 'sketch' && this.params.peek().kind === 0) {
+      const p0 = this.params.peek();
+      const n = Math.round(p0.n);
+      let edge = side[2] ? parseInt(side[2], 10) - 1 : -1;
+      if (edge < 0) {
+        const mm = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.mm : undefined;
+        if (!mm) return 'Point at a side of the outline, then say "this side 40".';
+        // The sketch's plane: u = X, v = -Z in part millimetres.
+        const q: [number, number] = [mm[0], -mm[2]];
+        let best = 0;
+        let bestD = Infinity;
+        for (let i = 0; i < n; i++) {
+          const ax = p0[`x${i}`], ay = p0[`y${i}`], bx = p0[`x${(i + 1) % n}`], by = p0[`y${(i + 1) % n}`];
+          const dx = bx - ax, dy = by - ay;
+          const t = Math.max(0, Math.min(1, ((q[0] - ax) * dx + (q[1] - ay) * dy) / (dx * dx + dy * dy || 1)));
+          const d = Math.hypot(ax + t * dx - q[0], ay + t * dy - q[1]);
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
+        }
+        edge = best;
+      }
+      void this.dimensionSketch(edge, parseFloat(side[3]));
+      return `Setting side ${edge + 1} to ${side[3]} mm.`;
+    }
     // "make this thicker" while pointing at the part: edit the size under the ray.
     const p = this.pointed;
     if (p && performance.now() - p.at < 8000 && p.param in before) {
