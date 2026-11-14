@@ -1,0 +1,174 @@
+{
+ "comment": "Edit decision list for the 3-minute cut. kind: blender (frames in artifacts/video/blender/<src>), app (artifacts/video/scenes/<src>), card. in/out are seconds within the source; at is the start on the timeline. voice lines start at voice_at (timeline seconds).",
+ "fps": 30,
+ "clips": [
+  {
+   "kind": "blender",
+   "src": "cold_open",
+   "in": 0.0,
+   "dur": 13.0,
+   "label": "render",
+   "at": 0
+  },
+  {
+   "kind": "blender",
+   "src": "finale",
+   "in": 0.0,
+   "dur": 6.5,
+   "label": "render",
+   "title": "AstraCAD Spatial",
+   "subtitle": "Measure the real thing. Get the part that fits.",
+   "title_at": 0.6,
+   "at": 13.0
+  },
+  {
+   "kind": "app",
+   "src": "arrive",
+   "in": 0.4,
+   "dur": 7.5,
+   "at": 19.5
+  },
+  {
+   "kind": "app",
+   "src": "shape",
+   "in": 0.4,
+   "dur": 10.5,
+   "at": 27.0
+  },
+  {
+   "kind": "app",
+   "src": "voice",
+   "in": 0.3,
+   "dur": 13.0,
+   "at": 37.5
+  },
+  {
+   "kind": "blender",
+   "src": "hero_box",
+   "in": 0.0,
+   "dur": 5.0,
+   "label": "render",
+   "at": 50.5
+  },
+  {
+   "kind": "app",
+   "src": "parts",
+   "in": 0.4,
+   "dur": 9.5,
+   "at": 55.5
+  },
+  {
+   "kind": "blender",
+   "src": "hero_handle",
+   "in": 0.0,
+   "dur": 4.0,
+   "label": "render",
+   "at": 65.0
+  },
+  {
+   "kind": "blender",
+   "src": "hero_foot",
+   "in": 1.0,
+   "dur": 4.0,
+   "label": "render",
+   "at": 69.0
+  },
+  {
+   "kind": "app",
+   "src": "test",
+   "in": 0.4,
+   "dur": 16.0,
+   "at": 73.0
+  },
+  {
+   "kind": "app",
+   "src": "flow",
+   "in": 0.6,
+   "dur": 9.0,
+   "at": 89.0
+  },
+  {
+   "kind": "app",
+   "src": "drawing",
+   "in": 0.4,
+   "dur": 10.0,
+   "at": 98.0
+  },
+  {
+   "kind": "blender",
+   "src": "lineup",
+   "in": 0.0,
+   "dur": 10.0,
+   "label": "render",
+   "at": 108.0
+  },
+  {
+   "kind": "blender",
+   "src": "finale",
+   "in": 4.0,
+   "dur": 8.0,
+   "label": "render",
+   "title": "AstraCAD Spatial",
+   "subtitle": "osmiumuas-wq.github.io/astracad-spatial",
+   "title_at": 2.4,
+   "at": 118.0
+  },
+  {
+   "kind": "card",
+   "src": "credits",
+   "dur": 7.0,
+   "at": 126.0
+  }
+ ],
+ "voice": [
+  [
+   "n01_cold",
+   0.8
+  ],
+  [
+   "n02_title",
+   13.4
+  ],
+  [
+   "n03_arrive",
+   19.9
+  ],
+  [
+   "n04_shape",
+   27.6
+  ],
+  [
+   "n05_voice",
+   38.0
+  ],
+  [
+   "n06_box",
+   51.3
+  ],
+  [
+   "n07_parts",
+   55.6
+  ],
+  [
+   "n08_test",
+   73.6
+  ],
+  [
+   "n09_flow",
+   90.0
+  ],
+  [
+   "n10_drawing",
+   99.0
+  ],
+  [
+   "n11_lineup",
+   109.0
+  ],
+  [
+   "n12_finale",
+   120.6
+  ]
+ ],
+ "total": 133.0
+}

@@ -1,0 +1,14 @@
+[
+  ["n01_cold", "Almost everything we three-D print has to fit something real. A shelf. A drawer. A board that needs a home. Today, that means a caliper, a desktop CAD program, and a few failed prints."],
+  ["n02_title", "AstraCAD Spatial puts a verified CAD bench on your desk, in mixed reality."],
+  ["n03_arrive", "The bench appears in front of you and anchors itself to your room. A guide lights up the next thing to do."],
+  ["n04_shape", "Pinch a handle and pull. Every change is rebuilt, and checked against an exact formula, so the volume you see is the volume you print."],
+  ["n05_voice", "Or just say what you need. Speech is recognised on the device, and a small on-device language model works out which part you mean. The sizes come only from your words."],
+  ["n06_box", "That box has filleted corners and shelled walls."],
+  ["n07_parts", "There are sweeps and lofts too, each proven against Pappus' theorem and the prismatoid formula. Not just drawn. Verified."],
+  ["n08_test", "Then test it. Point, pinch, and a stress solver, checked against the Calculix reference solver, colours the part. Three engineering agents read the result, and offer fixes you can take with a pinch."],
+  ["n09_flow", "Watch the air move around it. It is an ideal flow preview, and the app tells you exactly what it cannot show."],
+  ["n10_drawing", "Then take it with you. A dimensioned drawing, an S T L, a three M F, or a link that opens on your phone."],
+  ["n11_lineup", "It runs in the Quest browser, with no account and no server. It works offline, holds its frame rate under load, and fits its layout to the narrow view of Meta's glasses."],
+  ["n12_finale", "AstraCAD Spatial. Measure the real thing. Get the part that fits."]
+]

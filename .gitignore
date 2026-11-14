@@ -48,5 +48,6 @@ pids/
 artifacts/
 exchange/results/
 opencode.json
-scripts/video/*.json
+scripts/video/eval.json
+scripts/video/record.json
 __pycache__/
