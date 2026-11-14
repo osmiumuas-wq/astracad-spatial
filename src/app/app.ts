@@ -40,7 +40,9 @@ import { recognise, type ImportedMesh } from '../engine/step-import.js';
 import { History } from './history.js';
 import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
-import { Action, HELP, parseCommand } from '../engine/commands.js';
+import { Action, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
+import { probe } from './context.js';
+import { Understander } from './understand.js';
 
 export interface BuiltState {
   mesh: MeshData;
@@ -839,16 +841,19 @@ export class App {
       case 'describe': {
         const d = describe(cmd.text);
         if ('error' in d) {
-          reply = d.error;
-          tone = 'warn';
+          // No part word the rules know: let the on-device language model work out what was meant.
+          void this.understandLater(sentence);
+          reply = 'Thinking about that...';
           break;
         }
-        // Spoken requests cannot fill a form: missing sizes take their defaults, and the reply says so.
-        const answers: Record<string, number> = {};
-        for (const q of d.ask) answers[q.id] = q.value;
-        this.applyDescribed(d, answers);
-        reply = `${this.job.title}${d.understood.length ? `: ${d.understood.join(', ')}` : ''}.` +
-          (d.ask.length ? ` I used ${d.ask.map((q) => `${q.label.toLowerCase()} ${q.value}${q.unit ? ` ${q.unit}` : ''}`).join(', ')}; say a new value to change it.` : '');
+        if (d.job === 'sketch') {
+          // "Box" or "round" alone only gives a plain block or disc: let the language model say
+          // whether a specific part was meant ("a box to keep my board in" is an enclosure).
+          void this.understandLater(sentence, d);
+          reply = 'Thinking about that...';
+          break;
+        }
+        reply = this.applySentence(d);
         tone = 'good';
         break;
       }
@@ -856,11 +861,59 @@ export class App {
         reply = this.runAction(cmd.action);
         break;
       default:
-        reply = `I did not catch a command there. ${HELP}`;
-        tone = 'warn';
+        void this.understandLater(sentence);
+        reply = 'Thinking about that...';
     }
     this.say(reply, tone);
     return reply;
+  }
+
+  /** Spoken requests cannot fill a form: missing sizes take their defaults, and the reply says so. */
+  private applySentence(d: Described): string {
+    const answers: Record<string, number> = {};
+    for (const q of d.ask) answers[q.id] = q.value;
+    this.applyDescribed(d, answers);
+    return `${this.job.title}${d.understood.length ? `: ${d.understood.join(', ')}` : ''}.` +
+      (d.ask.length ? ` I used ${d.ask.map((q) => `${q.label.toLowerCase()} ${q.value}${q.unit ? ` ${q.unit}` : ''}`).join(', ')}; say a new value to change it.` : '');
+  }
+
+  /** The on-device language model: chooses what a free-form sentence means (never its numbers). */
+  readonly understander = new Understander();
+
+  private async understandLater(sentence: string, plain?: Described): Promise<void> {
+    let u = await this.understander.understand(sentence);
+    let reply: string;
+    let tone: Notice['tone'] = 'info';
+    // With a plain block or disc already understood, only a clear specific part overrides it.
+    if (plain && !(u?.kind === 'part' && u.score >= 0.45)) u = null;
+    if (plain && !u) {
+      reply = this.applySentence(plain);
+      tone = 'good';
+    } else if (!u || u.kind === 'none') {
+      reply = `I did not catch a command there. ${HELP}`;
+      tone = 'warn';
+    } else if (u.kind === 'tie') {
+      reply = `Did you mean ${u.a.label} or ${u.b.label}? Say it again with one of those words.`;
+    } else if (u.kind === 'action') {
+      reply = `I took that as ${u.intent.label}. ${this.runAction(u.action)}`;
+    } else {
+      // The part's own word goes in front, so the word rules read the user's numbers for it.
+      const d = describe(`${u.intent.noun} ${wordsToDigits(sentence)}`);
+      if ('error' in d) {
+        reply = d.error;
+        tone = 'warn';
+      } else {
+        reply = `I took that as ${u.intent.label}. ${this.applySentence(d)}`;
+        const said = (wordsToDigits(sentence).match(/\d+(?:\.\d+)?/gu) ?? []).map(Number);
+        const used = new Set(Object.values(d.params));
+        const loose = said.filter((n) => !used.has(n));
+        if (loose.length) reply += ` I could not tell what ${loose.join(' and ')} ${loose.length > 1 ? 'were' : 'was'} for; say which size.`;
+        tone = 'good';
+      }
+    }
+    probe.understood = { sentence, result: u ? { kind: u.kind, key: 'intent' in u ? u.intent.key : null } : null };
+    this.say(reply, tone);
+    this.speakReply(reply);
   }
 
   private runAction(a: Action): string {

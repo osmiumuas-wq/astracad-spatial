@@ -56,7 +56,7 @@ function near(parts: string[], words: string[]): number | undefined {
       const nums = [...c.matchAll(/(?<![a-z\d.])(\d+(?:\.\d+)?)/gu)].filter((n) => {
         const i = n.index ?? 0;
         // A size like "80 x 50": the x must stand alone, not end a word ("box 80").
-        return !/^\s*(?:mm)?\s*[x×*](?![a-z])/u.test(c.slice(i + n[0].length)) && !/(?:^|[^a-z])[x×*]\s*$/u.test(c.slice(0, i));
+        return !/^\s*(?:mm)?\s*(?:[x×*]|by)(?![a-z])/u.test(c.slice(i + n[0].length)) && !/(?:^|[^a-z])(?:[x×*]|by)\s*$/u.test(c.slice(0, i));
       });
       if (!nums.length) continue;
       nums.sort((a, b) => Math.abs((a.index ?? 0) - m.index) - Math.abs((b.index ?? 0) - m.index));
@@ -67,7 +67,7 @@ function near(parts: string[], words: string[]): number | undefined {
 }
 
 function triple(text: string): number[] | undefined {
-  const m = new RegExp(String.raw`${NUM}\s*(?:mm)?\s*[x×*]\s*${NUM}\s*(?:mm)?(?:\s*[x×*]\s*${NUM})?`, 'u').exec(text);
+  const m = new RegExp(String.raw`${NUM}\s*(?:mm)?\s*(?:[x×*]|by)\s*${NUM}\s*(?:mm)?(?:\s*(?:[x×*]|by)\s*${NUM})?`, 'u').exec(text);
   if (!m) return undefined;
   return [m[1], m[2], m[3]].filter((v) => v !== undefined).map(Number);
 }
@@ -142,7 +142,7 @@ export const RULES: Record<string, { words: Record<string, string[]>; triple?: s
     key: ['W', 'D', 'H'],
   },
   'pull-handle': {
-    words: { S: ['spacing', 'centres', 'centers', 'between', 'screws', 'long', 'length'], h: ['stand-?off', 'clearance', 'deep', 'depth', 'out'], d: ['bar', 'dia(?:meter)?', 'thick(?:ness)?', 'rod'], R: ['bend', 'radius'] },
+    words: { S: ['spacing', 'centres', 'centers', 'between', 'apart', 'holes', 'screws', 'long', 'length'], h: ['stand-?off', 'clearance', 'deep', 'depth', 'out'], d: ['bar', 'dia(?:meter)?', 'thick(?:ness)?', 'rod'], R: ['bend', 'radius'] },
     key: ['S'],
   },
   'tapered-foot': {

@@ -137,8 +137,11 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   into editable features. The reader is OpenCascade (occt-import-js, LGPL-2.1), downloaded on first use (7.6 MB).
 - The drawing shows each view's silhouette: holes that go right through are drawn and called out; blind pockets,
   counterbores and hidden edges are not.
-- "Describe it" and the spoken commands are a fixed set of word rules, not a language model; they ask rather than
-  guess, and a sentence they do not understand is answered with examples.
+- "Describe it" and the spoken commands are word rules first. A sentence the rules do not know goes to a small
+  on-device language model (all-MiniLM-L6-v2, 23 MB, shipped with the app) that picks which part or action is meant
+  from a fixed catalogue; on 25 sentences it had never seen it got 24 right, asked on 1 and got none wrong
+  (tests/intents.test.ts). It never supplies numbers: sizes come only from the user's words, and a number it cannot
+  place is reported. It cannot hold a conversation or design a part it has no template for.
 - On-device voice uses Whisper tiny (English) through transformers.js: the model (about 40 MB) comes from the
   Hugging Face CDN and the WebAssembly runtime from jsDelivr on first use; audio is not sent anywhere. It takes a few
   seconds per sentence on a desktop and longer on a headset.

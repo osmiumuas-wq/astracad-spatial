@@ -13,6 +13,10 @@ suite('describing the new parts', () => {
     expect('error' in d ? d.error : d.job).toBe('pull-handle');
     if (!('error' in d)) expect([d.params.S, d.params.d]).toEqual([128, 12]);
   });
+  it('sizes written with "by"', () => {
+    const d = describe('a project box 90 by 65 by 30');
+    expect('error' in d ? d.error : [d.params.W, d.params.D, d.params.H]).toEqual([90, 65, 30]);
+  });
   it('a tapered foot', () => {
     const d = describe('tapered foot, base 50, top 32, 25 tall');
     expect('error' in d ? d.error : d.job).toBe('tapered-foot');
