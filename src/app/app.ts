@@ -41,6 +41,7 @@ import { History } from './history.js';
 import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
+import { Style, styleOf, styleParams } from '../engine/style.js';
 import { probe } from './context.js';
 import { Understander } from './understand.js';
 
@@ -521,6 +522,27 @@ export class App {
   }
 
   /** Let the structural agent iterate: change, rebuild, re-test, until the target holds. */
+  /**
+   * Physics-guided style: the style reshapes the part, then the structure agent
+   * reinforces only as far as the standard load needs, and the result is tested.
+   */
+  async applyStyle(style: Style): Promise<void> {
+    const changes = styleParams(this.job, this.params.peek(), style);
+    if (!Object.keys(changes).length) {
+      this.say(`This part has no sizes that give it a ${style} look.`, 'info');
+      return;
+    }
+    this.setParams(changes);
+    this.loadN.value = this.job.loadCase(this.params.peek()).newtons;
+    const listed = Object.entries(changes)
+      .map(([id, v]) => `${paramDef(this.job, id)?.label ?? id} ${+v.toFixed(2)}`)
+      .join(', ');
+    this.say(`${style[0].toUpperCase()}${style.slice(1)}: ${listed}. Now checking it holds its standard load.`, 'info');
+    // Wait for the rebuild, then let Marcus reinforce what the load needs.
+    await new Promise((r) => setTimeout(r, 600));
+    await this.autoReinforce();
+  }
+
   async autoReinforce(): Promise<void> {
     this.engine.cancelAnalysis();
     this.agentLog.value = [];
@@ -905,6 +927,12 @@ export class App {
   runCommand(sentence: string): string {
     const job = this.job;
     const before = { ...this.params.peek() };
+    // A style ("make it sleek"): reshape, then let the structure agent keep it strong.
+    const style = styleOf(sentence);
+    if (style) {
+      void this.applyStyle(style);
+      return `Making it ${style}, then checking it still holds.`;
+    }
     // "this side 40" on an air-sketched outline: a driving dimension for the constraint solver.
     const side = wordsToDigits(sentence).toLowerCase().match(/\b(?:(this|that)\s+(?:side|edge|line)|side\s+(\d+))\b[^\d]*(\d+(?:\.\d+)?)/u);
     if (side && this.jobId.peek() === 'sketch' && this.params.peek().kind === 0) {
