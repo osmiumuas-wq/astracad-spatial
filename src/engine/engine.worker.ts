@@ -31,6 +31,10 @@ const scope = self as unknown as {
 
 const kernelReady = initKernel(() => wasmUrl);
 
+/** A free design has no hand formula or exact box: those checks are left out rather than faked. */
+const finiteOr = (v: number): number | undefined => (Number.isFinite(v) ? v : undefined);
+const boxOr = <T extends { tol: number }>(b: T): T | undefined => (Number.isFinite(b.tol) ? b : undefined);
+
 let cache: { key: string; out: BuildOutput } | null = null;
 let grown: { key: string; mesh: MeshData; volume: number } | null = null;
 
@@ -99,9 +103,9 @@ async function handle(req: Request): Promise<void> {
         ? runGate({
             props: out.props,
             generic: expectVolume(spec),
-            jobVolume: job.volume(params),
-            jobBox: job.box(params),
-            jobGenus: job.genus(params),
+            jobVolume: finiteOr(job.volume(params)),
+            jobBox: boxOr(job.box(params)),
+            jobGenus: job.genus(params) >= 0 ? job.genus(params) : undefined,
             jobBodies: job.bodies,
           })
         : { verdict: 'kernel-only' as const, checks: [] };
@@ -412,9 +416,9 @@ async function handle(req: Request): Promise<void> {
     const gate = runGate({
       props: out.props,
       generic: expectVolume(spec),
-      jobVolume: job.volume(params),
-      jobBox: job.box(params),
-      jobGenus: job.genus(params),
+      jobVolume: finiteOr(job.volume(params)),
+      jobBox: boxOr(job.box(params)),
+      jobGenus: job.genus(params) >= 0 ? job.genus(params) : undefined,
       jobBodies: job.bodies,
     });
     const source = req.grownMesh ?? out.mesh;

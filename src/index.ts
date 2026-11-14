@@ -28,6 +28,7 @@ import { CutawaySystem } from './systems/cutaway-system.js';
 import { TemplateSystem } from './systems/template-system.js';
 import { GcodeSystem } from './systems/gcode-system.js';
 import { ScanSystem } from './systems/scan-system.js';
+import { DesignSystem } from './systems/design-system.js';
 import { ReferenceSystem } from './systems/reference-system.js';
 import { ForearmSystem } from './systems/forearm-system.js';
 import { GhostSystem } from './systems/ghost-system.js';
@@ -139,6 +140,7 @@ World.create(
   world.registerSystem(TemplateSystem, { priority: 36 });
   world.registerSystem(GcodeSystem, { priority: 37 });
   world.registerSystem(ScanSystem, { priority: 38 });
+  world.registerSystem(DesignSystem, { priority: 39 });
   world.registerSystem(ReferenceSystem, { priority: 26 });
   world.registerSystem(HingeSystem, { priority: 27 });
   world.registerSystem(DrawingSystem, { priority: 28 });

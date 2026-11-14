@@ -42,6 +42,7 @@ import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
+import { parseDesign } from '../engine/design.js';
 import { probe } from './context.js';
 import { Understander } from './understand.js';
 
@@ -240,6 +241,15 @@ export class App {
     this.requestBuild();
   }
 
+  /** Replace the parameters outright (a free design removing a feature drops its keys). */
+  replaceParams(next: Params): void {
+    const { params, notes } = this.job.clamp(next);
+    this.clampNotes.value = notes;
+    this.params.value = params;
+    this.invalidateAnalysis();
+    this.requestBuild();
+  }
+
   setParam(id: string, value: number): void {
     this.setParams({ [id]: value });
   }
@@ -273,7 +283,8 @@ export class App {
     // One batch: observers must never see the new job with the old parameters.
     batch(() => {
       this.jobId.value = job.id;
-      this.params.value = defaultParams(job);
+      // Through the job's own rules: a free design fills in its starting block here.
+      this.params.value = job.clamp(defaultParams(job)).params;
       this.selected.value = null;
       this.rollback.value = null;
       this.bound.value = [];
@@ -927,6 +938,21 @@ export class App {
   runCommand(sentence: string): string {
     const job = this.job;
     const before = { ...this.params.peek() };
+    // Free design: "add a box 40 by 30 by 10", "drill a 5 mm hole here", "fillet 3"...
+    if (/\b(free design|new design|design (a|my own|something)|start designing)\b/u.test(sentence.toLowerCase())) {
+      this.selectJob('design');
+      return 'Free design: a 60 by 40 by 20 block to start. Add boxes, cylinders, holes, fillets, shells and patterns by voice or from the design strip.';
+    }
+    if (this.jobId.peek() === 'design') {
+      const here = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.mm : undefined;
+      const edit = parseDesign(wordsToDigits(sentence), this.params.peek(), here);
+      if (edit) {
+        this.replaceParams(edit.params);
+        this.say(edit.reply, 'info');
+        this.speakReply(edit.reply);
+        return edit.reply;
+      }
+    }
     // A style ("make it sleek"): reshape, then let the structure agent keep it strong.
     const style = styleOf(sentence);
     if (style) {

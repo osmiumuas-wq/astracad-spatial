@@ -14,6 +14,8 @@ import { Box3, Feature, PartSpec, Seg, Vec2, Vec3 } from './types.js';
 
 export type Params = Record<string, number>;
 
+import { designJob } from './design.js';
+
 export interface ParamDef {
   id: string;
   label: string;
@@ -1233,7 +1235,7 @@ const taperedFoot: Job = {
   roles: { stiffen: ['D', 'd'], fit: 'd' },
 };
 
-export const JOBS: readonly Job[] = [cradle, fitClip, phoneStand, wallBracket, flangePlate, knob, airSketch, hinge, projectBox, pullHandle, taperedFoot];
+export const JOBS: readonly Job[] = [cradle, fitClip, phoneStand, wallBracket, flangePlate, knob, airSketch, hinge, projectBox, pullHandle, taperedFoot, designJob];
 
 export const jobById = (id: string): Job => JOBS.find((j) => j.id === id) ?? JOBS[0];
 
