@@ -741,7 +741,25 @@ export class InteractionSystem extends createSystem({
 
   // ----- palm push -------------------------------------------------------------------
 
+  /**
+   * A controller in the pushing hand pulses with the utilisation (hands have no
+   * motors; with controllers the buzz grows towards yield). Throttled.
+   */
+  private buzzAt = 0;
+  private buzz(side: 'left' | 'right', util: number): void {
+    if (this.time < this.buzzAt || util < 0.3) return;
+    this.buzzAt = this.time + 0.12;
+    const session = this.world.renderer.xr.getSession?.();
+    if (!session) return;
+    for (const src of session.inputSources) {
+      if (src.handedness !== side) continue;
+      const act = (src.gamepad as unknown as { hapticActuators?: { pulse(v: number, ms: number): Promise<boolean> }[] } | undefined)?.hapticActuators?.[0];
+      void act?.pulse(Math.min(1, util), 60).catch(() => undefined);
+    }
+  }
+
   private endPush(refresh: boolean): void {
+    ctx.sfx.strain(null);
     if (this.pushSide !== null) {
       this.pushSide = null;
       if (refresh) ctx.app.refreshFindings();
@@ -824,6 +842,11 @@ export class InteractionSystem extends createSystem({
       const s = app.stress.peek();
       const peak = s ? (s.stressP99 * newtons) / s.newtons : 0;
       text = `${newtons.toFixed(0)} N   ${peak.toFixed(1)} MPa   factor ${sf === null || !Number.isFinite(sf) ? '-' : sf.toFixed(1)}`;
+      // Hear and feel it: a tone that climbs with the utilisation, and a buzz in the hand's controller (if it has one).
+      const util = sf === null || !Number.isFinite(sf) ? 0 : 1 / Math.max(1e-6, sf);
+      sfx.strain(util, touching.point);
+      this.buzz(touching.side, util);
+      probe.strain = +util.toFixed(3);
       if (sf !== null && sf < 1 && !this.yielded) {
         this.yielded = true;
         sfx.play('yield', touching.point);

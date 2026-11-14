@@ -171,6 +171,64 @@ export class Sfx {
     src.stop(t0 + dur + 0.02);
   }
 
+  // ----- the stress voice: a held tone while a part is pushed ------------------
+  private strainOsc: OscillatorNode | null = null;
+  private strainGain: GainNode | null = null;
+  private strainPan: PannerNode | null = null;
+  private crackleAt = 0;
+
+  /**
+   * Hear the stress: while a palm pushes a part, a soft tone climbs from about
+   * 160 Hz (lightly loaded) to 960 Hz (at yield) with the utilisation (load
+   * over what it can take, 1 / safety factor), and crackles as it nears and
+   * passes yield. `utilisation` null stops it.
+   */
+  strain(utilisation: number | null, at?: { x: number; y: number; z: number }): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.enabled) {
+      utilisation = null;
+    }
+    if (utilisation === null || !ctx || !this.master) {
+      if (this.strainGain && ctx) {
+        const t = ctx.currentTime;
+        this.strainGain.gain.cancelScheduledValues(t);
+        this.strainGain.gain.setTargetAtTime(0, t, 0.05);
+        const osc = this.strainOsc;
+        setTimeout(() => osc?.stop(), 400);
+      }
+      this.strainOsc = null;
+      this.strainGain = null;
+      this.strainPan = null;
+      return;
+    }
+    const u = Math.max(0, Math.min(1.5, utilisation));
+    const t = ctx.currentTime;
+    if (!this.strainOsc) {
+      this.strainOsc = ctx.createOscillator();
+      this.strainOsc.type = 'triangle';
+      this.strainGain = ctx.createGain();
+      this.strainGain.gain.value = 0;
+      this.strainPan = ctx.createPanner();
+      this.strainPan.panningModel = 'equalpower';
+      this.strainOsc.connect(this.strainGain).connect(this.strainPan).connect(this.master);
+      this.strainOsc.start();
+    }
+    const freq = 160 * Math.pow(6, Math.min(1, u)) * (u > 1 ? 1 + (u - 1) * 0.6 : 1);
+    this.strainOsc.frequency.setTargetAtTime(freq, t, 0.04);
+    this.strainGain!.gain.setTargetAtTime(0.05 + 0.1 * Math.min(1, u), t, 0.05);
+    if (at && this.strainPan) {
+      this.strainPan.positionX.setValueAtTime(at.x, t);
+      this.strainPan.positionY.setValueAtTime(at.y, t);
+      this.strainPan.positionZ.setValueAtTime(at.z, t);
+    }
+    // Crackle: short noise ticks, more often the closer it is to yield.
+    if (u > 0.7 && performance.now() > this.crackleAt) {
+      const rate = u >= 1 ? 22 : 4 + (u - 0.7) * 40;
+      this.crackleAt = performance.now() + 1000 / rate * (0.5 + Math.random());
+      this.burst(this.strainPan ?? this.master, 0, 0.018, u >= 1 ? 0.35 : 0.12, 2400 + Math.random() * 2400, 3);
+    }
+  }
+
   /**
    * Play a sound, optionally at a world position. `pitch` shifts it (a dial
    * rises slightly with the value, so direction is audible).
