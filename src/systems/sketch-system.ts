@@ -10,8 +10,9 @@ import {
   BufferAttribute,
   BufferGeometry,
   createSystem,
-  Line,
-  LineBasicMaterial,
+  DoubleSide,
+  Mesh,
+  MeshBasicMaterial,
   Vector3,
   VisibilityState,
 } from '@iwsdk/core';
@@ -25,10 +26,14 @@ import { COLORS } from '../app/palette.js';
 const MAX_POINTS = 2000;
 /** Minimum travel between stroke samples, m. */
 const STEP = 0.0015;
+/** Half the drawn stroke's width, m. A WebGL line is one pixel wide on every headset, too thin to follow. */
+const HALF_WIDTH = 0.002;
 
 export class SketchSystem extends createSystem({}) {
-  private line!: Line<BufferGeometry, LineBasicMaterial>;
+  private line!: Mesh<BufferGeometry, MeshBasicMaterial>;
   private readonly buf = new Float32Array(MAX_POINTS * 3);
+  /** The stroke as a flat ribbon on the bench: two vertices per sample, either side of the path. */
+  private readonly ribbon = new Float32Array(MAX_POINTS * 2 * 3);
   private count = 0;
   private drawing: HandState | null = null;
   private readonly local = new Vector3();
@@ -36,14 +41,59 @@ export class SketchSystem extends createSystem({}) {
 
   init(): void {
     const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(this.buf, 3));
+    g.setAttribute('position', new BufferAttribute(this.ribbon, 3));
+    const index = new Uint16Array((MAX_POINTS - 1) * 6);
+    for (let i = 0; i < MAX_POINTS - 1; i++) {
+      const a = i * 2;
+      index.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], i * 6);
+    }
+    g.setIndex(new BufferAttribute(index, 1));
     g.setDrawRange(0, 0);
-    this.line = new Line(g, new LineBasicMaterial({ color: COLORS.amber, toneMapped: false, depthTest: false }));
+    this.line = new Mesh(
+      g,
+      // Transparent so it sorts with (and after) the translucent turntable instead of being drawn under it.
+      new MeshBasicMaterial({ color: COLORS.amber, toneMapped: false, depthTest: false, side: DoubleSide, transparent: true }),
+    );
     this.line.name = 'Air sketch stroke';
     this.line.renderOrder = 25;
     this.line.frustumCulled = false;
     ctx.bench.turntable.add(this.line);
     this.world.createTransformEntity(this.line, { parent: ctx.turntableEntity, persistent: true });
+  }
+
+  /** Set sample i's two ribbon vertices, offset across the direction of travel (in the bench plane). */
+  private widen(i: number): void {
+    const b = this.buf;
+    const p = Math.max(0, i - 1);
+    let dx = b[i * 3] - b[p * 3];
+    let dz = b[i * 3 + 2] - b[p * 3 + 2];
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-9) {
+      dx = 1;
+      dz = 0;
+    } else {
+      dx /= len;
+      dz /= len;
+    }
+    const nx = -dz * HALF_WIDTH;
+    const nz = dx * HALF_WIDTH;
+    const r = this.ribbon;
+    const k = i * 6;
+    r[k] = b[i * 3] + nx;
+    r[k + 1] = b[i * 3 + 1];
+    r[k + 2] = b[i * 3 + 2] + nz;
+    r[k + 3] = b[i * 3] - nx;
+    r[k + 4] = b[i * 3 + 1];
+    r[k + 5] = b[i * 3 + 2] - nz;
+    // The first sample takes its direction from the second.
+    if (i === 1) {
+      r[0] = b[0] + nx;
+      r[1] = b[1];
+      r[2] = b[2] + nz;
+      r[3] = b[0] - nx;
+      r[4] = b[1];
+      r[5] = b[2] - nz;
+    }
   }
 
   private reset(): void {
@@ -135,8 +185,9 @@ export class SketchSystem extends createSystem({}) {
         this.buf[this.count * 3 + 2] = this.local.z;
         this.count++;
         this.last.copy(this.local);
+        this.widen(this.count - 1);
         (this.line.geometry.getAttribute('position') as BufferAttribute).needsUpdate = true;
-        this.line.geometry.setDrawRange(0, this.count);
+        this.line.geometry.setDrawRange(0, Math.max(0, this.count - 1) * 6);
       }
     }
   }
