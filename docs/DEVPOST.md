@@ -109,16 +109,18 @@ Vitest, GitHub Pages.
 
 ## Video
 
-2 minutes 58 seconds (scripts/video, edit list in scripts/video/edl.json). Two kinds of shot, each labelled on screen:
+2 minutes 58 seconds, in eleven chapters (scripts/video: film.json is the edit, final2.py composes it). Every shot is
+the real app, recorded at 1440 px in Meta's XR emulator (IWER) on a PC, driven by scripted hand and head input; it has
+not yet been filmed on a headset. A column beside the footage names each feature, lists what it does, and captions the
+narration. Honest markers on screen:
 
-- REAL APP: the app itself, recorded in Meta's XR emulator (IWER) on a PC, driven by scripted hand and head input. Not
-  yet filmed on a headset. The voice scene feeds a synthesised recording of the sentence to the on-device recogniser,
-  because the emulator has no microphone. One clip is shortened: the vibration solve took 36 s, and the cut is marked
-  on screen.
-- RENDER: product shots made in Blender from the STL files the app exported, each part verified by the app's truth gate.
+- The voice chapter plays a recorded sentence that is fed to the on-device recogniser, because the emulator has no
+  microphone.
+- Some chapters skip idle seconds between actions. The vibration solve took 14 s on this PC and is not shown.
+- The glasses chapter uses the emulator's Meta VR Glasses device.
 
 Narration is a synthetic voice (Kokoro TTS). The music is original, synthesised for the film. The closing card repeats
-these disclosures and the honest limits: hand measurements are good to millimetres; stress and flow are design previews.
+the footage disclosure.
 
 ## Try it
 

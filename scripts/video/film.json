@@ -1,0 +1,690 @@
+{
+ "comment": "The chaptered film: every shot is the real app (artifacts/video/scenes/<src>, 1440 px). Each chapter has narration, a title, timed bullets (cue = a word in the narration where the bullet appears) and clips. Clip fields: src, in (s), dur (s, the last clip fills the chapter), zoom [[t, cx, cy, side]] in source pixels (side 1440 = whole frame), callouts [{t0, t1, box [x0, y0, x1, y1], label}], note (an honest on-screen marker), audio [[file, at]] (diegetic sound).",
+ "chapters": [
+  {
+   "id": "intro",
+   "kind": "title",
+   "title": "AstraCAD Spatial",
+   "kicker": "A CAD bench for Meta Quest",
+   "narration": "AstraCAD Spatial is a CAD bench for Meta Quest. You design real parts with your hands and your voice, and every part is checked before you print it.",
+   "bullets": [
+    [
+     "Design with your hands and your voice",
+     "hands"
+    ],
+    [
+     "Every part verified by exact formulas",
+     "checked"
+    ],
+    [
+     "Runs in the Quest Browser, on the headset",
+     "print"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "hero",
+     "in": 1.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       13,
+       720,
+       760,
+       1280
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "bench",
+   "title": "The bench, in your room",
+   "narration": "It runs in the Quest browser, with nothing to install. The bench lands on your desk and anchors to the room, and a guide lights up the next step.",
+   "bullets": [
+    [
+     "WebXR in the Quest Browser: no install, no account",
+     "browser"
+    ],
+    [
+     "Anchored to your room with WebXR anchors",
+     "anchors"
+    ],
+    [
+     "A guide highlights each next step",
+     "guide"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "arrive",
+     "in": 0.3,
+     "callouts": [
+      {
+       "t0": 7.2,
+       "t1": 11.2,
+       "box": [
+        540,
+        118,
+        1095,
+        245
+       ],
+       "label": "Guide: the next step"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "shape",
+   "title": "Shape it with your hands",
+   "narration": "Pinch an amber handle, and pull. The kernel rebuilds the part as you move. Then the truth gate checks it against an exact formula. Here they agree to better than one part in a billion. A part that fails is refused.",
+   "bullets": [
+    [
+     "Pinch and pull: the solid rebuilds as you move",
+     "rebuilds"
+    ],
+    [
+     "Truth gate: volume, size and holes checked against closed-form maths",
+     "truth"
+    ],
+    [
+     "Tolerance 0.001 %. A part that fails is never shown as verified",
+     "refused"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "shape",
+     "in": 4.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       4.5,
+       720,
+       720,
+       1440
+      ],
+      [
+       6.5,
+       560,
+       560,
+       880
+      ]
+     ],
+     "callouts": [
+      {
+       "t0": 6.8,
+       "t1": 15.5,
+       "box": [
+        195,
+        330,
+        665,
+        645
+       ],
+       "label": "Truth gate"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "voice",
+   "title": "Or just say it",
+   "narration": "Speech becomes text on the headset. A small language model, also on the headset, picks the part you mean, and the sizes come only from your words.",
+   "bullets": [
+    [
+     "Whisper speech recognition, running on the headset",
+     "Speech"
+    ],
+    [
+     "A small on-device language model picks the part",
+     "picks"
+    ],
+    [
+     "Sizes come only from what you said",
+     "sizes"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "voice",
+     "in": -2.0,
+     "note": "VOICE  ·  A RECORDED SENTENCE FED TO THE ON-DEVICE RECOGNISER (THE EMULATOR HAS NO MICROPHONE)",
+     "callouts": [
+      {
+       "t0": 10.3,
+       "t1": 14.2,
+       "box": [
+        525,
+        462,
+        1000,
+        555
+       ],
+       "label": "What it understood"
+      }
+     ],
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       9.0,
+       720,
+       720,
+       1440
+      ],
+      [
+       10.2,
+       770,
+       560,
+       720
+      ],
+      [
+       14.2,
+       770,
+       560,
+       720
+      ],
+      [
+       15.6,
+       720,
+       720,
+       1440
+      ]
+     ]
+    }
+   ],
+   "lead": 7.2,
+   "audio": [
+    [
+     "../voice/pi.wav",
+     0.2,
+     1.0
+    ]
+   ],
+   "quotes": [
+    [
+     "“I want a box to keep my Raspberry Pi in. 90 by 65 by 30.”",
+     0.3,
+     6.2
+    ]
+   ]
+  },
+  {
+   "id": "measure",
+   "title": "Measure the real thing",
+   "narration": "Parts have to fit real things. Choose Measure, pinch both ends of the object, and hold still. The reading locks, and the part takes that size.",
+   "bullets": [
+    [
+     "Pinch both ends with two hands, or span it with one",
+     "pinch"
+    ],
+    [
+     "Hold still: the reading locks, with its spread",
+     "locks"
+    ],
+    [
+     "The size goes straight into the part",
+     "takes"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "measure",
+     "in": 5.0,
+     "dur": 3.0
+    },
+    {
+     "src": "measure",
+     "in": 17.5,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       1.0,
+       720,
+       760,
+       1040
+      ]
+     ],
+     "callouts": [
+      {
+       "t0": 7.0,
+       "t1": 10.6,
+       "box": [
+        640,
+        630,
+        950,
+        715
+       ],
+       "label": "Locked"
+      }
+     ]
+    }
+   ],
+   "lead": 2.0,
+   "tail": 2.0
+  },
+  {
+   "id": "sketch",
+   "title": "Draw it in the air",
+   "narration": "No template for it? Draw the outline in the air. Let go, and it becomes a solid part, checked like every other.",
+   "bullets": [
+    [
+     "Pinch and draw a closed outline above the bench",
+     "Draw"
+    ],
+    [
+     "Let go: it is extruded into a solid",
+     "solid"
+    ],
+    [
+     "Verified like any other part",
+     "checked"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "sketch",
+     "in": 15.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       1.5,
+       760,
+       760,
+       980
+      ]
+     ]
+    }
+   ],
+   "lead": 4.0
+  },
+  {
+   "id": "test",
+   "title": "Test it with your hand",
+   "narration": "Now test it. Push with your open palm, and the stress solver runs live: newtons, megapascals, and the safety factor. At a hundred and fourteen newtons, this bracket would yield.",
+   "bullets": [
+    [
+     "Open-palm push: a live load, in newtons",
+     "palm"
+    ],
+    [
+     "Stress solver on the headset, cross-checked against CalculiX",
+     "solver"
+    ],
+    [
+     "Below a safety factor of 1, it turns red",
+     "yield"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "test",
+     "in": 19.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       2.0,
+       640,
+       700,
+       960
+      ]
+     ]
+    }
+   ],
+   "tail": 1.5
+  },
+  {
+   "id": "agents",
+   "title": "Three engineers on the bench",
+   "narration": "Three agents read every result: strength, printing, and cost. Pinch the structure agent's fix. The gusset grows, the part is rebuilt and re-tested, and the same push now holds.",
+   "bullets": [
+    [
+     "Agents for structure, printing, and cost and standards",
+     "agents"
+    ],
+    [
+     "Each fix is one pinch: rebuilt, verified, re-tested",
+     "Pinch"
+    ],
+    [
+     "Gusset 14 to 32 mm: yields at 114 N, then holds 140 N",
+     "holds"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "test",
+     "in": 31.5,
+     "dur": 5.0,
+     "zoom": [
+      [
+       0,
+       880,
+       560,
+       1120
+      ]
+     ],
+     "callouts": [
+      {
+       "t0": 0.8,
+       "t1": 4.8,
+       "box": [
+        910,
+        90,
+        1440,
+        160
+       ],
+       "label": "Structure agent"
+      }
+     ]
+    },
+    {
+     "src": "test",
+     "in": 45.5,
+     "dur": 7.0,
+     "zoom": [
+      [
+       0,
+       880,
+       560,
+       1120
+      ]
+     ],
+     "callouts": [
+      {
+       "t0": 0.3,
+       "t1": 4.2,
+       "box": [
+        870,
+        610,
+        1440,
+        700
+       ],
+       "label": "Pinch the fix"
+      }
+     ]
+    },
+    {
+     "src": "test",
+     "in": 66.5,
+     "zoom": [
+      [
+       0,
+       640,
+       700,
+       960
+      ]
+     ]
+    }
+   ],
+   "tail": 1.5
+  },
+  {
+   "id": "lighter",
+   "title": "Lighter, and steady",
+   "narration": "Grow bone strips away the material the load does not need: nineteen grams, down to thirteen. Vibration finds the natural frequencies, and shows each mode shape.",
+   "bullets": [
+    [
+     "Grow bone: topology optimisation, 19.0 g to 13.4 g",
+     "Grow"
+    ],
+    [
+     "Vibration: natural frequencies, solved on the headset",
+     "Vibration"
+    ],
+    [
+     "Each mode shape animated, slowed down",
+     "mode"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "grow",
+     "in": 6.5,
+     "dur": 8.0
+    },
+    {
+     "src": "modes",
+     "in": 19.5,
+     "note": "VIBRATION SOLVE ON THIS PC: 14 S, NOT SHOWN"
+    }
+   ],
+   "tail": 1.5
+  },
+  {
+   "id": "cad",
+   "title": "Real CAD underneath",
+   "narration": "Underneath is real CAD: fillets, shells, sweeps and lofts, each checked against its own formula. A print-in-place hinge swings to its true limit.",
+   "bullets": [
+    [
+     "Fillets, shells, sweeps and lofts",
+     "fillets"
+    ],
+    [
+     "Each proven by its own closed form: Pappus, the prismatoid",
+     "formula"
+    ],
+    [
+     "Print-in-place hinge: swings until its leaves touch",
+     "hinge"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "parts",
+     "in": 0.5,
+     "dur": 8.5,
+     "zoom": [
+      [
+       0,
+       500,
+       480,
+       960
+      ]
+     ]
+    },
+    {
+     "src": "hinge",
+     "in": 2.0,
+     "zoom": [
+      [
+       0,
+       846,
+       600,
+       760
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "share",
+   "title": "Take it with you",
+   "narration": "When it is right, take it with you: a dimensioned drawing, an STL or 3MF for your slicer, a share code for your phone, or a co-design room another headset can join.",
+   "bullets": [
+    [
+     "Dimensioned drawing; STL and 3MF export",
+     "drawing"
+    ],
+    [
+     "Share code and QR: opens on a phone",
+     "share"
+    ],
+    [
+     "Co-design: a six-digit room, headset or phone",
+     "co-design"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "share",
+     "in": 11.0,
+     "dur": 5.0
+    },
+    {
+     "src": "share",
+     "in": 28.0,
+     "dur": 3.5,
+     "zoom": [
+      [
+       0,
+       1100,
+       380,
+       820
+      ]
+     ]
+    },
+    {
+     "src": "codesign",
+     "in": 22.5,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       1.5,
+       840,
+       640,
+       760
+      ]
+     ]
+    }
+   ],
+   "tail": 1.5
+  },
+  {
+   "id": "access",
+   "title": "Made for everyone",
+   "narration": "Captions, dwell to select, large text and one-handed use are built in. And on Meta's glasses, the layout fits the narrower view.",
+   "bullets": [
+    [
+     "Captions, dwell select, large text, one-handed mode",
+     "Captions"
+    ],
+    [
+     "Colour-safe stress colours and high contrast",
+     "built"
+    ],
+    [
+     "Meta VR Glasses: a compact layout for the narrow view",
+     "glasses"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "access",
+     "in": 9.5,
+     "dur": 6.5,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       4.0,
+       720,
+       720,
+       1440
+      ],
+      [
+       5.5,
+       950,
+       880,
+       760
+      ]
+     ]
+    },
+    {
+     "src": "glasses",
+     "in": 0.5,
+     "zoom": [
+      [
+       0,
+       720,
+       880,
+       1100
+      ]
+     ],
+     "note": "EMULATOR DEVICE: META VR GLASSES"
+    }
+   ]
+  },
+  {
+   "id": "outro",
+   "kind": "title",
+   "title": "AstraCAD Spatial",
+   "kicker": "Measure the real thing. Get the part that fits.",
+   "narration": "It works offline, with no account and no server. AstraCAD Spatial. Measure the real thing. Get the part that fits.",
+   "bullets": [
+    [
+     "Works offline: no account, no server",
+     "offline"
+    ],
+    [
+     "Open source",
+     "AstraCAD"
+    ],
+    [
+     "osmiumuas-wq.github.io/astracad-spatial",
+     "Measure"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "hero",
+     "in": 6.0,
+     "zoom": [
+      [
+       0,
+       720,
+       760,
+       1300
+      ],
+      [
+       14,
+       720,
+       720,
+       1440
+      ]
+     ]
+    }
+   ],
+   "tail": 4.0
+  }
+ ]
+}

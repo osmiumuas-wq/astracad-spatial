@@ -16,6 +16,8 @@ export default async function run({ page }) {
     t0 ??= ev.metadata.timestamp;
     times.push([name, ev.metadata.timestamp - t0]);
     n++;
+    // Keep the timing file current, so a take that is cut short still has its clock.
+    if (n % 60 === 0) writeFileSync(join(cfg.out, 'times.json'), JSON.stringify({ times }));
     try {
       await cdp.send('Page.screencastFrameAck', { sessionId: ev.sessionId });
     } catch {

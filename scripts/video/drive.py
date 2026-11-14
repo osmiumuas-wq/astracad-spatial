@@ -120,7 +120,7 @@ class Recording:
             os.remove(os.path.join(self.dir, f))
         with open(os.path.join(ROOT, 'scripts', 'video', 'record.json'), 'w', encoding='utf-8', newline='\n') as f:
             json.dump({'out': self.dir.replace('\\', '/'), 'seconds': seconds}, f)
-        self.proc = subprocess.Popen(CLI + ['browser', 'run', 'scripts/video/cast.mjs'], cwd=ROOT,
+        self.proc = subprocess.Popen(CLI + ['browser', 'run', 'scripts/video/cast.mjs', '--timeout', str(int(seconds * 1000 + 30000))], cwd=ROOT,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
         time.sleep(1.2)
 
