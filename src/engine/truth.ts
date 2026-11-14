@@ -94,7 +94,8 @@ export function runGate(input: GateInput): GateResult {
     });
   }
 
-  if (input.jobVolume !== undefined) {
+  // A part with no hand formula (a free design) passes NaN, and the check is left out, not faked.
+  if (input.jobVolume !== undefined && Number.isFinite(input.jobVolume)) {
     const d = rel(props.volume, input.jobVolume);
     checks.push({
       id: 'job-formula',
@@ -106,7 +107,7 @@ export function runGate(input: GateInput): GateResult {
     });
   }
 
-  if (input.jobBox) {
+  if (input.jobBox && Number.isFinite(input.jobBox.tol)) {
     const { box, tol } = input.jobBox;
     let worst = 0;
     for (let i = 0; i < 3; i++) {
@@ -133,7 +134,7 @@ export function runGate(input: GateInput): GateResult {
     });
   }
 
-  if (input.jobGenus !== undefined) {
+  if (input.jobGenus !== undefined && input.jobGenus >= 0) {
     checks.push({
       id: 'genus',
       label: 'Through-openings (genus)',

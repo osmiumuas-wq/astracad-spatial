@@ -45,7 +45,7 @@ const ACTIONS: [RegExp, Action][] = [
   [/\bshare\b|\bqr\b/u, 'share'],
   [/\blaser\b/u, 'laser'],
   [/\bmeasure\b/u, 'measure'],
-  [/\b(ray scan|scan (it|this|the object)|how big is (it|this))\b/u, 'scan'],
+  [/\b(ray scan|sweep scan|how big is (it|this))\b/u, 'scan'],
   [/\bcapture\b|\bscan\b/u, 'capture'],
   [/\bsketch\b|\bdraw (a|an|the)\b/u, 'sketch'],
   [/\bswing\b|\bopen the hinge\b/u, 'swing'],

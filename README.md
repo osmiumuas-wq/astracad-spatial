@@ -35,8 +35,9 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (83 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
-CalculiX, modal, flow, STEP, hinge, drawing, describe, spoken commands, voice, co-design, calibration):
+Engine tests (145 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+CalculiX, modal, flow, STEP, hinge, drawing, describe, spoken commands, voice, co-design, calibration, stability,
+explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free design):
 
 ```bash
 npx vitest run
@@ -115,6 +116,11 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
     view, and the proof and agent panels should fit either side without being cut off.
 
 ## Honest limits
+
+- The Lab tools are previews with stated limits. The lattice core is not stress-tested again (the solver's cells are
+  coarser than its walls). The G-code is plain: two walls, solid skins, 20 % infill, no supports or bridging rules;
+  check it in your slicer's preview before a long print. The ray scan rests on the headset's surface hits and is good
+  to about a centimetre. A free design made of several bodies is kernel-checked; only single bodies have a closed form.
 
 - Stress results are a design preview: linear statics on a voxel grid, typical datasheet material values. Checked
   against CalculiX on the wall bracket (scripts/verify/ccx_bracket.py, tests/ccx-reference.test.ts): deflection

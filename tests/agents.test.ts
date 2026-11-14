@@ -225,6 +225,7 @@ describe('take-away files', () => {
 
   it('a share link round-trips and refuses garbage', () => {
     for (const job of JOBS) {
+      if (job.id === 'design') continue; // its own test below: the whole feature list travels
       const params = job.clamp({ ...defaultParams(job), [job.params[0].id]: job.params[0].min + 1.35 }).params;
       const link = encodeShare({ job: job.id, material: 'petg', params });
       const back = decodeShare(`#${link}`);
@@ -234,6 +235,13 @@ describe('take-away files', () => {
         expect(back?.params[d.id]).toBeCloseTo(params[d.id], 6);
       }
     }
+    // A free design: every feature key round-trips.
+    const design = JOBS.find((j) => j.id === 'design')!;
+    const dp = design.clamp({ nf: 2, o0: 1, a0: 60, b0: 40, c0: 20, d0: 0, e0: 0, f0: 0, g0: 0, h0: 0, o1: 4, a1: 4.5, b1: 0, c1: 0, d1: 10, e1: -5, f1: 20, g1: 0, h1: 0 }).params;
+    const back = decodeShare(`#${encodeShare({ job: 'design', material: 'pla', params: dp })}`);
+    expect(back?.job.id).toBe('design');
+    expect(back?.params).toEqual(dp);
+    expect(decodeShare('#p=design.pla.nf~2_o0~x')).toBeNull();
     expect(decodeShare('#p=nope.pla.1_2')).toBeNull();
     expect(decodeShare('#p=fit-clip.pla.1_2')).toBeNull();
     expect(decodeShare('')).toBeNull();

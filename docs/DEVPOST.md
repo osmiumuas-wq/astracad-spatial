@@ -46,6 +46,17 @@ hands, and every number on screen backed by a check you can see.
   plain blocks and cylinders become editable.
 - **Design together.** Start a room and a partner joins by code from another headset or a phone: one shared part,
   their fingertips shown at your bench.
+- **Design anything.** Free design builds a part feature by feature, by voice or from a design strip: boxes,
+  cylinders, pockets, bores, holes where your hand ray points, fillets, shells, linear and circular patterns, and
+  sketched outlines, with a feature tree beside the part. Everything else (test, explore, slice, export, undo, share
+  links) works on a design. Air sketches keep their intent with FreeCAD's constraint solver (planeGCS): square
+  corners and equal sides hold, and "this side 40" sets a side.
+- **The Lab.** Explore builds, verifies and stress-tests six variants and marks the best trade-offs. A tip test finds
+  the exact centre of mass and the angle the part falls at, with its load resting on it. Point at the part and say
+  "make this thicker". Hear the stress rise as you push. A gyroid lattice core behind a solid skin, cut open to see.
+  A life-size drilling template stuck on your real wall. Real G-code sliced on the headset (walls, skin, infill,
+  time, filament). A ray scan sweeps the hand ray over an object for its rough size. "Make it sleek" reshapes the
+  part, then the structure agent keeps it strong.
 
 ## How we built it
 
@@ -98,8 +109,9 @@ cells and grid sizes tied to wall thickness; before that, results moved 30 % wit
 
 ## What is next
 
-Gears and general mates for assemblies, full feature recognition for
-imported STEP files, and the desktop AstraCAD bridge for drawings and production solvers.
+Gears and general mates for assemblies, full feature recognition for imported STEP files, supports and bridging in
+the slicer, sending G-code to a printer on the network, and the desktop AstraCAD bridge for drawings and production
+solvers.
 
 ## Built with
 
