@@ -19,6 +19,7 @@ import { materialById } from './materials.js';
 import { LoadSpec, Request, Response, SolveOutcome } from './protocol.js';
 import { fieldSampler, optimise } from './topo.js';
 import { insideDistance, latticeField, latticeFor, maxDepth } from './lattice.js';
+import { describeHoles, mountingNormal, templateOf } from './template.js';
 import { runGate } from './truth.js';
 import { BuildOutput, MeshData, SpecError, Vec3 } from './types.js';
 
@@ -145,6 +146,19 @@ async function handle(req: Request): Promise<void> {
       { id: req.id, type: 'sliced', ...layers, up: best.up, upLabel: best.label, minutes: cost.minutes ?? 0 },
       [layers.segments.buffer, layers.starts.buffer],
     );
+    return;
+  }
+
+  if (req.type === 'template') {
+    const out = build(kernel, job, params);
+    const lc = job.loadCase(params);
+    const normal = mountingNormal(lc.fixture, out.props.bbox);
+    if (!normal || !/screw|bolt/iu.test(lc.fixtureLabel)) {
+      throw new SpecError(`This part is ${lc.fixtureLabel.toLowerCase()}; a drilling template is for parts that are screwed or bolted on.`);
+    }
+    const sec = kernel.section(job.spec(params), normal, 0.4);
+    const t = templateOf(sec.loops);
+    scope.postMessage({ id: req.id, type: 'templated', loops: sec.loops, holes: t.holes, outline: t.outline, normal, label: describeHoles(t.holes) });
     return;
   }
 

@@ -13,7 +13,7 @@ import { Request, Response } from '../engine/protocol.js';
 type Built = Extract<Response, { type: 'built' }>;
 type DistributiveOmit<T, K extends keyof never> = T extends unknown ? Omit<T, K> : never;
 export type AnalysisRequest = DistributiveOmit<
-  Extract<Request, { type: 'solve' | 'reinforce' | 'grow' | 'export' | 'build' | 'slice' | 'flow' | 'modes' | 'views' | 'lattice' }>,
+  Extract<Request, { type: 'solve' | 'reinforce' | 'grow' | 'export' | 'build' | 'slice' | 'flow' | 'modes' | 'views' | 'lattice' | 'template' }>,
   'id'
 >;
 
@@ -199,6 +199,7 @@ export class EngineClient {
       msg.type === 'built' ||
       msg.type === 'sliced' ||
       msg.type === 'latticed' ||
+      msg.type === 'templated' ||
       msg.type === 'flowed' ||
       msg.type === 'moded' ||
       msg.type === 'viewed'

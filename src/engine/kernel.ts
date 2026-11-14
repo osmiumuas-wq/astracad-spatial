@@ -962,6 +962,35 @@ export class Kernel {
   }
 
   /**
+   * The section of the part `depth` mm inside its face that looks along
+   * `normal` (a unit axis): outer loops and holes, in the face's own 2D frame
+   * (x, y in mm; `x` and `y` are those axes in part coordinates). Used for a
+   * life-size drilling template of a mounting face.
+   */
+  section(spec: PartSpec, normal: Vec3, depth: number): { loops: Vec2[][]; x: Vec3; y: Vec3; z: Vec3; at: number } {
+    const arena: Disposable[] = [];
+    const keep = <T extends Disposable>(o: T): T => {
+      arena.push(o);
+      return o;
+    };
+    try {
+      const { solid } = this.construct(spec, spec.features.length, keep);
+      const z = norm(normal);
+      const helper: Vec3 = Math.abs(z[1]) < 0.9 ? [0, 1, 0] : [0, 0, -1];
+      // y' as close to the helper (part up) as the plane allows, x' completing a right-handed frame.
+      const x = norm(cross(helper, z));
+      const y = cross(z, x);
+      const toLocal: Mat4 = [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, 0, 0, 0, 1];
+      const turned = keep(solid.transform(toLocal));
+      const at = turned.boundingBox().max[2] - depth;
+      const loops = keep(turned.slice(at)).toPolygons().map((p) => p.map((q): Vec2 => [q[0], q[1]]));
+      return { loops, x, y, z, at };
+    } finally {
+      release(arena);
+    }
+  }
+
+  /**
    * Silhouettes for a three-view drawing (third-angle, mm): each view is the
    * solid's shadow along the viewing direction, as outer loops and holes.
    * front: looking along -Z (sheet x = X, y = Y); top: looking down -Y

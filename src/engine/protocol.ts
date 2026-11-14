@@ -11,7 +11,7 @@ import { Wind } from './flow.js';
 import type { DrawingViews } from './kernel.js';
 import { Params } from './jobs.js';
 import { GateResult } from './truth.js';
-import { KernelProps, MeshData, Vec3 } from './types.js';
+import { KernelProps, MeshData, Vec2, Vec3 } from './types.js';
 
 export interface LoadSpec {
   region: LoadRegion;
@@ -41,6 +41,7 @@ export type Request =
   | { id: number; type: 'reinforce'; job: string; params: Params; material: string; loadN: number; load?: LoadSpec }
   | { id: number; type: 'grow'; job: string; params: Params; material: string; keep: number; load?: LoadSpec }
   | { id: number; type: 'lattice'; job: string; params: Params }
+  | { id: number; type: 'template'; job: string; params: Params }
   | {
       id: number;
       type: 'export';
@@ -96,6 +97,7 @@ export type Response =
       ms: number;
     }
   | { id: number; type: 'exported'; stl: Uint8Array; record: PartRecord; name: string }
+  | { id: number; type: 'templated'; loops: Vec2[][]; holes: { c: Vec2; d: number }[]; outline: Vec2[]; normal: Vec3; label: string }
   | { id: number; type: 'latticed'; mesh: MeshData; props: KernelProps; before: number; cell: number; wall: number; skin: number; ms: number }
   | { id: number; type: 'sliced'; segments: Float32Array; starts: Uint32Array; height: number; printLayers: number; layerHeight: number; up: Vec3; upLabel: string; minutes: number }
   | { id: number; type: 'flowed'; points: Float32Array; speeds: Float32Array; starts: Uint32Array; h: number; cells: number; iterations: number; ms: number; wind: Wind }
