@@ -200,3 +200,34 @@ export function parseCommand(input: string, job: Job, params: Params): Command {
 export const HELP =
   'Try: "make the arm 20 mm longer", "double the thickness", "bore 8", "two more bolts", "in aluminium", ' +
   '"test it", "make it stronger", "show the drawing", "air flow", "vibration", "undo", or describe a new part.';
+
+/**
+ * Point and say: a sentence about "this" (the spot the hand ray points at on
+ * the part) edits the parameter there. Returns the new value, or null when the
+ * sentence is not about "this" or says no change.
+ *
+ *   "make this thicker" / "this bigger"       +20 %
+ *   "this thinner" / "shorter" / "smaller"    -20 %
+ *   "this 5 mm longer" / "make that 3 thinner" +-5 / +-3
+ *   "this 40" / "make this 12 mm"             set to 40 / 12
+ *   "double this" / "halve this"              x2 / x0.5
+ */
+export function deicticEdit(sentence: string, value: number): number | null {
+  const text = wordsToDigits(sentence).toLowerCase();
+  if (!/\b(this|that|here|there|it here)\b/u.test(text)) return null;
+  if (/\bdouble\b|\btwice\b/u.test(text)) return value * 2;
+  if (/\bhalve\b|\bhalf\b/u.test(text)) return value / 2;
+  const grow = /\b(thick|long|big|wid|tall|high|deep|larg|more)\w*/u.test(text) && !/\b(thinn|short|small|narrow|low|less|shallow)\w*/u.test(text);
+  const shrink = /\b(thinn|short|small|narrow|low|less|shallow|reduc)\w*/u.test(text);
+  const num = text.match(/(-?\d+(?:\.\d+)?)\s*(mm|millimet\w*|cm|centimet\w*)?/u);
+  if (num) {
+    let n = parseFloat(num[1]);
+    if (num[2] && num[2].startsWith('c')) n *= 10;
+    if (grow) return value + n;
+    if (shrink) return value - n;
+    return n;
+  }
+  if (grow) return value * 1.2;
+  if (shrink) return value / 1.2;
+  return null;
+}

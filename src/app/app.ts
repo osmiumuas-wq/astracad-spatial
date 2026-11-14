@@ -40,7 +40,7 @@ import { recognise, type ImportedMesh } from '../engine/step-import.js';
 import { History } from './history.js';
 import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
-import { Action, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
+import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { probe } from './context.js';
 import { Understander } from './understand.js';
 
@@ -810,9 +810,27 @@ export class App {
    * action, or make a new part. Returns the reply, which is also shown (and
    * spoken when the user talked).
    */
+  /** Point and say: the parameter under the hand ray, and when it was last pointed at (ms). */
+  pointed: { param: string; at: number } | null = null;
+
   runCommand(sentence: string): string {
     const job = this.job;
     const before = { ...this.params.peek() };
+    // "make this thicker" while pointing at the part: edit the size under the ray.
+    const p = this.pointed;
+    if (p && performance.now() - p.at < 8000 && p.param in before) {
+      const next = deicticEdit(sentence, before[p.param]);
+      if (next !== null) {
+        this.setParams({ [p.param]: next });
+        const d = paramDef(job, p.param);
+        const after = this.params.peek()[p.param];
+        const fmt = (v: number): string => (d?.unit === '' ? String(Math.round(v)) : v.toFixed(Math.abs(v - Math.round(v)) < 0.01 ? 0 : 2));
+        const reply = `${d?.label ?? p.param} (where you pointed): ${fmt(before[p.param])} to ${fmt(after)}${d?.unit ? ` ${d.unit}` : ''}.`;
+        this.say(reply, 'info');
+        this.speakReply(reply);
+        return reply;
+      }
+    }
     const cmd = parseCommand(sentence, job, before);
     let reply = '';
     let tone: Notice['tone'] = 'info';
