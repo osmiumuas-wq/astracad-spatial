@@ -29,6 +29,7 @@ import { JOBS, paramDef } from '../engine/jobs.js';
 import { MATERIALS } from '../engine/materials.js';
 import { ctx, probe } from '../app/context.js';
 import { CSS } from '../app/palette.js';
+import { RoomAnchor } from '../app/room-anchor.js';
 import { today, Settings } from '../app/persistence.js';
 import { buttonMesh, highlightButton, Line, makeButton, setButton, setUiStyle, TextPanel, tickPanels } from '../app/ui3d.js';
 import { drawQr } from '../flat/flat-ui.js';
@@ -90,6 +91,8 @@ export class WorkspaceSystem extends createSystem({
   private co!: TextPanel;
   private note!: TextPanel;
   private noteUntil = 0;
+  private readonly anchor = new RoomAnchor();
+  private anchorAsked = false;
   /** null until the device's field of view is known; true for a narrow view (glasses). */
   private compact: boolean | null = null;
   private readonly box = new Box3();
@@ -438,6 +441,9 @@ export class WorkspaceSystem extends createSystem({
   /** Put the bench in front of the user, at a comfortable seated height. */
   place(): void {
     const { bench } = ctx;
+    // The app moves the bench now; a new anchor is made once it has settled.
+    this.anchor.release();
+    this.anchorAsked = false;
     const head = this.player.head;
     head.getWorldPosition(this.head);
     head.getWorldQuaternion(this.q);
@@ -926,6 +932,10 @@ export class WorkspaceSystem extends createSystem({
     this.elapsed += delta;
     if (this.world.visibilityState.peek() === VisibilityState.NonImmersive) {
       if (this.compact !== null) this.restoreLayout();
+      if (this.anchorAsked) {
+        this.anchor.release();
+        this.anchorAsked = false;
+      }
       return;
     }
     if (this.compact === null && this.placedAt > 0) this.detectLayout();
@@ -934,12 +944,23 @@ export class WorkspaceSystem extends createSystem({
     tickPanels(delta, ctx.app.settings.peek().reduceMotion);
     const showNote = this.elapsed < this.noteUntil;
     if (showNote !== this.note.group.visible) this.note.group.visible = showNote;
-    // Place the bench once the head pose has settled, then look for a table for a few seconds.
+    // Place the bench once the head pose has settled, then look for a table for a few seconds,
+    // then anchor it to the room where it ended up.
     if (this.placedAt === 0 && this.elapsed > 0.6) {
       this.place();
-    } else if (this.placedAt > 0 && !this.snapped && this.elapsed - this.placedAt < 6) {
-      this.snapped = this.snapToTable();
+    } else if (this.placedAt > 0 && !this.anchorAsked) {
+      if (!this.snapped && this.elapsed - this.placedAt < 6) this.snapped = this.snapToTable();
+      if (this.snapped || this.elapsed - this.placedAt >= 6) {
+        this.anchorAsked = true;
+        this.anchor.request(this.elapsed);
+        if (!this.snapped) {
+          // An untested room: no table found. The bench stays at seated height, in reach.
+          ctx.app.say('No table found here. The bench floats at seated height; Bring bench here moves it.', 'info');
+        }
+      }
     }
+    this.anchor.update(this.elapsed, ctx.bench.root, this.player, this.world.renderer as never);
+    probe.anchor = { state: this.anchor.state, correctionMm: Math.round(this.anchor.correctionMm * 10) / 10 };
     const show = ctx.app.settings.peek().captions && this.elapsed < this.captionUntil;
     if (show !== this.caption.group.visible) {
       this.caption.group.visible = show;

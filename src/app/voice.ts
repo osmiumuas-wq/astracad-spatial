@@ -111,7 +111,11 @@ export class Voice {
 
   private ensureWorker(): Worker {
     if (this.worker) return this.worker;
-    this.worker = new Worker(new URL('./whisper.worker.ts', import.meta.url), { type: 'module' });
+    // The worker's name carries the app's base URL, so it finds the model shipped with the app.
+    this.worker = new Worker(new URL('./whisper.worker.ts', import.meta.url), {
+      type: 'module',
+      name: new URL(import.meta.env.BASE_URL, document.baseURI).href,
+    });
     this.worker.onmessage = (ev: MessageEvent<{ type: string; id?: number; text?: string; progress?: number; message?: string }>) => {
       const m = ev.data;
       if (m.type === 'loading') {

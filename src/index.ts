@@ -16,6 +16,7 @@ import { Sfx } from './app/sfx.js';
 import { mountFlatUi } from './flat/flat-ui.js';
 import { CaptureSystem } from './systems/capture-system.js';
 import { FlowSystem } from './systems/flow-system.js';
+import { PerfSystem } from './systems/perf-system.js';
 import { DrawingSystem } from './systems/drawing-system.js';
 import { HingeSystem } from './systems/hinge-system.js';
 import { LaserSystem } from './systems/laser-system.js';
@@ -58,6 +59,14 @@ World.create(
   };
   window.addEventListener('error', (ev) => report(ev.error ?? ev.message));
   window.addEventListener('unhandledrejection', (ev) => report(ev.reason));
+  // Offline: the service worker (written at build time by scripts/sw-plugin.mjs) keeps the app
+  // and, after first use, the speech model on the device. Not in development, where it would
+  // serve stale modules.
+  if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // Without it the app still runs; it just needs the network to load.
+    });
+  }
   // The headset can take the graphics context back (memory pressure, a system overlay). Three.js
   // restores it; the user is told why the view blinked.
   const canvas = world.renderer.domElement;
@@ -124,6 +133,7 @@ World.create(
   world.registerSystem(CaptureSystem, { priority: 8 });
   world.registerSystem(WorkspaceSystem, { priority: 30 });
   world.registerSystem(CoDesignSystem, { priority: 32 });
+  world.registerSystem(PerfSystem, { priority: 33 });
 
   // Actions that voice and typed commands can trigger in systems.
   Object.assign(app.actions, {

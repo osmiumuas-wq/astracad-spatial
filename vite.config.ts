@@ -7,11 +7,12 @@
 
 import { iwsdkDev } from '@iwsdk/vite-plugin-dev';
 import { defineConfig } from 'vite';
+import { serviceWorker } from './scripts/sw-plugin.mjs';
 
 export default defineConfig({
   // HTTPS by default (a headset on Wi-Fi needs it). scripts/dev-http.mjs sets
   // ASTRA_DEV_HTTP for localhost previews, where plain HTTP is a secure context.
-  plugins: [iwsdkDev({ https: process.env.ASTRA_DEV_HTTP === '1' ? false : undefined })],
+  plugins: [iwsdkDev({ https: process.env.ASTRA_DEV_HTTP === '1' ? false : undefined }), serviceWorker()],
   worker: { format: 'es' },
   // Evidence files written during emulator runs must not reload the page (that ends the XR session).
   server: { host: '0.0.0.0', port: 8081, open: false, watch: { ignored: ['**/artifacts/**', '**/exchange/**', '**/dist/**'] } },

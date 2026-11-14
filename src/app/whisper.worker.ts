@@ -1,15 +1,24 @@
 /**
  * On-device speech recognition for browsers without the Web Speech API (the
  * Quest Browser among them): Whisper tiny (English), run by transformers.js
- * in WebAssembly inside this worker. The audio never leaves the device; only
- * the model (about 40 MB) is downloaded, once, and then cached by the browser.
+ * in WebAssembly inside this worker. The audio never leaves the device.
+ *
+ * The model (about 40 MB, public/models) and the WebAssembly runtime
+ * (public/ort) are served with the app itself, so voice works with no other
+ * site reachable, and offline once the service worker has them. If the app's
+ * copy is missing, the model falls back to the Hugging Face CDN.
  */
 
 import { env, pipeline } from '@huggingface/transformers';
 
 type Asr = (audio: Float32Array) => Promise<{ text: string } | { text: string }[]>;
 
-env.allowLocalModels = false;
+// The page passes the app's base URL as the worker's name.
+const base = self.name || new URL('../../', self.location.href).href;
+env.allowLocalModels = true;
+env.localModelPath = new URL('models/', base).href;
+env.allowRemoteModels = true;
+if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = new URL('ort/', base).href;
 
 let asr: Promise<Asr> | null = null;
 

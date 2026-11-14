@@ -23,7 +23,7 @@ import {
   VisibilityState,
 } from '@iwsdk/core';
 import type { Wind } from '../engine/flow.js';
-import { ctx, probe } from '../app/context.js';
+import { ctx, quality, probe } from '../app/context.js';
 import { TextLabel, faceViewer } from '../app/labels.js';
 import { CSS } from '../app/palette.js';
 import { setButton } from '../app/ui3d.js';
@@ -170,7 +170,10 @@ export class FlowSystem extends createSystem({}) {
     if (!this.beads.visible || !this.beadCount) return;
     const { bench } = ctx;
     const n = this.speeds.length;
-    for (let i = 0; i < this.beadCount; i++) {
+    // Under frame-rate pressure only every third bead is drawn; the lines stay.
+    const stride = quality.level >= 3 ? 3 : 1;
+    let slot = 0;
+    for (let i = 0; i < this.beadCount; i += stride) {
       const l = this.beadLine[i];
       const a = this.starts[l];
       const b = l + 1 < this.starts.length ? this.starts[l + 1] : n;
@@ -182,9 +185,11 @@ export class FlowSystem extends createSystem({}) {
       this.beadAt[i] += (delta * RATE * Math.max(0.15, this.speeds[p])) / len;
       if (this.beadAt[i] >= 1) this.beadAt[i] -= 1;
       this.m.makeTranslation(this.points[p * 3], this.points[p * 3 + 1], this.points[p * 3 + 2]);
-      this.beads.setMatrixAt(i, this.m);
-      this.beads.setColorAt(i, speedColor(this.speeds[p], this.c));
+      this.beads.setMatrixAt(slot, this.m);
+      this.beads.setColorAt(slot, speedColor(this.speeds[p], this.c));
+      slot++;
     }
+    this.beads.count = slot;
     this.beads.instanceMatrix.needsUpdate = true;
     if (this.beads.instanceColor) this.beads.instanceColor.needsUpdate = true;
     // The label floats above the part.

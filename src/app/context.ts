@@ -28,5 +28,11 @@ export interface Context {
 
 export const ctx = {} as Context;
 
+/**
+ * Rendering quality chosen by the frame-rate governor (src/systems/perf-system.ts).
+ * 0 is full quality; higher levels shed optional work so the headset holds its frame rate.
+ */
+export const quality = { level: 0 };
+
 /** Live values for automated checks and the browser console; never read by the app. */
 export const probe: Record<string, unknown> = {};

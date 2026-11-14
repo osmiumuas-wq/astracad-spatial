@@ -5,3 +5,4 @@
 *.jpg binary
 *.step binary
 *.stp binary
+*.onnx binary
