@@ -76,8 +76,22 @@ export class EngineClient {
     }
   }
 
+  /** Imported solids, sent to every worker (and to a replacement after a restart). */
+  private meshes = new Map<string, { positions: Float32Array; indices: Uint32Array }>();
+
+  registerMesh(meshId: string, positions: Float32Array, indices: Uint32Array): void {
+    this.meshes.set(meshId, { positions, indices });
+    for (const w of [this.builder, this.analysis]) this.sendMesh(w, meshId);
+  }
+
+  private sendMesh(w: Worker, meshId: string): void {
+    const m = this.meshes.get(meshId);
+    if (m) w.postMessage({ id: 0, type: 'mesh', job: 'design', params: {}, meshId, positions: m.positions.slice(), indices: m.indices.slice() } as Request);
+  }
+
   private wireBuilder(): void {
     this.builderReady = false;
+    for (const k of this.meshes?.keys() ?? []) this.sendMesh(this.builder, k);
     this.builder.onmessage = (ev: MessageEvent<Response>) => this.fromBuilder(ev.data);
     this.builder.onerror = (ev) => {
       ev.preventDefault?.();
@@ -105,6 +119,7 @@ export class EngineClient {
 
   private wireAnalysis(): void {
     this.analysisReady = false;
+    for (const k of this.meshes?.keys() ?? []) this.sendMesh(this.analysis, k);
     this.analysis.onmessage = (ev: MessageEvent<Response>) => this.fromAnalysis(ev.data);
     this.analysis.onerror = (ev) => {
       ev.preventDefault?.();

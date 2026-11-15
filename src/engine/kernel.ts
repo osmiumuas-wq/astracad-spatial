@@ -77,7 +77,15 @@ interface Tool {
   op: 'add' | 'sub';
 }
 
+/** Imported solids (from STEP), by id, for feature.mesh: registered in each worker by the page. */
+const MESHES = new Map<string, { positions: Float32Array; indices: Uint32Array }>();
+
+export function registerMesh(id: string, positions: Float32Array, indices: Uint32Array): void {
+  MESHES.set(id, { positions, indices });
+}
+
 const ARG_SETS: Record<string, readonly string[]> = {
+  'feature.mesh': ['mesh'],
   'ref.plane': ['origin', 'normal', 'x_dir', 'base', 'offset'],
   'sketch.rectangle': ['width', 'height', 'x', 'y'],
   'sketch.circle': ['radius', 'diameter', 'x', 'y'],
@@ -642,6 +650,21 @@ export class Kernel {
             }
             const plan = loftPlan((ids as string[]).map((k) => takeNamed(k, f)));
             const tool: Tool = { solid: this.loftSolid(plan, keep), op: 'add' };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.mesh') {
+            // An imported solid as a body: free-design features then cut, add and round on it.
+            const src = MESHES.get(String(a.mesh));
+            if (!src) throw new SpecError('the imported body is not loaded in this session; import its STEP file again', f.id);
+            const mesh = new this.m.Mesh({ numProp: 3, vertProperties: src.positions, triVerts: src.indices });
+            mesh.merge();
+            let solid: Manifold;
+            try {
+              solid = keep(new this.m.Manifold(mesh));
+            } catch {
+              throw new SpecError('the imported model is not one closed solid, so it can only be a reference', f.id);
+            }
+            const tool: Tool = { solid, op: 'add' };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
           } else if (f.$op === 'feature.sweep') {

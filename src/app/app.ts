@@ -43,7 +43,7 @@ import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
-import { edgeNear, normalCode, parseDesign } from '../engine/design.js';
+import { addFeature, edgeNear, normalCode, OPS, parseDesign } from '../engine/design.js';
 import { probe } from './context.js';
 import { Understander } from './understand.js';
 
@@ -387,6 +387,58 @@ export class App {
     }
   }
 
+  /**
+   * A mesh convergence study: the standard load solved on three grids (about 3 500, 12 000 and
+   * 28 000 cells), the change over the last refinement, and a Richardson extrapolation (second
+   * order) of deflection and stress. The finest result becomes the part's stress map.
+   */
+  async convergenceStudy(): Promise<string> {
+    const lc = this.job.loadCase(this.params.peek());
+    this.loadN.value = lc.newtons;
+    const key = this.key();
+    this.engine.cancelAnalysis();
+    const rows: { elements: number; maxDisp: number; stressP99: number }[] = [];
+    try {
+      for (const target of [3500, 16000, 32000]) {
+        this.busy.value = { kind: 'solve', label: `Convergence study: ${target.toLocaleString('en')} cells`, progress: -1 };
+        const res = await this.engine.run<'solved'>({ type: 'solve', job: this.jobId.peek(), params: this.params.peek(), material: this.material.peek(), target });
+        if (key !== this.key()) {
+          this.busy.value = null;
+          return 'The part changed, so the study stopped.';
+        }
+        rows.push(res.outcome);
+        if (target === 32000) {
+          this.stress.value = { ...res.outcome, custom: false, key, onGrown: false };
+          this.refreshFindings();
+        }
+      }
+    } catch (e) {
+      this.busy.value = null;
+      if (e instanceof CancelledError) return 'Stopped.';
+      return e instanceof Error ? e.message : String(e);
+    }
+    this.busy.value = null;
+    const [a, b, c] = rows;
+    const r = Math.cbrt(c.elements / b.elements);
+    const pct = (fb: number, fc: number): number => (Math.abs(fc - fb) / Math.abs(fc)) * 100;
+    const fmtN = (v: number, d = 3): string => v.toPrecision(d);
+    // Richardson (second order) only when the results move one way; otherwise the spread is the uncertainty.
+    const describe = (name: string, unit: string, va: number, vb: number, vc: number): string => {
+      const steady = Math.sign(vb - va) === Math.sign(vc - vb);
+      const tail = steady
+        ? `last change ${pct(vb, vc).toFixed(1)} %, extrapolated ${fmtN(vc + (vc - vb) / (r * r - 1))} ${unit}`
+        : `not settling one way: between ${fmtN(Math.min(va, vb, vc))} and ${fmtN(Math.max(va, vb, vc))} ${unit}, a spread of ${((Math.max(va, vb, vc) / Math.min(va, vb, vc) - 1) * 100).toFixed(0)} %`;
+      return `${name} ${fmtN(va)}, ${fmtN(vb)}, ${fmtN(vc)} ${unit} (${tail})`;
+    };
+    const ok = pct(b.maxDisp, c.maxDisp) < 2 && pct(b.stressP99, c.stressP99) < 5;
+    this.award('test');
+    return (
+      `Convergence study at ${lc.newtons} N on ${rows.map((x) => x.elements.toLocaleString('en')).join(', ')} cells. ` +
+      `${describe('Deflection', 'mm', a.maxDisp, b.maxDisp, c.maxDisp)}. ${describe('Stress P99', 'MPa', a.stressP99, b.stressP99, c.stressP99)}. ` +
+      (ok ? 'Converged: the two finest grids agree within a few percent.' : 'Not converged: treat the range as the uncertainty of this preview.')
+    );
+  }
+
   /** Run the job's standard load case. */
   async runTest(): Promise<boolean> {
     const lc = this.job.loadCase(this.params.peek());
@@ -496,14 +548,25 @@ export class App {
   }
 
   /**
-   * Turn the imported STEP model into an editable part when it is a block or
-   * a cylinder (recognised from its exact volume); otherwise it stays a reference.
+   * Turn the imported STEP model into an editable part. A block or a cylinder
+   * (recognised from its exact volume) becomes a fully parametric part; any
+   * other closed solid becomes the base body of a free design, so holes,
+   * bosses, pockets, fillets and chamfers can be added to it.
    */
   makeEditable(): string {
     const m = this.reference.peek();
     if (!m) return 'Import a STEP file first.';
     const r = recognise(m);
-    if (!r) return `${m.name} is not a plain block or cylinder, so it stays a reference model with a cradle round it.`;
+    if (!r) {
+      if (!m.closed) return `${m.name} is not one closed solid (its surfaces do not meet), so it stays a reference model.`;
+      const slot = Math.floor(Date.now() / 1000) % 1000000;
+      this.engine.registerMesh(`imp${slot}`, m.positions, m.indices);
+      const b = m.box;
+      const params = addFeature({ nf: 0 }, OPS.BASE, { a: slot, b: b.min[0], c: b.max[0], d: b.min[1], e: b.max[1], f: b.min[2], g: b.max[2] });
+      this.reference.value = null;
+      this.adoptShared({ job: 'design', params, material: this.material.peek() });
+      return `${m.name} is now the base of a free design: point at any face to drill a hole, sketch a boss or pocket, or fillet and chamfer its edges. Its own faces keep their shape; "export step" saves the result. It is kept for this session.`;
+    }
     const params: Params = r.shape === 'block' ? { ...blockParams(r.x, r.y), h: r.h } : { kind: 1, cx: 0, cy: 0, r: r.d / 2, h: r.h };
     this.reference.value = null;
     this.adoptShared({ job: 'sketch', params, material: this.material.peek() });
@@ -953,6 +1016,13 @@ export class App {
     // Assembly: "assembly demo", "turn the hinge to 90", "play", "clash check"...
     const asm = this.assemblyCommand?.(sentence) ?? null;
     if (asm) return asm;
+    if (/\b(convergence|converge|fine (analysis|mesh|test)|refine (the )?(mesh|test|analysis))\b/u.test(sentence.toLowerCase())) {
+      void this.convergenceStudy().then((reply) => {
+        this.say(reply, /Not converged|stopped|changed/u.test(reply) ? 'warn' : 'good');
+        this.speakReply(reply.split('. ').slice(-1)[0]);
+      });
+      return 'Running a convergence study: three grids, each finer than the last.';
+    }
     if (/\b(export|save|download)\b.*\b(step|stp)\b/u.test(sentence.toLowerCase())) {
       const s = this.exportStep();
       if (!s) return 'Nothing to export yet.';
@@ -981,7 +1051,14 @@ export class App {
       return reply;
     }
     if (this.jobId.peek() === 'design') {
-      const here = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.mm : undefined;
+      const raw = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.mm : undefined;
+      const nrm0 = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.normal : undefined;
+      // Hands are good to a few millimetres: the point on the face snaps to a 0.5 mm grid (its depth stays on the face).
+      const k0 = nrm0 ? Math.max(0, normalCode(nrm0)) >> 1 : -1;
+      const axis = k0 === 0 ? 1 : k0 === 1 ? 0 : k0 === 2 ? 2 : -1;
+      const grid = (v: number, j: number): number => (j === axis ? v : Math.round(v * 2) / 2);
+      const pointedAtEdge = /\b(this|that) edge\b|\bedge here\b|\b(rim|hole edge)\b/u.test(sentence.toLowerCase());
+      const here = raw && !pointedAtEdge ? (raw.map(grid) as [number, number, number]) : raw;
       const mesh = this.built.peek()?.mesh;
       const edgeAt = mesh ? (at: [number, number, number]) => edgeNear(mesh.edges, at) : undefined;
       const nrm = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.normal : undefined;

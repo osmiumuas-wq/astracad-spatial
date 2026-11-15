@@ -35,12 +35,13 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (181 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
-CalculiX, modal, flow, STEP import and export, hinge, drawing, describe, spoken commands, voice, co-design,
-calibration, stability, explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free
-design, pro part tools, production tools (gears, threads, draft, lofts, sweeps, ribs, holes on any face), assemblies,
-mates and loops, screw, rack and limit mates, edge fillets, rolling-ball fillets, corner blends and curved
-chamfers):
+Engine tests (194 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+CalculiX and its convergence study, modal, flow, STEP import and export (true cylinders, imported bodies made
+editable), hinge, drawings with hidden lines, assembly drawings, describe, spoken commands, voice, co-design,
+calibration, stability, explore, lattice, drilling template, G-code, constraint sketching, typed sketches, ray scan,
+style, free design, pro part tools, production tools (gears, threads, draft, lofts, sweeps, ribs, holes on any face),
+multi-body closed forms, assemblies, mates and loops, screw, rack and limit mates, edge fillets, rolling-ball
+fillets, corner blends and chamfers of any edge):
 
 ```bash
 npx vitest run
@@ -132,8 +133,12 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
 - Stress results are a design preview: linear statics on a voxel grid, typical datasheet material values. Checked
   against CalculiX on the wall bracket (scripts/verify/ccx_bracket.py, tests/ccx-reference.test.ts): deflection
   within 1.3 % and P99 stress within 0.7 % at the app's grid, whose cells are a fraction of the wall and whose origin
-  is moved so flat faces sit on cell boundaries. A grid that cannot line up with the walls still reads up to about
-  17 % stiff, which is why the app sizes cells from the wall.
+  is moved so flat faces sit on cell boundaries. A grid that cannot line up with the walls reads up to about 17 %
+  stiff, which is why the app sizes cells from the wall (now also when the element cap applies). "Convergence study"
+  solves the standard load on three grids (three, four and five cells through the wall) and reports the change, a
+  Richardson extrapolation when the results move one way, or the spread when they do not. On the wall bracket they do
+  not settle (4.40, 4.27, 4.85 mm against CalculiX's 4.458 mm), so the app reports a 13 % spread rather than a
+  converged value. These are previews to guide a design, not certified results.
 - The headset kernel builds sketches, extrudes, cuts, revolves, holes, patterns, fillets, shells, lofts and sweeps,
   each checked against an exact closed form. Their scope is what can be checked exactly: fillets round the corners of
   an extrusion's outline (the edges along the extrusion), shells hollow an extrusion (corners mitred, hole walls from
@@ -146,32 +151,48 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   another with the same radius form a set, and where their edges meet the corner blends into a sphere patch. "Round
   all edges" rolls the ball over the whole part (a rounded block matches Steiner's formula). Circular rims take an
   exact revolved section (Pappus); other curved edges use a 32-segment ball, within about 1 % of the true blend.
-  Chamfers follow straight edges and circular edges; a chamfer of any other curve is refused by name.
+  Chamfers follow any edge chain: straight and circular edges exactly, and any other curve (a slot's rim, a sweep's
+  edge) by sweeping the chamfer's section along it, one wedge per segment between matched sections (a slot boss rim
+  agrees with the offset formula P d^2/2 - pi d^3/3 to within 3 %; concave edges are filled the same way).
 - Production tools in free design: ISO involute spur gears (20 degree pressure angle, checked by the area of their
   own outline), ISO 68-1 metric threads (rods and tapped holes; the thread section swept with a twist, 36 steps per
   turn), draft on bosses (closed form A h (1 + (a + b)/2 + ab/3)), lofts between a rectangle, circle or hexagon,
   sweeps of a profile along a path of straight runs and round bends, ribs that brace a wall from the floor, and
-  exact rectangles, circles, slots and polygons sketched on any face. Gears and threads are kernel-checked, not
-  closed form; their teeth and flanks are faceted, not exact curves.
-- STEP export writes AP214 (automotive_design): each part a MANIFOLD_SOLID_BREP of planar ADVANCED_FACEs, with
-  coplanar triangles merged into one face and holes kept as inner loops. A round-trip test reads the file back with
-  OpenCascade and gets the same volume to 1e-4. Flat faces come out as true planes; curved faces (fillets, holes,
-  gears) come out as many small flat faces, not cylinders or B-spline surfaces. It opens and measures correctly in
-  desktop CAD, but those faces cannot be edited there as one cylinder. NURBS freeform surfaces are not modelled.
+  exact rectangles, circles, slots and polygons sketched on any face. A gear on a plate, a sweep, a boss on a block,
+  a mirror whose copy only touches the original: these are checked in closed form, because bodies now start exactly
+  on the face they stand on (a picked point is snapped onto the design's exact face planes) and the checker adds
+  bodies whose bounding boxes only touch. Threads stay kernel-checked: a twist extruded in steps has no exact
+  formula. Gear teeth and thread flanks are faceted, not exact curves.
+- Typed sketches give every line its own dimension: "sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8
+  tall" (lengths, directions, angles, tangent arcs, then a depth or a cut). Arcs are stored as exact arcs. Features
+  can be placed by numbers instead of the hand: "drill a 6 mm hole at 12.5, -7". A pointed position snaps to a 0.5 mm
+  grid on its face. Hand tracking itself still reads to a few millimetres; typed numbers are exact.
+- STEP export writes AP214 (automotive_design): each part a MANIFOLD_SOLID_BREP rebuilt from the mesh as a face
+  graph. Flat faces are PLANEs (holes as inner loops); holes, shafts, bosses and fillets of straight edges are true
+  CYLINDRICAL_SURFACEs with LINE and CIRCLE edges. The kernel's area-compensated facets are undone, so a 10 mm hole is
+  written as a 10 mm cylinder, and OpenCascade reads back the exact closed-form volume (to 1e-4). Cones, spheres,
+  tori and freeform blends (rolling-ball corners, chamfers of curves, gear teeth, threads) stay as small flat faces,
+  so the shell is always closed. NURBS freeform surfaces are not modelled.
 - Assemblies have coincident, concentric, distance, angle, parallel, hinge, slider, gear, screw (pitch per turn),
   rack and pinion, and limits on any hinge, slider or screw. "Edit part 2" opens a part on the bench with every tool;
   "back to the assembly" puts it back and solves the mates again. "Bill of materials" saves a CSV (item, part,
-  material, quantity, mass). "Export step" saves every part where it sits. Assembly drawings are not made yet.
-- Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step.
+  material, quantity, mass). "Export step" saves every part where it sits. "Assembly drawing" saves an A4 sheet:
+  the assembly in isometric view with hidden lines removed, a numbered balloon on each item and the parts list.
+- Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step, and
+  typed or spoken numbers are exact.
 - The agents are rule-based expert systems, not language models.
 - Capture makes a parametric extrusion of an object's traced footprint and height, not a 3D scan: overhangs,
   tapers and curved tops are not captured. The Quest browser gives web pages no camera image.
 - Vibration frequencies come from the same coarse voxel grid as the stress preview (about 2 500 cells); on a
   cantilever they agree with beam theory to about 2 %. They are a design preview, not a modal test.
-- STEP files are shown and measured as reference models (a cradle can be fitted round one); they are not turned back
-  into editable features. The reader is OpenCascade (occt-import-js, LGPL-2.1), downloaded on first use (7.6 MB).
-- The drawing shows each view's silhouette: holes that go right through are drawn and called out; blind pockets,
-  counterbores and hidden edges are not.
+- STEP files are shown and measured as reference models (a cradle can be fitted round one). "Make it editable" turns
+  a block or cylinder into a parametric part, and any other closed solid into the base body of a free design: holes,
+  bosses, pockets, fillets and chamfers are added to it, and it exports again as STEP. Its own faces keep their shape
+  (they are not turned back into features you can re-dimension), and it is kept for the session. The reader is
+  OpenCascade (occt-import-js, LGPL-2.1), downloaded on first use (7.6 MB).
+- The drawing shows each view's silhouette with the part's edges over it: visible edges solid, hidden edges dashed
+  (sharp edges, and the outlines of curved faces as seen), so blind pockets, counterbores and hole walls are drawn.
+  Through-holes are called out with their diameter; blind holes are drawn but not called out.
 - "Describe it" and the spoken commands are word rules first. A sentence the rules do not know goes to a small
   on-device language model (all-MiniLM-L6-v2, 23 MB, shipped with the app) that picks which part or action is meant
   from a fixed catalogue; on 25 sentences it had never seen it got 24 right, asked on 1 and got none wrong

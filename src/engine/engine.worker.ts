@@ -14,7 +14,7 @@ import { FeaResult, solveFea } from './fea.js';
 import { solveFlow } from './flow.js';
 import { solveModes } from './modal.js';
 import { Job, jobById, Params } from './jobs.js';
-import { initKernel, Kernel } from './kernel.js';
+import { initKernel, Kernel, registerMesh } from './kernel.js';
 import { materialById } from './materials.js';
 import { LoadSpec, Request, Response, SolveOutcome } from './protocol.js';
 import { fieldSampler, optimise } from './topo.js';
@@ -249,6 +249,7 @@ async function handle(req: Request): Promise<void> {
     return;
   }
 
+  if (req.type === 'mesh') return;
   const material = materialById(req.material);
   const wallHint = job.roles.wall ? params[job.roles.wall] : undefined;
 
@@ -451,6 +452,11 @@ async function handle(req: Request): Promise<void> {
 
 scope.onmessage = (event) => {
   const req = event.data;
+  if (req.type === 'mesh') {
+    registerMesh(req.meshId, req.positions, req.indices);
+    cache = null;
+    return;
+  }
   handle(req).catch((error: unknown) => {
     scope.postMessage({
       id: req.id,

@@ -38,6 +38,8 @@
  *             square to the path's first run, swept along it with round bends (a pipe, a handle, a rail)
  *  22 RIB     a thickness, b length along the floor, c height up the wall, d e f corner (on the floor, at
  *             the wall), g normal code of the wall face (2 to 5): a triangular gusset centred on its plane
+ *  23 BASE    a imported solid (its slot), b c min / max x, d e min / max y, f g min / max z: an imported
+ *             STEP model as a body, so holes, bosses, fillets and chamfers can be added to it
  * Bosses (BOX, CYL, OUTLINE, FACE, FCIRC) take h = draft angle in degrees.
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
@@ -49,8 +51,8 @@ import type { Feature, PartSpec } from './types.js';
 import { gearOutline, polygonOutline, rectOutline, slotOutline } from './profiles.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -161,7 +163,7 @@ function outlineSketch(p: Params, k: number, id: string, on: string): Feature {
   return segs ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops: [segs] } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
 }
 
-const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB;
+const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE;
 
 function outlinePts(p: Params, k: number): [number, number][] {
   const m = Math.round(p[`q${k}n`] ?? 0);
@@ -326,6 +328,8 @@ export function designSpec(p: Params): PartSpec {
         features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
         features.push({ $op: 'feature.sweep', id, args: path.length > 2 ? { sketch: `s${i}`, path, bend_radius: v.c } : { sketch: `s${i}`, path } });
       }
+    } else if (op === OPS.BASE) {
+      features.push({ $op: 'feature.mesh', id, args: { mesh: `imp${Math.round(v.a)}` } });
     } else if (op === OPS.RIB) {
       // In the plane of the floor's up and the wall's normal; its legs lie on the wall and the floor.
       const fr = FACE_FRAMES[Math.max(2, Math.min(5, Math.round(v.g)))];
@@ -350,8 +354,11 @@ export function designSpec(p: Params): PartSpec {
       // A boss starts exactly on the face it stands on (snapped onto it), so it fuses with it and the two touch
       // without overlapping (the closed-form check adds their volumes). Formerly: a 0.01 mm sink (the overlap is
       // inside material that is already there, so the volume is unchanged).
-      const sink = 0;
-      const origin: [number, number, number] = op === OPS.FACE ? onFace(p, i, [v.d, v.e, v.f], axisOf(Math.round(v.b))) : [v.d, v.e, v.f];
+      const k = axisOf(Math.round(v.b));
+      const snapped: [number, number, number] = op === OPS.FACE ? onFace(p, i, [v.d, v.e, v.f], k) : [v.d, v.e, v.f];
+      // Off the design's own planes (on an imported body's face): sink 0.01 mm in, so it still fuses.
+      const sink = op === OPS.FACE && Math.round(v.g) !== 1 && snapped[k] === [v.d, v.e, v.f][k] && !facePlanes(p, i, k).includes(snapped[k]) ? 0.01 : 0;
+      const origin: [number, number, number] = [snapped[0] - fr.n[0] * sink, snapped[1] - fr.n[1] * sink, snapped[2] - fr.n[2] * sink];
       features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin, normal: fr.n, x_dir: fr.x } });
       features.push(outlineSketch(p, Math.round(v.a), `s${i}`, `pl${i}`));
       if (op === OPS.REVOLVE) features.push({ $op: 'feature.revolve', id, args: { angle: Math.max(1, Math.min(360, v.b || 360)), axis: 'v' } });
@@ -480,6 +487,10 @@ function addedBox(p: Params): { min: [number, number, number]; max: [number, num
       min[0] = Math.min(min[0], v.d - v.a / 2); max[0] = Math.max(max[0], v.d + v.a / 2);
       min[2] = Math.min(min[2], v.e - v.b / 2); max[2] = Math.max(max[2], v.e + v.b / 2);
       min[1] = Math.min(min[1], v.f); max[1] = Math.max(max[1], v.f + v.c);
+    } else if (op === OPS.BASE) {
+      min[0] = Math.min(min[0], v.b); max[0] = Math.max(max[0], v.c);
+      min[1] = Math.min(min[1], v.d); max[1] = Math.max(max[1], v.e);
+      min[2] = Math.min(min[2], v.f); max[2] = Math.max(max[2], v.g);
     } else if (op === OPS.CYL) {
       min[0] = Math.min(min[0], v.d - v.a / 2); max[0] = Math.max(max[0], v.d + v.a / 2);
       min[2] = Math.min(min[2], v.e - v.a / 2); max[2] = Math.max(max[2], v.e + v.a / 2);
@@ -570,6 +581,7 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.LOFT) s = `${f(v.c)} tall`;
     else if (op === OPS.SWEEP) s = `${Math.max(0, Math.round(p[`q${Math.round(v.b)}n`] ?? 0) - 1)} runs, bends r ${f(v.c)}`;
     else if (op === OPS.RIB) s = `${f(v.a)} thick, ${f(v.b)} x ${f(v.c)}`;
+    else if (op === OPS.BASE) s = `${f(v.c - v.b)} x ${f(v.e - v.d)} x ${f(v.g - v.f)} from STEP`;
     else if (op === OPS.ROUND) s = Math.round(v.b) === 1 ? `r ${f(v.a)}, every edge` : `r ${f(v.a)} on an edge`;
     else if (op === OPS.EDGE) s = `${Math.round(v.b) === 1 ? 'chamfer' : 'fillet'} ${f(v.a)}, ${f(Math.hypot(v.f - v.c, v.g - v.d, v.h - v.e))} long`;
     else if (op === OPS.MIRROR) s = `across ${['X', 'Y', 'Z'][Math.round(v.a)] ?? '?'} = ${f(v.b)}`;
@@ -594,7 +606,18 @@ export interface DesignEdit {
  *   "pattern 4 times 15 apart"        "4 around" (circular)        "remove the last feature"
  */
 export function parseDesign(text: string, p: Params, here?: [number, number, number], edgeAt?: (at: [number, number, number]) => { a: [number, number, number]; b: [number, number, number] } | null, faceCode = 0): DesignEdit | null {
-  const t = text.toLowerCase().replace(/(\d)\s*x\s*(\d)/gu, '$1 by $2');
+  let t = text.toLowerCase().replace(/(\d)\s*x\s*(\d)/gu, '$1 by $2');
+  // Exact placement by numbers, not the hand: "at 10, -5" (x, z on the top face) or "at 10, 20, -5" (x, y, z).
+  if (!typedSketch(t)) {
+    const N = '(-?\\d+(?:\\.\\d+)?)';
+    const pm = t.match(new RegExp(`\\b(?:at|centred at|centered at|positioned at)\\s*\\(?\\s*(?:x\\s*)?${N}\\s*,?\\s*(?:y\\s*)?${N}(?:\\s*,?\\s*(?:z\\s*)?${N})?\\s*\\)?`, 'u'));
+    if (pm) {
+      const [x, b, c] = [pm[1], pm[2], pm[3]].map((s) => (s === undefined ? undefined : parseFloat(s)));
+      here = c === undefined ? [x!, topOf(p), b!] : [x!, b!, c];
+      if (c === undefined) faceCode = 0;
+      t = t.replace(pm[0], ' ');
+    }
+  }
   const nums = [...t.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
   const top = topOf(p);
   const at = here ?? [0, top, 0];

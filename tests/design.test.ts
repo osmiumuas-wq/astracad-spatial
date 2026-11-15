@@ -290,6 +290,21 @@ describe('production tools', () => {
     expect(holed).not.toBeNull();
   });
 
+  it('places features exactly by typed coordinates, not by hand', async () => {
+    const { parseDesign, readFeature } = await import('../src/engine/design.js');
+    const base = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 10 });
+    // "at x, z" on the top face.
+    const holed = parseDesign('drill a 6 mm hole at 12.5, -7', base)!.params;
+    const h = readFeature(holed, 1);
+    expect([h.v.d, h.v.e]).toEqual([12.5, -7]);
+    const boss = parseDesign('add a box 10 by 8 by 5 at -20, 5', base)!.params;
+    const b = readFeature(boss, 1);
+    expect([b.op, b.v.d, b.v.e, b.v.f]).toEqual([OPS.BOX, -20, 5, 10]);
+    // A typed sketch's "15 at 135" is an angle, not a place.
+    const sk = parseDesign('sketch 20 right, 15 at 135, close', base, [0, 10, 0], undefined, 0)!.params;
+    expect(readFeature(sk, 1).op).toBe(OPS.FACE);
+  });
+
   it('taps a thread inside a drilled hole', async () => {
     const { parseDesign } = await import('../src/engine/design.js');
     let p = addFeature(start, OPS.BOX, { a: 30, b: 30, c: 20 });

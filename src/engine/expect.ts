@@ -305,6 +305,9 @@ export function expectVolume(spec: PartSpec): Expectation {
     if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round' || f.$op === 'feature.thread') {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
     }
+    if (f.$op === 'feature.mesh') {
+      return unknown(`"${f.id}": an imported body is measured by the kernel from its STEP geometry, not a formula`, terms);
+    }
     if (f.$op === 'feature.mirror') {
       // The copy only touches the original (it lies wholly on the far side of the plane): the volume doubles.
       const axis = String(a.plane ?? 'X').toUpperCase();

@@ -61,9 +61,14 @@ hands, and every number on screen backed by a check you can see.
   moulding. "Loft a rectangle 40 by 30 to a circle 20 over 25". "Sweep a circle 8 along 40 up then 30 right, bend
   10" makes a bent pipe or handle. Point at a wall and say "rib 3 thick 20 by 20" to brace it. Point at any face for
   a hole, a counterbore, or an exact rectangle, circle, slot or hexagon.
-- **Into your desktop CAD.** "Export step" saves the part as an AP214 solid that SOLIDWORKS, CATIA, Creo and Fusion
-  open. Flat faces are true planes; curved faces are made of small flat faces. A test reads every file back with
-  OpenCascade and checks the volume.
+- **Into your desktop CAD, and back.** "Export step" saves the part as an AP214 solid that SOLIDWORKS, CATIA, Creo
+  and Fusion open: flat faces are true planes, and holes, shafts and fillets are true cylinders, so a 10 mm hole
+  measures 10 mm there. A test reads every file back with OpenCascade and gets the exact volume. Bring a STEP file in
+  and say "make it editable": drill it, add bosses, fillet and chamfer it, and export it again.
+- **Exact by numbers.** "Sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8 tall" gives every line its own
+  dimension. "Drill a 6 mm hole at 12.5, -7" places it exactly. Chamfer any edge, curved or not.
+- **Drawings like desktop CAD.** Three views with hidden edges dashed, and an assembly drawing with balloons and the
+  parts list. "Convergence study" solves the stress on three grids and tells you how far to trust it.
 - **Assemblies and motion.** Insert parts and mate them with the hand ray: pinch a face or a pin on one part, then
   where it goes on another, and it glides into place (coincident, concentric, hinge, slider, gear). An exact clash
   check shows interference in red, an exploded view lifts the parts apart, and a motion study plays keyframes:
@@ -130,9 +135,10 @@ cells and grid sizes tied to wall thickness; before that, results moved 30 % wit
 
 ## What is next
 
-Exact cylinders and B-spline surfaces in the STEP export, assembly drawings with balloons, a sketcher with typed
-dimensions on every line, full feature recognition for imported STEP files, supports and bridging in the slicer,
-sending G-code to a printer on the network, and the desktop AstraCAD bridge for drawings and production solvers.
+Cones, spheres and B-spline surfaces in the STEP export, feature recognition for imported STEP files (so their own
+faces can be re-dimensioned), a stress solver that converges under concentrated loads, supports and bridging in the
+slicer, sending G-code to a printer on the network, and the desktop AstraCAD bridge for drawings and production
+solvers.
 
 ## Built with
 

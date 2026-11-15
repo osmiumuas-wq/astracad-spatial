@@ -23,6 +23,7 @@ export interface LoadSpec {
 
 export type Request =
   | { id: number; type: 'build'; job: string; params: Params; upTo?: number }
+  | { id: number; type: 'mesh'; job: string; params: Params; meshId: string; positions: Float32Array; indices: Uint32Array }
   | { id: number; type: 'slice'; job: string; params: Params }
   | { id: number; type: 'flow'; job: string; params: Params; wind: Wind }
   | { id: number; type: 'modes'; job: string; params: Params; material: string }

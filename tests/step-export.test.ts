@@ -113,4 +113,26 @@ describe('STEP export', () => {
     expect(back.volume).toBeGreaterThan(out.props.volume * 0.9999);
     expect(back.volume).toBeLessThan(steiner * 1.0001);
   }, 60000);
+
+  it('makes an imported STEP solid editable: a hole drilled into it, exported again', async () => {
+    const { registerMesh } = await import('../src/engine/kernel.js');
+    // A part from "desktop CAD": an L bracket, written to STEP and read back by OpenCascade.
+    let src = addFeature({ nf: 0 }, OPS.BOX, { a: 60, b: 40, c: 8 });
+    src = addFeature(src, OPS.BOX, { a: 8, b: 40, c: 40, d: -26, e: 0, f: 8 });
+    const made = kernel.build(designSpec(designJob.clamp(src).params));
+    const occt = await (require('occt-import-js') as () => Promise<Occt>)();
+    const imported = readStep(occt, new TextEncoder().encode(writeStep([{ name: 'l', positions: made.mesh.positions, indices: made.mesh.indices }])), 'l');
+    expect(imported.closed).toBe(true);
+    registerMesh('imp7', imported.positions, imported.indices);
+    const b = imported.box;
+    let p = addFeature({ nf: 0 }, OPS.BASE, { a: 7, b: b.min[0], c: b.max[0], d: b.min[1], e: b.max[1], f: b.min[2], g: b.max[2] });
+    // A 10 mm hole through the foot, from its top face (y = 8).
+    p = addFeature(p, OPS.FCIRC, { a: 10, b: 0, c: 0, d: 10, e: 8, f: 0, g: 1 });
+    const out = kernel.build(designSpec(designJob.clamp(p).params));
+    expect(out.props.components).toBe(1);
+    expect(made.props.volume - out.props.volume).toBeCloseTo(Math.PI * 25 * 8, 0);
+    // And back out as STEP, the new hole a true cylinder.
+    const step = writeStep([{ name: 'l2', positions: out.mesh.positions, indices: out.mesh.indices }]);
+    expect(count(step, 'CYLINDRICAL_SURFACE')).toBe(1);
+  }, 60000);
 });

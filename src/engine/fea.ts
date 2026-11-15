@@ -884,12 +884,16 @@ export function chooseCellSize(
   wallHint?: number,
   maxElements = 16000,
 ): number {
-  let h = Math.cbrt(volume / target);
+  // The element cap first, then the wall: the cell stays an exact fraction of the wall even when the cap
+  // applies (a cell that does not divide the wall reads up to about 17 % stiff, finer or not).
+  const hMin = Math.cbrt(volume / maxElements);
+  let h = Math.max(Math.cbrt(volume / target), hMin);
   if (wallHint && wallHint > 0) {
-    const cells = Math.max(MIN_CELLS_PER_WALL, Math.ceil(wallHint / h - 1e-9));
+    let cells = Math.max(MIN_CELLS_PER_WALL, Math.ceil(wallHint / h - 1e-9));
+    while (cells > MIN_CELLS_PER_WALL && wallHint / cells < hMin * (1 - 1e-9)) cells--;
     h = wallHint / cells;
   }
-  return Math.max(h, Math.cbrt(volume / maxElements));
+  return h;
 }
 
 /** Keep only the material connected (through cell faces) to the given seed cells. */
@@ -1066,7 +1070,7 @@ export interface PreparedModel {
 /** Voxelise, drop material the fixture does not hold, number it, and build the load vector. */
 export function prepareModel(
   setup: Pick<FeaSetup, 'positions' | 'indices' | 'volume' | 'nu' | 'fixture' | 'load' | 'wallHint' | 'targetElements'>,
-  maxElements = 9000,
+  maxElements = Math.max(9000, Math.ceil((setup.targetElements ?? 6000) * 1.25)),
 ): PreparedModel {
   const h = chooseCellSize(setup.volume, setup.targetElements ?? 6000, setup.wallHint, maxElements);
   const grid = voxelize(setup.positions, setup.indices, h, true);
