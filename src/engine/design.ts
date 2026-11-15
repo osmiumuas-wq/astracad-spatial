@@ -27,6 +27,13 @@
  *             a fillet or chamfer of any straight edge between two flat faces
  *  16 ROUND   a radius, b 1 = every edge, c d e a point on the edge: a rolling-ball fillet of any edge,
  *             straight or curved, following tangent edges; rounds in a row with one radius blend their corners
+ *  17 FCIRC   a diameter, b normal code, c depth (a cut: 0 = right through), d e f centre, g 0 boss / 1 cut:
+ *             an exact circle on any flat face (a hole on any face, a boss, a counterbore)
+ *  18 GEAR    a module, b teeth, c thickness, d e f centre, g normal code, h bore: an ISO involute spur gear
+ *  19 THREAD  a major diameter, b pitch, c length, d e f start, g normal code (the thread runs along it),
+ *             h 1 = internal (tapped into a hole) / 0 = a threaded rod
+ *  20 LOFT    a outline A, b outline B, c distance, d e f origin, g normal code: from A on the plane to B, c along
+ * Bosses (BOX, CYL, OUTLINE, FACE, FCIRC) take h = draft angle in degrees.
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
  *
@@ -34,10 +41,11 @@
  */
 
 import type { Feature, PartSpec } from './types.js';
+import { gearOutline, polygonOutline, rectOutline, slotOutline } from './profiles.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -110,7 +118,7 @@ export function addOutline(p: Params, pts: [number, number][]): { params: Params
   return { params: out, index: k };
 }
 
-const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE;
+const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT;
 
 function outlinePts(p: Params, k: number): [number, number][] {
   const m = Math.round(p[`q${k}n`] ?? 0);
@@ -131,11 +139,11 @@ export function designSpec(p: Params): PartSpec {
     if (op === OPS.BOX || op === OPS.CUTBOX) {
       features.push(plane(`pl${i}`, v.f));
       features.push({ $op: 'sketch.rectangle', id: `s${i}`, sketched_on: `pl${i}`, args: { width: v.a, height: v.b, x: v.d - v.a / 2, y: -v.e - v.b / 2 } });
-      features.push(op === OPS.BOX ? { $op: 'feature.extrude', id, args: { depth: v.c } } : { $op: 'feature.cut', id, args: { depth: v.c, direction: 'normal' } });
+      features.push(op === OPS.BOX ? { $op: 'feature.extrude', id, args: v.h > 0 ? { depth: v.c, draft: v.h } : { depth: v.c } } : { $op: 'feature.cut', id, args: { depth: v.c, direction: 'normal' } });
     } else if (op === OPS.CYL || op === OPS.BORE) {
       features.push(plane(`pl${i}`, v.f));
       features.push({ $op: 'sketch.circle', id: `s${i}`, sketched_on: `pl${i}`, args: { diameter: v.a, x: v.d, y: -v.e } });
-      features.push(op === OPS.CYL ? { $op: 'feature.extrude', id, args: { depth: v.c } } : { $op: 'feature.cut', id, args: { depth: v.c, direction: 'normal' } });
+      features.push(op === OPS.CYL ? { $op: 'feature.extrude', id, args: v.h > 0 ? { depth: v.c, draft: v.h } : { depth: v.c } } : { $op: 'feature.cut', id, args: { depth: v.c, direction: 'normal' } });
     } else if (op === OPS.HOLE) {
       features.push(plane(`pl${i}`, v.f));
       features.push({ $op: 'sketch.circle', id: `s${i}`, sketched_on: `pl${i}`, args: { diameter: v.a, x: v.d, y: -v.e } });
@@ -148,6 +156,36 @@ export function designSpec(p: Params): PartSpec {
       features.push({ $op: 'feature.pattern.linear', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), spacing: v.c, direction: Math.round(v.d) === 1 ? 'Z' : 'X' } });
     } else if (op === OPS.CIRCPAT) {
       features.push({ $op: 'feature.pattern.circular', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), axis: { origin: [v.d, 0, v.e], direction: [0, 1, 0] } } });
+    } else if (op === OPS.FCIRC || op === OPS.GEAR) {
+      const fr = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(op === OPS.FCIRC ? v.b : v.g)))];
+      const cut = op === OPS.FCIRC && Math.round(v.g) === 1;
+      // Exactly on the face (the origin is snapped): a gear or boss wider than the face must not poke out below it.
+      const sink = 0;
+      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: [v.d - fr.n[0] * sink, v.e - fr.n[1] * sink, v.f - fr.n[2] * sink], normal: fr.n, x_dir: fr.x } });
+      if (op === OPS.FCIRC) {
+        features.push({ $op: 'sketch.circle', id: `s${i}`, sketched_on: `pl${i}`, args: { diameter: v.a, x: 0, y: 0 } });
+        if (cut) features.push(v.c > 0 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'reverse' } } : { $op: 'feature.cut', id, args: { through_all: true } });
+        else features.push({ $op: 'feature.extrude', id, args: v.h > 0 ? { depth: v.c + sink, draft: v.h } : { depth: v.c + sink } });
+      } else {
+        const pts = gearOutline({ module: v.a, teeth: Math.round(v.b) });
+        const loops: unknown[] = [pts.map((q, k) => ['L', q[0], q[1], pts[(k + 1) % pts.length][0], pts[(k + 1) % pts.length][1]])];
+        if (v.h > 0) loops.push([['C', 0, 0, v.h / 2]]);
+        features.push({ $op: 'sketch.loops', id: `s${i}`, sketched_on: `pl${i}`, args: { loops } });
+        features.push({ $op: 'feature.extrude', id, args: { depth: v.c + sink } });
+      }
+    } else if (op === OPS.THREAD) {
+      const fr = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(v.g)))];
+      const internal = Math.round(v.h) === 1;
+      // A rod grows out of the face; a tapped thread runs into the material.
+      const axis = internal ? [-fr.n[0], -fr.n[1], -fr.n[2]] : fr.n;
+      features.push({ $op: 'feature.thread', id, args: { origin: [v.d, v.e, v.f], axis, major: v.a, pitch: v.b, length: v.c, internal } });
+    } else if (op === OPS.LOFT) {
+      const fr = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(v.g)))];
+      features.push({ $op: 'ref.plane', id: `pa${i}`, args: { origin: [v.d, v.e, v.f], normal: fr.n, x_dir: fr.x } });
+      features.push({ $op: 'sketch.profile', id: `sa${i}`, sketched_on: `pa${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
+      features.push({ $op: 'ref.plane', id: `pb${i}`, args: { origin: [v.d + fr.n[0] * v.c, v.e + fr.n[1] * v.c, v.f + fr.n[2] * v.c], normal: fr.n, x_dir: fr.x } });
+      features.push({ $op: 'sketch.profile', id: `sb${i}`, sketched_on: `pb${i}`, args: { points: outlinePts(p, Math.round(v.b)) } });
+      features.push({ $op: 'feature.loft', id, args: { sketches: [`sa${i}`, `sb${i}`] } });
     } else if (op === OPS.ROUND) {
       features.push({ $op: 'feature.round', id, args: Math.round(v.b) === 1 ? { radius: v.a, all: true } : { radius: v.a, at: [v.c, v.d, v.e] } });
     } else if (op === OPS.EDGE) {
@@ -165,7 +203,7 @@ export function designSpec(p: Params): PartSpec {
       features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin, normal: fr.n, x_dir: fr.x } });
       features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
       if (op === OPS.REVOLVE) features.push({ $op: 'feature.revolve', id, args: { angle: Math.max(1, Math.min(360, v.b || 360)), axis: 'v' } });
-      else features.push(Math.round(v.g) === 1 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'reverse' } } : { $op: 'feature.extrude', id, args: { depth: v.c + sink } });
+      else features.push(Math.round(v.g) === 1 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'reverse' } } : { $op: 'feature.extrude', id, args: v.h > 0 ? { depth: v.c + sink, draft: v.h } : { depth: v.c + sink } });
     } else if (op === OPS.OUTLINE) {
       const k = Math.round(v.a);
       const m = Math.round(p[`q${k}n`] ?? 0);
@@ -234,6 +272,14 @@ function liveDefs(p: Params): ParamDef[] {
       return [d('a', 'Edge radius', 0.2, 60, 0.5)];
     case OPS.ROUND:
       return [d('a', 'Fillet radius', 0.2, 60, 0.5)];
+    case OPS.FCIRC:
+      return [d('a', 'Diameter', 0.5, 300, 0.5), d('c', 'Depth', 0, 300)];
+    case OPS.GEAR:
+      return [d('a', 'Module', 0.3, 10, 0.1), { ...d('b', 'Teeth', 6, 200), unit: '' }, d('c', 'Thickness', 1, 100), d('h', 'Bore', 0, 100, 0.5)];
+    case OPS.THREAD:
+      return [d('a', 'Thread diameter', 1, 100, 0.5), d('b', 'Pitch', 0.2, 6, 0.05), d('c', 'Thread length', 1, 300)];
+    case OPS.LOFT:
+      return [d('c', 'Loft height', 1, 300)];
     case OPS.MIRROR:
       return [d('b', 'Mirror offset', -150, 150)];
     case OPS.REVOLVE:
@@ -366,6 +412,10 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.OUTLINE) s = `${Math.round(v.g) === 1 ? 'cut' : 'extruded'} ${f(v.c)}`;
     else if (op === OPS.FACE) s = `${Math.round(v.g) === 1 ? 'cut' : 'boss'} ${f(v.c)} on ${['top', 'bottom', 'right', 'left', 'front', 'back'][Math.round(v.b)] ?? '?'}`;
     else if (op === OPS.CHAMFER) s = `${f(v.a)} on ${Math.round(v.b) + 1}`;
+    else if (op === OPS.FCIRC) s = `\u2300${f(v.a)} ${Math.round(v.g) === 1 ? (v.c > 0 ? `${f(v.c)} deep` : 'through') : `boss ${f(v.c)}`}`;
+    else if (op === OPS.GEAR) s = `m ${f(v.a)}, ${Math.round(v.b)} teeth, ${f(v.c)} thick`;
+    else if (op === OPS.THREAD) s = `M${f(v.a)} x ${f(v.b)}, ${f(v.c)} ${Math.round(v.h) === 1 ? 'tapped' : 'rod'}`;
+    else if (op === OPS.LOFT) s = `${f(v.c)} tall`;
     else if (op === OPS.ROUND) s = Math.round(v.b) === 1 ? `r ${f(v.a)}, every edge` : `r ${f(v.a)} on an edge`;
     else if (op === OPS.EDGE) s = `${Math.round(v.b) === 1 ? 'chamfer' : 'fillet'} ${f(v.a)}, ${f(Math.hypot(v.f - v.c, v.g - v.d, v.h - v.e))} long`;
     else if (op === OPS.MIRROR) s = `across ${['X', 'Y', 'Z'][Math.round(v.a)] ?? '?'} = ${f(v.b)}`;
@@ -389,11 +439,13 @@ export interface DesignEdit {
  *   "fillet 3" / "round the corners"  "shell 2" / "hollow it"
  *   "pattern 4 times 15 apart"        "4 around" (circular)        "remove the last feature"
  */
-export function parseDesign(text: string, p: Params, here?: [number, number, number], edgeAt?: (at: [number, number, number]) => { a: [number, number, number]; b: [number, number, number] } | null): DesignEdit | null {
+export function parseDesign(text: string, p: Params, here?: [number, number, number], edgeAt?: (at: [number, number, number]) => { a: [number, number, number]; b: [number, number, number] } | null, faceCode = 0): DesignEdit | null {
   const t = text.toLowerCase().replace(/(\d)\s*x\s*(\d)/gu, '$1 by $2');
   const nums = [...t.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
   const top = topOf(p);
   const at = here ?? [0, top, 0];
+  const prod = parseProduction(t, p, here, faceCode);
+  if (prod) return prod;
   const edit = t.match(/\b(edit|select|change) feature (\d+)\b/u);
   if (edit) {
     const k = parseInt(edit[2], 10) - 1;
@@ -566,4 +618,122 @@ export function edgeNear(edges: ArrayLike<number>, at: [number, number, number],
   }
   const pt = (s: number): [number, number, number] => [p0[0] + u[0] * s, p0[1] + u[1] * s, p0[2] + u[2] * s];
   return { a: pt(lo), b: pt(hi) };
+}
+
+/** Metric coarse pitches (ISO 261), mm. */
+const COARSE: Record<number, number> = { 2: 0.4, 2.5: 0.45, 3: 0.5, 4: 0.7, 5: 0.8, 6: 1, 8: 1.25, 10: 1.5, 12: 1.75, 14: 2, 16: 2, 20: 2.5, 24: 3, 30: 3.5, 36: 4 };
+
+/**
+ * Production tools by voice, on the face the hand ray points at (or the top):
+ *   "drill a 5 mm hole here" (any face), "counterbore 10 3 deep"
+ *   "sketch a rectangle 40 by 20 here", "a circle 12 here", "a slot 30 by 8", "a hexagon 13" (+ "cut 5" / "10 tall")
+ *   "gear module 2 with 20 teeth 8 thick bore 6"
+ *   "M8 thread 20 long" (a rod), "tap M8 15 deep here" (inside a hole)
+ *   "loft a rectangle 40 by 30 to a circle 20 over 25"
+ *   "draft 3" (degrees, on the last boss)
+ */
+function parseProduction(t: string, p: Params, here: [number, number, number] | undefined, code: number): DesignEdit | null {
+  const nums = [...t.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
+  const at: [number, number, number] = here ?? [0, topOf(p), 0];
+  const fc = here ? code : 0;
+  const face = ['top', 'bottom', 'right', 'left', 'front', 'back'][fc];
+  // Draft on the last boss.
+  const dm = t.match(/\bdraft (?:of |angle )?(\d+(?:\.\d+)?)/u);
+  if (dm) {
+    const k = lastBoss(p);
+    if (k < 0) return { params: p, reply: 'There is no boss to draft.' };
+    return { params: { ...p, [`h${k}`]: parseFloat(dm[1]) }, reply: `Drafted feature ${k + 1} by ${dm[1]} degrees: its sides lean in towards the top.` };
+  }
+  // Threads.
+  const tm = t.match(/\bm\s?(\d+(?:\.\d+)?)\b/u);
+  if (tm && /\b(thread|tap|threaded|bolt|screw|rod)\b/u.test(t)) {
+    const major = parseFloat(tm[1]);
+    const pm = t.match(/\bpitch (\d+(?:\.\d+)?)/u) ?? t.match(/\bx\s?(\d+(?:\.\d+)?)\b/u);
+    const pitch = pm ? parseFloat(pm[1]) : COARSE[major] ?? Math.max(0.25, major * 0.15);
+    const lm = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:long|deep|length)/u);
+    const length = lm ? parseFloat(lm[1]) : major * 2;
+    const internal = /\btap|tapped|internal|inside\b/u.test(t);
+    return {
+      params: addFeature(p, OPS.THREAD, { a: major, b: pitch, c: length, d: at[0], e: at[1], f: at[2], g: fc, h: internal ? 1 : 0 }),
+      reply: internal
+        ? `Tapped an M${major} x ${pitch} thread ${length} mm deep into the ${face} face. Drill the tapping hole first (${+(major - pitch).toFixed(2)} mm).`
+        : `An M${major} x ${pitch} threaded rod, ${length} mm long, on the ${face} face.`,
+    };
+  }
+  // Gears.
+  if (/\bgear\b/u.test(t)) {
+    const mm = t.match(/\bmod(?:ule)?\s*(\d+(?:\.\d+)?)/u);
+    const zm = t.match(/(\d+)\s*teeth/u);
+    const th = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:thick|wide)/u);
+    const bm = t.match(/\bbore\s*(\d+(?:\.\d+)?)/u);
+    const module = mm ? parseFloat(mm[1]) : 1.5;
+    const teeth = zm ? parseInt(zm[1], 10) : 20;
+    const thick = th ? parseFloat(th[1]) : 6;
+    const bore = bm ? parseFloat(bm[1]) : 0;
+    return {
+      params: addFeature(p, OPS.GEAR, { a: module, b: teeth, c: thick, d: at[0], e: at[1], f: at[2], g: fc, h: bore }),
+      reply: `A spur gear, module ${module}, ${teeth} teeth (pitch diameter ${(module * teeth).toFixed(1)} mm), ${thick} mm thick${bore ? `, ${bore} mm bore` : ''}, involute 20 degrees.`,
+    };
+  }
+  // Lofts.
+  if (/\bloft\b/u.test(t)) {
+    const parts = t.split(/\bto\b/u);
+    if (parts.length < 2) return { params: p, reply: 'Say "loft a rectangle 40 by 30 to a circle 20 over 25".' };
+    const shape = (s: string): [number, number][] | null => {
+      const n = [...s.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
+      if (/\bcircle|round\b/u.test(s) && n.length) return Array.from({ length: 48 }, (_, k) => [(n[0] / 2) * Math.cos((2 * Math.PI * k) / 48), (n[0] / 2) * Math.sin((2 * Math.PI * k) / 48)] as [number, number]);
+      if (/\b(rectangle|square|box)\b/u.test(s) && n.length) return rectOutline(n[0], n[1] ?? n[0]) as [number, number][];
+      if (/\bhex(agon)?\b/u.test(s) && n.length) return polygonOutline(6, n[0]) as [number, number][];
+      return null;
+    };
+    const over = t.match(/\b(?:over|tall|high|height)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:tall|high)/u);
+    const A = shape(parts[0]);
+    const B = shape(parts[1].replace(/\b(over|tall|high)\b.*$/u, ''));
+    if (!A || !B) return { params: p, reply: 'Name both ends: a rectangle, a square, a circle or a hexagon, with sizes.' };
+    const oa = addOutline(p, A);
+    const ob = addOutline(oa.params, B);
+    const h = over ? parseFloat(over[1] ?? over[2]) : 20;
+    return { params: addFeature(ob.params, OPS.LOFT, { a: oa.index, b: ob.index, c: h, d: at[0], e: at[1] - (fc === 0 ? 0.01 : 0), f: at[2], g: fc }), reply: `Lofted ${h} mm from one shape to the other on the ${face} face.` };
+  }
+  // Holes on any face, and counterbores.
+  const cb = t.match(/\bcounter ?bore\s*(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:by\s*)?(\d+(?:\.\d+)?)?/u);
+  if (cb) {
+    const dia = parseFloat(cb[1]);
+    const depth = cb[2] ? parseFloat(cb[2]) : 3;
+    return { params: addFeature(p, OPS.FCIRC, { a: dia, b: fc, c: depth, d: at[0], e: at[1], f: at[2], g: 1 }), reply: `A ${dia} mm counterbore ${depth} mm deep on the ${face} face.` };
+  }
+  if (/\b(drill|hole)\b/u.test(t) && here && fc !== 0) {
+    const dia = nums[0] ?? 5;
+    const deep = /\bdeep\b/u.test(t) && nums.length > 1 ? nums[1] : 0;
+    return { params: addFeature(p, OPS.FCIRC, { a: dia, b: fc, c: deep, d: at[0], e: at[1], f: at[2], g: 1 }), reply: `${dia} mm hole ${deep ? `${deep} mm deep` : 'right through'} on the ${face} face.` };
+  }
+  // Exact sketch shapes on a face.
+  const isShape = /\b(sketch|draw|add|put|make)\b/u.test(t) || /\b(here|on this face)\b/u.test(t);
+  if (isShape && /\b(rectangle|square|circle|slot|hexagon|hex|octagon|pentagon)\b/u.test(t)) {
+    const cut = /\b(cut|pocket|recess)\b/u.test(t);
+    const dm2 = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:deep|tall|high|thick)/u);
+    const depth = dm2 ? parseFloat(dm2[1]) : cut ? 3 : 10;
+    const sizes = nums.filter((n) => !dm2 || n !== parseFloat(dm2[1]));
+    if (/\bcircle\b/u.test(t)) {
+      const dia = sizes[0] ?? 10;
+      return { params: addFeature(p, OPS.FCIRC, { a: dia, b: fc, c: depth, d: at[0], e: at[1], f: at[2], g: cut ? 1 : 0 }), reply: `A ${dia} mm circle on the ${face} face, ${cut ? `cut ${depth} mm in` : `${depth} mm tall`}.` };
+    }
+    let pts: [number, number][];
+    let what: string;
+    if (/\bslot\b/u.test(t)) {
+      pts = slotOutline(sizes[0] ?? 20, sizes[1] ?? 6) as [number, number][];
+      what = `${sizes[0] ?? 20} by ${sizes[1] ?? 6} mm slot`;
+    } else if (/\b(hexagon|hex|octagon|pentagon)\b/u.test(t)) {
+      const n = /\boctagon\b/u.test(t) ? 8 : /\bpentagon\b/u.test(t) ? 5 : 6;
+      pts = polygonOutline(n, sizes[0] ?? 10) as [number, number][];
+      what = `${n}-sided polygon ${sizes[0] ?? 10} mm across`;
+    } else {
+      pts = rectOutline(sizes[0] ?? 20, sizes[1] ?? sizes[0] ?? 20) as [number, number][];
+      what = `${sizes[0] ?? 20} by ${sizes[1] ?? sizes[0] ?? 20} mm rectangle`;
+    }
+    const withFace = addFaceSketch(p, pts, at, fc);
+    const k = featureCount(withFace) - 1;
+    return { params: { ...withFace, [`c${k}`]: depth, [`g${k}`]: cut ? 1 : 0 }, reply: `A ${what} on the ${face} face, ${cut ? `cut ${depth} mm in` : `${depth} mm tall`}.` };
+  }
+  return null;
 }

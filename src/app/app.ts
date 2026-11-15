@@ -976,7 +976,9 @@ export class App {
       const here = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.mm : undefined;
       const mesh = this.built.peek()?.mesh;
       const edgeAt = mesh ? (at: [number, number, number]) => edgeNear(mesh.edges, at) : undefined;
-      const edit = parseDesign(wordsToDigits(sentence), this.params.peek(), here, edgeAt);
+      const nrm = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.normal : undefined;
+      const code = nrm ? Math.max(0, normalCode(nrm)) : 0;
+      const edit = parseDesign(wordsToDigits(sentence), this.params.peek(), here, edgeAt, code);
       if (edit) {
         this.replaceParams(edit.params);
         this.say(edit.reply, 'info');

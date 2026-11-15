@@ -10,6 +10,7 @@
  * "not verifiable in closed form" instead of guessing.
  */
 
+import { draftScale, draftVolume } from './profiles.js';
 import {
   Frame,
   isSketchOp,
@@ -212,6 +213,15 @@ export function expectVolume(spec: PartSpec): Expectation {
       }
       const area = sketchIntegrals(loops).area;
       volume = area * (z1 - z0);
+      const dr = a.draft === undefined ? 0 : Number(a.draft);
+      if (dr > 0 && !mod?.shell) {
+        // Draft: the outline scales linearly to (sx, sy) at the top (src/engine/profiles.ts).
+        const xs = loops.flat().flatMap((s) => (s[0] === 'C' ? [s[1] - s[3], s[1] + s[3]] : [s[1], s[3]]));
+        const ys = loops.flat().flatMap((s) => (s[0] === 'C' ? [s[2] - s[3], s[2] + s[3]] : [s[2], s[4]]));
+        const [sx, sy] = draftScale(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), z1 - z0, dr);
+        volume = draftVolume(area, z1 - z0, sx, sy);
+        terms.push(`${f.id}: drafted ${fmt(dr)} deg, top scaled ${fmt(sx)} x ${fmt(sy)}`);
+      }
       terms.push(
         `${f.id}: area ${fmt(area)}${mod?.fillet ? ` (corners rounded r ${fmt(mod.fillet)})` : ''} x height ${fmt(z1 - z0)} = ${fmt(volume)}`,
       );
@@ -228,7 +238,7 @@ export function expectVolume(spec: PartSpec): Expectation {
       continue;
     }
 
-    if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round') {
+    if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round' || f.$op === 'feature.thread') {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
     }
     if (f.$op === 'feature.mirror') {

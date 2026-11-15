@@ -157,3 +157,78 @@ describe('fillet or chamfer any picked edge', () => {
     expect(removed).toBeLessThan(filletArea(3, Math.PI / 2) * 60 * 1.02);
   });
 });
+
+describe('production tools', () => {
+  it('drills a hole in a side face, exactly', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 20 });
+    // The +X face (x = 30), code 2, at y = 10, z = 0: a 6 mm hole right through along x.
+    p = parseDesign('drill a 6 mm hole here', p, [30, 10, 0], undefined, 2)!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    expect(48000 - g.volume).toBeGreaterThan(Math.PI * 9 * 60 * 0.98);
+    expect(48000 - g.volume).toBeLessThan(Math.PI * 9 * 60 * 1.001);
+  });
+
+  it('sketches exact shapes on a face: rectangle boss, hexagon pocket', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 20 });
+    p = parseDesign('sketch a rectangle 20 by 10 here 5 tall', p, [0, 20, 0], undefined, 0)!.params;
+    expect(gate(p).volume).toBeCloseTo(48000 + 20 * 10 * 5, 2);
+    p = parseDesign('cut a hexagon 13 here 4 deep', p, [0, 10, 20], undefined, 4)!.params;
+    expect(gate(p).volume).toBeCloseTo(48000 + 1000 - (Math.sqrt(3) / 2) * 169 * 4, 2);
+  });
+
+  it('makes an involute gear, verified by its own outline', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    const { gearOutline, shoelace } = await import('../src/engine/profiles.js');
+    let p = addFeature(start, OPS.BOX, { a: 10, b: 10, c: 2 });
+    p = parseDesign('gear module 2 with 20 teeth 8 thick bore 6', p)!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    const A = shoelace(gearOutline({ module: 2, teeth: 20 }));
+    // The gear sits on the block's top; the block (200 mm3) lies under it.
+    expect(g.volume).toBeCloseTo(200 + (A - Math.PI * 9) * 8, 0);
+  });
+
+  it('makes an M8 threaded rod: section area times length', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    const { threadSection, shoelace } = await import('../src/engine/profiles.js');
+    let p = addFeature(start, OPS.BOX, { a: 20, b: 20, c: 5 });
+    p = parseDesign('m8 thread 16 long', p)!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    const sec = shoelace(threadSection({ major: 8, pitch: 1.25 }, 48));
+    expect(g.volume - 2000).toBeGreaterThan(sec * 16 * 0.98);
+    expect(g.volume - 2000).toBeLessThan(sec * 16 * 1.01);
+  });
+
+  it('taps a thread inside a drilled hole', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 30, b: 30, c: 20 });
+    p = parseDesign('drill a 6.8 mm hole', p)!.params;
+    const before = gate(p).volume;
+    p = parseDesign('tap m8 15 deep here', p, [0, 20, 0], undefined, 0)!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    expect(g.volume).toBeLessThan(before);
+  });
+
+  it('lofts a rectangle to a circle (prismatoid formula)', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 50, b: 50, c: 5 });
+    p = parseDesign('loft a rectangle 40 by 30 to a circle 20 over 25', p)!.params;
+    const g = gate(p);
+    expect(g.reason).toBeUndefined();
+    expect(g.volume).toBeGreaterThan(12500 + 25 * Math.PI * 100);
+  });
+
+  it('drafts a boss: the frustum volume, checked in closed form', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 40, b: 20, c: 10 });
+    p = parseDesign('draft 5', p)!.params;
+    const g = gate(p);
+    expect(g.verdict).toBe('verified');
+    expect(g.volume).toBeLessThan(8000);
+  });
+});

@@ -29,6 +29,7 @@ import {
 } from './sketch.js';
 import { crossSection as edgeSection, edgeFaces } from './edges.js';
 import { circleOf, edgeChain, segmentsOf } from './round.js';
+import { draftScale, threadSection } from './profiles.js';
 
 const dot3k = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
@@ -81,7 +82,7 @@ const ARG_SETS: Record<string, readonly string[]> = {
   'sketch.circle': ['radius', 'diameter', 'x', 'y'],
   'sketch.loops': ['loops'],
   'sketch.profile': ['points'],
-  'feature.extrude': ['depth', 'direction', 'sketch'],
+  'feature.extrude': ['depth', 'direction', 'sketch', 'draft'],
   'feature.cut': ['depth', 'through_all', 'direction', 'sketch'],
   'feature.revolve': ['angle', 'axis', 'direction', 'sketch'],
   'feature.hole': [
@@ -99,6 +100,7 @@ const ARG_SETS: Record<string, readonly string[]> = {
   'feature.mirror': ['plane', 'offset'],
   'feature.edge_fillet': ['from', 'to', 'radius', 'kind'],
   'feature.round': ['at', 'radius', 'all'],
+  'feature.thread': ['origin', 'axis', 'major', 'pitch', 'length', 'internal'],
   'feature.shell': ['thickness', 'feature', 'open'],
   'feature.loft': ['sketches'],
   'feature.sweep': ['sketch', 'path', 'bend_radius'],
@@ -381,6 +383,21 @@ export class Kernel {
               ];
             }
             let solid = prism(cs, z, sk.frame);
+            // Draft: the outline scales towards its middle up the boss (exact for rectangles and circles).
+            const draft = !isCut && a.draft !== undefined ? numArg(a.draft, 'draft') : 0;
+            if (draft > 0) {
+              if (draft >= 45) throw new SpecError('draft must be under 45 degrees', f.id);
+              const b = cs.bounds();
+              const w = b.max[0] - b.min[0];
+              const d = b.max[1] - b.min[1];
+              const h = z[1] - z[0];
+              const [sx, sy] = draftScale(w, d, h, draft);
+              const cx = (b.min[0] + b.max[0]) / 2;
+              const cy = (b.min[1] + b.max[1]) / 2;
+              const centred = keep(cs.translate([-cx, -cy]));
+              const raw = keep(keep(centred.extrude(h, 0, 0, [sx, sy])).translate([cx, cy, z[0]]));
+              solid = keep(raw.transform(frameMatrix(sk.frame)));
+            }
             if (mod?.shell) {
               const { cut } = shellRange(z, a.direction, mod.shell.t, mod.shell.open, VOID_PROBE);
               const cavity = prism(section(offsetLoops(loops, mod.shell.t)), cut, sk.frame);
@@ -392,6 +409,29 @@ export class Kernel {
             };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
+          } else if (f.$op === 'feature.thread') {
+            // An ISO metric thread: the section at one height extruded with a twist of a turn per pitch (src/engine/profiles.ts).
+            const o = a.origin as Vec3;
+            const ax = norm(a.axis as Vec3);
+            const major = numArg(a.major, 'major');
+            const pitch = numArg(a.pitch, 'pitch');
+            const length = numArg(a.length, 'length');
+            if (!(major > 0 && pitch > 0 && length > 0)) throw new SpecError('thread sizes must be positive', f.id);
+            const internal = a.internal === true;
+            const sec = threadSection({ major, pitch, clearance: internal ? 0.2 : 0 }, 48);
+            const cs = keep(new this.m.CrossSection([sec], 'EvenOdd'));
+            const turns = length / pitch;
+            const raw = keep(cs.extrude(length, Math.max(4, Math.ceil(turns * 36)), -360 * turns));
+            const zx: Vec3 = Math.abs(ax[0]) < 0.9 ? norm(cross(ax, [1, 0, 0])) : norm(cross(ax, [0, 1, 0]));
+            const zy = cross(ax, zx);
+            const tool = keep(raw.transform([zx[0], zx[1], zx[2], 0, zy[0], zy[1], zy[2], 0, ax[0], ax[1], ax[2], 0, o[0], o[1], o[2], 1] as Mat4));
+            if (internal) {
+              if (!body) throw new SpecError('nothing to tap yet: drill the hole first', f.id);
+              body = keep(body.subtract(tool));
+            } else {
+              body = body ? keep(body.add(tool)) : tool;
+            }
+            tools.set(f.id, [{ solid: tool, op: internal ? 'sub' : 'add' }]);
           } else if (f.$op === 'feature.round') {
             // Rolling-ball fillets (src/engine/round.ts). Consecutive rounds of one radius form a fillet set: their
             // edge chains are all found on the body as it was before the set, and rounded together, so corners
@@ -1023,44 +1063,56 @@ export class Kernel {
       }
     }
 
-    // Shading normals: split along sharp edges, smooth across curved faces.
-    let positions: Float32Array;
-    let normals: Float32Array;
-    let indices: Uint32Array;
-    const withN = keep(solid.calculateNormals(0, 28)).getMesh();
-    if (withN.numProp >= 6) {
-      const np = withN.numProp;
-      const count = withN.vertProperties.length / np;
-      positions = new Float32Array(count * 3);
-      normals = new Float32Array(count * 3);
-      for (let i = 0; i < count; i++) {
-        positions[i * 3] = withN.vertProperties[i * np];
-        positions[i * 3 + 1] = withN.vertProperties[i * np + 1];
-        positions[i * 3 + 2] = withN.vertProperties[i * np + 2];
-        normals[i * 3] = withN.vertProperties[i * np + 3];
-        normals[i * 3 + 1] = withN.vertProperties[i * np + 4];
-        normals[i * 3 + 2] = withN.vertProperties[i * np + 5];
-      }
-      indices = new Uint32Array(withN.triVerts);
-    } else {
-      // Fallback: flat shading, one vertex per triangle corner.
-      positions = new Float32Array(nTri * 9);
-      normals = new Float32Array(nTri * 9);
-      indices = new Uint32Array(nTri * 3);
-      for (let t = 0; t < nTri; t++) {
-        for (let e = 0; e < 3; e++) {
-          const src = tv[t * 3 + e] * sn;
-          const dst = (t * 3 + e) * 3;
-          positions[dst] = sp[src];
-          positions[dst + 1] = sp[src + 1];
-          positions[dst + 2] = sp[src + 2];
-          normals[dst] = faceN[t * 3];
-          normals[dst + 1] = faceN[t * 3 + 1];
-          normals[dst + 2] = faceN[t * 3 + 2];
-          indices[t * 3 + e] = t * 3 + e;
+    // Shading normals: split along sharp edges, smooth across curved faces. Each triangle corner takes the
+    // area-weighted mean of the faces round its vertex that lie within 28 degrees of its own face; corners
+    // with the same vertex and normal share one output vertex. (Linear time; Manifold's calculateNormals
+    // took tens of seconds on helical threads.)
+    const triArea = new Float32Array(nTri);
+    for (let t = 0; t < nTri; t++) {
+      const i0 = tv[t * 3] * sn, i1 = tv[t * 3 + 1] * sn, i2 = tv[t * 3 + 2] * sn;
+      const ux = sp[i1] - sp[i0], uy = sp[i1 + 1] - sp[i0 + 1], uz = sp[i1 + 2] - sp[i0 + 2];
+      const vx = sp[i2] - sp[i0], vy = sp[i2 + 1] - sp[i0 + 1], vz = sp[i2 + 2] - sp[i0 + 2];
+      triArea[t] = Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
+    }
+    const start = new Uint32Array(nVert + 1);
+    for (let i = 0; i < tv.length; i++) start[tv[i] + 1]++;
+    for (let v = 0; v < nVert; v++) start[v + 1] += start[v];
+    const fill = start.slice(0, nVert);
+    const around = new Uint32Array(tv.length);
+    for (let t = 0; t < nTri; t++) for (let e = 0; e < 3; e++) around[fill[tv[t * 3 + e]]++] = t;
+    const outPos: number[] = [];
+    const outNrm: number[] = [];
+    const indices = new Uint32Array(nTri * 3);
+    const seen = new Map<string, number>();
+    for (let t = 0; t < nTri; t++) {
+      for (let e = 0; e < 3; e++) {
+        const v = tv[t * 3 + e];
+        let nx = 0, ny = 0, nz = 0;
+        for (let k = start[v]; k < start[v + 1]; k++) {
+          const u = around[k];
+          const d = faceN[u * 3] * faceN[t * 3] + faceN[u * 3 + 1] * faceN[t * 3 + 1] + faceN[u * 3 + 2] * faceN[t * 3 + 2];
+          if (d < cosSharp) continue;
+          nx += faceN[u * 3] * triArea[u];
+          ny += faceN[u * 3 + 1] * triArea[u];
+          nz += faceN[u * 3 + 2] * triArea[u];
         }
+        const l = Math.hypot(nx, ny, nz) || 1;
+        nx /= l;
+        ny /= l;
+        nz /= l;
+        const key = `${v}|${Math.round(nx * 1000)}|${Math.round(ny * 1000)}|${Math.round(nz * 1000)}`;
+        let idx = seen.get(key);
+        if (idx === undefined) {
+          idx = outPos.length / 3;
+          seen.set(key, idx);
+          outPos.push(sp[v * sn], sp[v * sn + 1], sp[v * sn + 2]);
+          outNrm.push(nx, ny, nz);
+        }
+        indices[t * 3 + e] = idx;
       }
     }
+    const positions = new Float32Array(outPos);
+    const normals = new Float32Array(outNrm);
 
     const box = solid.boundingBox();
     const pieces = solid.decompose();
