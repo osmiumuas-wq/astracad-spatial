@@ -35,7 +35,7 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (194 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+Engine tests (203 tests: the sketch workbench (tools, relations, dimensions, regions), kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
 CalculiX and its convergence study, modal, flow, STEP import and export (true cylinders, imported bodies made
 editable), hinge, drawings with hidden lines, assembly drawings, describe, spoken commands, voice, co-design,
 calibration, stability, explore, lattice, drilling template, G-code, constraint sketching, typed sketches, ray scan,
@@ -163,6 +163,19 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   on the face they stand on (a picked point is snapped onto the design's exact face planes) and the checker adds
   bodies whose bounding boxes only touch. Threads stay kernel-checked: a twist extruded in steps has no exact
   formula. Gear teeth and thread flanks are faceted, not exact curves.
+- The sketch workbench works like the sketcher in SOLIDWORKS, CATIA or NX. "Sketch here" (or the ribbon's Sketch
+  button) opens a sketch on the face pointed at, with tools picked from a toolbar: line (chains, closes on its first
+  point), rectangle, circle, three-point arc, tangent arc, slot, polygon, select, smart dimension, delete,
+  construction and undo. A pinch on the face is a click. Picks snap to points, centres, midpoints and a 1 mm grid,
+  and near-horizontal or near-vertical lines become so. Relations: horizontal, vertical, parallel, perpendicular,
+  equal, tangent (at a shared end, as FreeCAD does it). Sizes come from Smart dimension, then a spoken number or the
+  Size buttons; the sketch shows driving sizes plainly and free ones with "~", and reports its degrees of freedom
+  ("fully defined" at 0). FreeCAD's planeGCS solves it. Extrude, Cut or Revolve turns every closed region (an outer
+  loop and its holes) into a feature, with exact arcs, checked in closed form. The feature ribbon on the left has tabs
+  (Create, Holes, Modify, Output) for sketch, boxes, cylinders, pockets, ribs, gears, holes, counterbores, taps,
+  threads, patterns, fillets and chamfers on a pointed edge, round all, shell, draft, mirror, STEP and drawings.
+  Not in the sketcher yet: splines, ellipses, sketch fillets, trim and extend, offsets, sketch mirror and patterns,
+  and sketches on offset or angled planes.
 - Typed sketches give every line its own dimension: "sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8
   tall" (lengths, directions, angles, tangent arcs, then a depth or a cut). Arcs are stored as exact arcs. Features
   can be placed by numbers instead of the hand: "drill a 6 mm hole at 12.5, -7". A pointed position snaps to a 0.5 mm

@@ -782,6 +782,12 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
     const seed = featureCount(p) - 1;
     return { params: addFeature(p, OPS.CIRCPAT, { a: Math.round(nums[0]), b: seed, d: 0, e: 0 }), reply: `${Math.round(nums[0])} copies of feature ${seed + 1} round the middle.` };
   }
+  // "Circular pattern 6": copies of the last feature round the vertical axis (through where you point, else the middle).
+  if (/\b(circular|polar|round|around)\b.*\bpattern\b|\bpattern\b.*\b(around|round the|circular)\b/u.test(t) && nums.length) {
+    const seed = featureCount(p) - 1;
+    const n = Math.max(2, Math.round(nums[0]));
+    return { params: addFeature(p, OPS.CIRCPAT, { a: n, b: seed, d: here ? at[0] : 0, e: here ? at[2] : 0 }), reply: `${n} copies of feature ${seed + 1} round the vertical axis.` };
+  }
   if (/\b(pattern|repeat|times|copies|row)\b/u.test(t) && nums.length) {
     const seed = featureCount(p) - 1;
     const n = Math.round(nums[0]);

@@ -27,6 +27,7 @@ import { PointSystem } from './systems/point-system.js';
 import { CutawaySystem } from './systems/cutaway-system.js';
 import { TemplateSystem } from './systems/template-system.js';
 import { GcodeSystem } from './systems/gcode-system.js';
+import { SketchBenchSystem } from './systems/sketch-bench-system.js';
 import { ScanSystem } from './systems/scan-system.js';
 import { DesignSystem } from './systems/design-system.js';
 import { AssemblySystem } from './systems/assembly-system.js';
@@ -142,6 +143,7 @@ World.create(
   world.registerSystem(GcodeSystem, { priority: 37 });
   world.registerSystem(ScanSystem, { priority: 38 });
   world.registerSystem(DesignSystem, { priority: 39 });
+  world.registerSystem(SketchBenchSystem, { priority: 40 });
   world.registerSystem(AssemblySystem, { priority: 40 });
   world.registerSystem(ReferenceSystem, { priority: 26 });
   world.registerSystem(HingeSystem, { priority: 27 });

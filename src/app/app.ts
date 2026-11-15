@@ -4,6 +4,7 @@
  * immersive bench and the flat page.
  */
 
+import { SketchBench } from './sketch-bench.js';
 import { writeStep } from '../engine/step-export.js';
 import { batch, Signal, signal } from '@iwsdk/core';
 import { Finding, runAgents, safetyFactor, StressSummary } from '../engine/agents.js';
@@ -963,6 +964,63 @@ export class App {
 
   private gcs: Promise<import('@salusoft89/planegcs').GcsWrapper> | null = null;
 
+  /** FreeCAD's 2D constraint solver (planeGCS, WebAssembly), loaded on first use. */
+  loadGcs(): Promise<import('@salusoft89/planegcs').GcsWrapper> {
+    this.gcs ??= (async () => {
+      const [{ make_gcs_wrapper }, { default: wasm }] = await Promise.all([
+        import('@salusoft89/planegcs'),
+        import('@salusoft89/planegcs/dist/planegcs_dist/planegcs.wasm?url'),
+      ]);
+      return make_gcs_wrapper(wasm);
+    })();
+    return this.gcs;
+  }
+
+  /** The sketch workbench while a sketch is open (src/app/sketch-bench.ts), else null. */
+  sketchBench: SketchBench | null = null;
+  /** Bumped when the workbench opens or closes, for the view. */
+  readonly sketchBenchOpen: Signal<boolean> = signal(false);
+
+  /** The top of the built part (mm): where a sketch opens when nothing is pointed at. */
+  private partTop(): number {
+    const m = this.built.peek()?.mesh;
+    if (!m) return 0;
+    let top = -Infinity;
+    for (let i = 1; i < m.positions.length; i += 3) top = Math.max(top, m.positions[i]);
+    return Number.isFinite(top) ? top : 0;
+  }
+
+  /** Open a sketch on a face: precise tools (line, rectangle, circle, arc, slot, polygon), relations and dimensions. */
+  async openSketchBench(origin: [number, number, number], code: number): Promise<string> {
+    const gcs = await this.loadGcs();
+    this.sketchBench = new SketchBench(origin, code, gcs);
+    // Sketch mode: pinches go to the sketch, not to the part's handles.
+    this.mode.value = 'sketch';
+    this.sketchBenchOpen.value = true;
+    const face = ['top', 'bottom', 'right', 'left', 'front', 'back'][code];
+    return `Sketch on the ${face} face. ${this.sketchBench.status} Tools: line, rectangle, circle, arc, tangent arc, slot, polygon; select, smart dimension, delete. Then extrude, cut or revolve.`;
+  }
+
+  closeSketchBench(): void {
+    this.sketchBench = null;
+    this.sketchBenchOpen.value = false;
+    if (this.mode.peek() === 'sketch') this.mode.value = 'shape';
+  }
+
+  /** Finish the open sketch as a feature. */
+  finishSketchBench(op: 'extrude' | 'cut' | 'revolve', size: number): string {
+    const b = this.sketchBench;
+    if (!b) return 'No sketch is open.';
+    try {
+      const r = b.finish(this.params.peek(), op, size);
+      this.closeSketchBench();
+      this.replaceParams(r.params);
+      return r.reply;
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }
+
   /**
    * Give one side of an air-sketched outline a length; FreeCAD's solver keeps the
    * rest of the drawing's intent (square corners, equal sides). `edge` is 0-based.
@@ -1016,6 +1074,27 @@ export class App {
     // Assembly: "assembly demo", "turn the hinge to 90", "play", "clash check"...
     const asm = this.assemblyCommand?.(sentence) ?? null;
     if (asm) return asm;
+    // The sketch workbench takes its own words while a sketch is open.
+    if (this.sketchBench) {
+      const s = wordsToDigits(sentence).toLowerCase();
+      const fin = s.match(/\b(extrude|boss|pull|cut|pocket|revolve)\b(?:\D*?(\d+(?:\.\d+)?))?/u);
+      if (fin) {
+        const op = /\b(cut|pocket)\b/u.test(fin[1]) ? 'cut' : fin[1] === 'revolve' ? 'revolve' : 'extrude';
+        const size = fin[2] ? parseFloat(fin[2]) : op === 'revolve' ? 360 : 10;
+        const reply = this.finishSketchBench(op, size);
+        this.say(reply, 'info');
+        return reply;
+      }
+      if (/\b(exit|cancel|close|leave|discard) (the )?sketch\b/u.test(s)) {
+        this.closeSketchBench();
+        return 'Sketch closed without a feature.';
+      }
+      const r = this.sketchBench.command(s);
+      if (r) {
+        this.say(r, 'info');
+        return r;
+      }
+    }
     if (/\b(convergence|converge|fine (analysis|mesh|test)|refine (the )?(mesh|test|analysis))\b/u.test(sentence.toLowerCase())) {
       void this.convergenceStudy().then((reply) => {
         this.say(reply, /Not converged|stopped|changed/u.test(reply) ? 'warn' : 'good');
@@ -1038,8 +1117,26 @@ export class App {
       this.selectJob('design');
       return 'Free design: a 60 by 40 by 20 block to start. Add boxes, cylinders, holes, fillets, shells and patterns by voice or from the design strip.';
     }
-    // "Sketch here" with no sizes draws in the air; with sizes it is a typed sketch (below).
-    if (this.jobId.peek() === 'design' && /\b(sketch|draw) (here|on (this|that|the) face)\b/u.test(sentence.toLowerCase()) && !/\d/u.test(wordsToDigits(sentence))) {
+    // "Sketch here": the sketch workbench on the face pointed at (precise tools, relations, dimensions).
+    if (this.jobId.peek() === 'design' && /\b(sketch|draw) (here|on (this|that|the) face)\b/u.test(sentence.toLowerCase()) && !/\d/u.test(wordsToDigits(sentence)) && !/\bfreehand\b/u.test(sentence.toLowerCase())) {
+      const pt = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed : null;
+      const top = this.built.peek()?.props;
+      const code = pt?.normal ? normalCode(pt.normal) : 0;
+      if (pt?.normal && code < 0) return 'That face is not flat along a main direction; point at a flat face.';
+      const origin: [number, number, number] = pt?.mm ? [Math.round(pt.mm[0] * 2) / 2, pt.mm[1], Math.round(pt.mm[2] * 2) / 2] : [0, top ? this.partTop() : 0, 0];
+      if (pt?.mm) {
+        const k = [1, 0, 2][code >> 1];
+        origin[k] = pt.mm[k];
+        for (let j = 0; j < 3; j++) if (j !== k) origin[j] = Math.round(pt.mm[j] * 2) / 2;
+      }
+      void this.openSketchBench(origin, Math.max(0, code)).then((r) => {
+        this.say(r, 'info');
+        this.speakReply(r.split('. ')[0]);
+      });
+      return 'Opening a sketch on that face.';
+    }
+    // "Draw freehand here": the air sketch (a hand-drawn outline, cleaned up).
+    if (this.jobId.peek() === 'design' && /\b(sketch|draw) (freehand )?(here|on (this|that|the) face)\b/u.test(sentence.toLowerCase()) && !/\d/u.test(wordsToDigits(sentence))) {
       const pt = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed : null;
       if (!pt?.mm || !pt.normal) return 'Point at a flat face of the part, then say "sketch here".';
       const code = normalCode(pt.normal);

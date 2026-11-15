@@ -13,15 +13,34 @@ import { CSS } from '../app/palette.js';
 import { makeButton, setButton } from '../app/ui3d.js';
 import { describeDesign, setDesignCurrent } from '../engine/design.js';
 
-const TOOLS: [string, string, string][] = [
-  ['design:box', '+ Box', 'add a box 30 by 30 by 10'],
-  ['design:cyl', '+ Cylinder', 'add a cylinder 20 by 15'],
-  ['design:hole', 'Hole here', 'drill a 5 mm hole here'],
-  ['design:pocket', 'Pocket here', 'cut a box pocket 15 by 15 by 5'],
-  ['design:fillet', 'Fillet 3', 'fillet 3'],
-  ['design:shell', 'Shell 2', 'shell 2'],
-  ['design:pattern', 'Pattern x3', 'pattern 3 times 20 apart'],
-  ['design:remove', 'Remove last', 'remove the last feature'],
+/**
+ * The feature ribbon, like a CAD program's: tabs of tools (create, holes, modify, output). "Here" and "edge"
+ * tools act where the hand ray last pointed; every size can be changed after (handles, dial, voice).
+ */
+const TABS = ['Create', 'Holes', 'Modify', 'Output'] as const;
+type Tab = (typeof TABS)[number];
+const TOOLS: [string, string, string, Tab][] = [
+  ['design:sketch', 'Sketch here', 'sketch here', 'Create'],
+  ['design:box', '+ Box', 'add a box 30 by 30 by 10', 'Create'],
+  ['design:cyl', '+ Cylinder', 'add a cylinder 20 by 15', 'Create'],
+  ['design:pocket', 'Pocket here', 'cut a box pocket 15 by 15 by 5', 'Create'],
+  ['design:rib', 'Rib here', 'rib 3 thick 15 by 15', 'Create'],
+  ['design:gear', 'Gear m2 z20', 'gear module 2 with 20 teeth 8 thick', 'Create'],
+  ['design:hole', 'Hole here', 'drill a 5 mm hole here', 'Holes'],
+  ['design:cbore', 'C-bore here', 'counterbore 10 by 3', 'Holes'],
+  ['design:tap', 'Tap M6 here', 'tap m6 12 deep', 'Holes'],
+  ['design:thread', 'Thread M8', 'm8 thread 16 long', 'Holes'],
+  ['design:pattern', 'Pattern x3', 'pattern 3 times 20 apart', 'Holes'],
+  ['design:circpat', 'Circ pattern 6', 'circular pattern 6', 'Holes'],
+  ['design:fillet', 'Fillet edge 2', 'fillet this edge 2', 'Modify'],
+  ['design:chamfer', 'Chamfer edge 1', 'chamfer this edge 1', 'Modify'],
+  ['design:roundall', 'Round all 1', 'round all edges 1', 'Modify'],
+  ['design:shell', 'Shell 2', 'shell 2', 'Modify'],
+  ['design:draft', 'Draft 3\u00b0', 'draft 3', 'Modify'],
+  ['design:mirror', 'Mirror X', 'mirror across x', 'Modify'],
+  ['design:remove', 'Remove last', 'remove the last feature', 'Output'],
+  ['design:step', 'Export STEP', 'export step', 'Output'],
+  ['design:drawing', 'Drawing', 'drawing', 'Output'],
 ];
 
 export class DesignSystem extends createSystem({}) {
@@ -29,20 +48,34 @@ export class DesignSystem extends createSystem({}) {
   private tree: TextLabel[] = [];
   private readonly viewer = new Vector3();
   private shown = false;
+  private tab: Tab = 'Create';
 
   init(): void {
     const { app, bench } = ctx;
     // Left of the bench, facing the user, like the other strips.
-    this.strip.position.set(-0.205, 0.0, 0.05);
+    this.strip.position.set(-0.215, 0.0, 0.06);
     this.strip.rotation.set(-0.7, 0.55, 0, 'YXZ');
     bench.root.add(this.strip);
     const e = this.world.createTransformEntity(this.strip, { parent: ctx.benchEntity, persistent: true });
-    TOOLS.forEach(([key, label, sentence], i) => {
-      const b = makeButton(e, { key, label, width: 0.062, height: 0.022 }, () => {
+    // Tabs along the top, then the open tab's tools in three columns.
+    TABS.forEach((tab, i) => {
+      const b = makeButton(e, { key: `design:tab:${tab}`, label: tab, width: 0.045, height: 0.016, tone: 'ghost' }, () => {
         ctx.sfx.play('select');
-        app.runCommand(sentence);
+        this.tab = tab;
+        this.refresh();
       });
-      b.position.set((i % 2) * 0.068 - 0.034, 0.045 - Math.floor(i / 2) * 0.028, 0);
+      b.position.set(i * 0.0475 - 0.071, 0.06, 0);
+    });
+    const slot = new Map<Tab, number>();
+    TOOLS.forEach(([key, label, sentence, tab]) => {
+      const i = slot.get(tab) ?? 0;
+      slot.set(tab, i + 1);
+      const b = makeButton(e, { key, label, width: 0.058, height: 0.02, tone: key === 'design:sketch' ? 'primary' : 'default' }, () => {
+        ctx.sfx.play('select');
+        const reply = app.runCommand(sentence);
+        if (reply) app.say(reply, 'info');
+      });
+      b.position.set((i % 3) * 0.062 - 0.062, 0.035 - Math.floor(i / 3) * 0.024, 0);
     });
     for (let i = 0; i < 12; i++) {
       const l = new TextLabel(0.0105);
@@ -59,6 +92,7 @@ export class DesignSystem extends createSystem({}) {
         }
       }),
       app.jobId.subscribe(() => this.refresh()),
+      app.sketchBenchOpen.subscribe(() => this.refresh()),
     );
     app.actions.design = () => {
       app.selectJob('design');
@@ -71,8 +105,11 @@ export class DesignSystem extends createSystem({}) {
     const { app } = ctx;
     const on = app.jobId.peek() === 'design';
     this.shown = on;
-    for (const [key] of TOOLS) setButton(key, { visible: on });
-    const lines = on ? ['FEATURES', ...describeDesign(app.params.peek())] : [];
+    const strip = on && !app.sketchBench;
+    for (const [key, , , tab] of TOOLS) setButton(key, { visible: strip && tab === this.tab });
+    for (const tab of TABS) setButton(`design:tab:${tab}`, { visible: strip, toggled: tab === this.tab });
+    // While a sketch is open its toolbar stands where the tree is.
+    const lines = on && !app.sketchBench ? ['FEATURES', ...describeDesign(app.params.peek())] : [];
     this.tree.forEach((l, i) => {
       if (i < lines.length) {
         l.set(lines[i], { bg: CSS.panel, border: i === 0 ? CSS.cyan : i === lines.length - 1 ? CSS.amber : CSS.panel });

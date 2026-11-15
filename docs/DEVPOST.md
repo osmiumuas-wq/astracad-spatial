@@ -65,6 +65,11 @@ hands, and every number on screen backed by a check you can see.
   and Fusion open: flat faces are true planes, and holes, shafts and fillets are true cylinders, so a 10 mm hole
   measures 10 mm there. A test reads every file back with OpenCascade and gets the exact volume. Bring a STEP file in
   and say "make it editable": drill it, add bosses, fillet and chamfer it, and export it again.
+- **A real sketcher in VR.** Point at a face, press Sketch, and pick tools from the toolbar: line, rectangle,
+  circle, arc, tangent arc, slot, polygon. Pinch to place points; they snap to ends, centres, midpoints and a grid.
+  Select two lines and press Perpendicular, or Tangent, or Equal. Smart dimension a line and say "45". The sketch
+  tells you when it is fully defined. Then Extrude, Cut or Revolve; FreeCAD's solver runs underneath. A ribbon with
+  tabs holds every feature: holes, counterbores, taps, threads, patterns, fillets, chamfers, shell, draft, mirror.
 - **Exact by numbers.** "Sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8 tall" gives every line its own
   dimension. "Drill a 6 mm hole at 12.5, -7" places it exactly. Chamfer any edge, curved or not.
 - **Drawings like desktop CAD.** Three views with hidden edges dashed, and an assembly drawing with balloons and the

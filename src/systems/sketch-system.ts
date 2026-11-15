@@ -204,7 +204,8 @@ export class SketchSystem extends createSystem({}) {
 
   update(): void {
     const { app, hands } = ctx;
-    if (app.mode.peek() !== 'sketch' || this.world.visibilityState.peek() === VisibilityState.NonImmersive) {
+    // The sketch workbench takes pinches on the face itself (src/systems/sketch-bench-system.ts).
+    if (app.mode.peek() !== 'sketch' || app.sketchBench || this.world.visibilityState.peek() === VisibilityState.NonImmersive) {
       if (this.count) this.reset();
       return;
     }
