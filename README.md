@@ -35,7 +35,7 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (162 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+Engine tests (161 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
 CalculiX, modal, flow, STEP, hinge, drawing, describe, spoken commands, voice, co-design, calibration, stability,
 explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free design, pro part tools,
 assemblies, mates and loops, edge fillets):
