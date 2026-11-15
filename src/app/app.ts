@@ -968,7 +968,8 @@ export class App {
       this.selectJob('design');
       return 'Free design: a 60 by 40 by 20 block to start. Add boxes, cylinders, holes, fillets, shells and patterns by voice or from the design strip.';
     }
-    if (this.jobId.peek() === 'design' && /\b(sketch|draw) (here|on (this|that|the) face)\b/u.test(sentence.toLowerCase())) {
+    // "Sketch here" with no sizes draws in the air; with sizes it is a typed sketch (below).
+    if (this.jobId.peek() === 'design' && /\b(sketch|draw) (here|on (this|that|the) face)\b/u.test(sentence.toLowerCase()) && !/\d/u.test(wordsToDigits(sentence))) {
       const pt = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed : null;
       if (!pt?.mm || !pt.normal) return 'Point at a flat face of the part, then say "sketch here".';
       const code = normalCode(pt.normal);

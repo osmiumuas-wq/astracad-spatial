@@ -97,4 +97,31 @@ describe('curved chamfers', () => {
     expect(removed / exact).toBeLessThan(1.03);
     expect(out.props.components).toBe(1);
   });
+
+  // A slot boss (two lines, two half circles of radius 5) 5 mm tall on the block's top.
+  const slot = (extra: PartSpec['features'] = []): PartSpec => block([
+    { $op: 'ref.plane', id: 'up2', args: { base: 'top', offset: 20 } },
+    { $op: 'sketch.loops', id: 'sl', sketched_on: 'up2', args: { loops: [[['L', -10, -5, 10, -5], ['A', 10, 0, 10, -5, 10, 5, 1], ['L', 10, 5, -10, 5], ['A', -10, 0, -10, 5, -10, -5, 1]]] } },
+    { $op: 'feature.extrude', id: 'boss', args: { depth: 5 } },
+    ...extra,
+  ]);
+  const P = 40 + 10 * Math.PI;
+
+  it('chamfers any curved edge: a slot boss rim, lines and arcs in one bevel', () => {
+    const plain = kernel.build(slot()).props.volume;
+    const out = kernel.build(slot([{ $op: 'feature.round', id: 'c', args: { at: [0, 25, 5], radius: 1, kind: 'chamfer' } }]));
+    // Inward offsets of a convex outline: A - P s + pi s^2, so the bevel removes P d^2/2 - pi d^3/3.
+    const exact = (P * 1) / 2 - Math.PI / 3;
+    expect((plain - out.props.volume) / exact).toBeGreaterThan(0.97);
+    expect((plain - out.props.volume) / exact).toBeLessThan(1.03);
+    expect(out.props.components).toBe(1);
+  });
+
+  it('chamfers a concave curved edge by filling it: the slot boss foot', () => {
+    const plain = kernel.build(slot()).props.volume;
+    const out = kernel.build(slot([{ $op: 'feature.round', id: 'c', args: { at: [0, 20, 5], radius: 1, kind: 'chamfer' } }]));
+    const exact = (P * 1) / 2 + Math.PI / 3;
+    expect((out.props.volume - plain) / exact).toBeGreaterThan(0.97);
+    expect((out.props.volume - plain) / exact).toBeLessThan(1.03);
+  });
 });

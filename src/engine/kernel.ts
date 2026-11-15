@@ -47,6 +47,7 @@ function dropSlivers(body: Manifold, keep: <T extends Disposable>(o: T) => T): M
   }
   return out ?? body;
 }
+import { VIEW_AXES, viewLines, ViewLines } from './hidden-lines.js';
 import { chamferLoops, extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
   BuildOutput,
@@ -514,7 +515,48 @@ export class Kernel {
                   const tool = keep(prism.transform([x[0], x[1], x[2], 0, y[0], y[1], y[2], 0, along[0], along[1], along[2], 0, start[0], start[1], start[2], 1] as Mat4));
                   body = keep(efc.convex ? body.subtract(tool) : body.add(tool));
                 } else if (kind === 'chamfer') {
-                  throw new SpecError('a chamfer follows a straight edge or a circle; that edge is neither', f.id);
+                  // Any other edge (a slot's rim, a spline, a sweep's edge): the chamfer's section swept along
+                  // the chain, one wedge per segment between the sections at its two ends, so the wedges meet
+                  // face to face and the bevel is one continuous surface.
+                  const ch = chains[0];
+                  const d3 = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+                  const closedChain = ch.length > 2 && d3(ch[0][0], ch[ch.length - 1][1]) < 1e-3;
+                  const faces = ch.map(([p, q]) => edgeFaces(mesh.positions, mesh.indices, p, q, 2e-3));
+                  if (faces.some((e) => !e)) throw new SpecError('the faces along that edge could not be found', f.id);
+                  // Keep face 1 on the same side all along the chain.
+                  const ef = faces as NonNullable<(typeof faces)[number]>[];
+                  for (let i = 1; i < ef.length; i++) {
+                    const a = ef[i - 1];
+                    const b = ef[i];
+                    if (dot3k(a.n1, b.n1) + dot3k(a.t1, b.t1) < dot3k(a.n1, b.n2) + dot3k(a.t1, b.t2)) ef[i] = { ...b, n1: b.n2, n2: b.n1, t1: b.t2, t2: b.t1 };
+                  }
+                  if (ef.some((e) => e.convex !== ef[0].convex)) throw new SpecError('that edge turns from convex to concave; chamfer each part on its own', f.id);
+                  const pts: Vec3[] = closedChain ? ch.map((s) => s[0]) : [...ch.map((s) => s[0]), ch[ch.length - 1][1]];
+                  const eps = 0.05 * r + 0.02;
+                  const section = (j: number): Vec3[] => {
+                    const near = closedChain ? [ef[(j - 1 + ef.length) % ef.length], ef[j % ef.length]] : [ef[j - 1], ef[j]].filter(Boolean);
+                    const t1 = norm(near.reduce<Vec3>((s, e) => [s[0] + e.t1[0], s[1] + e.t1[1], s[2] + e.t1[2]], [0, 0, 0]));
+                    const t2 = norm(near.reduce<Vec3>((s, e) => [s[0] + e.t2[0], s[1] + e.t2[1], s[2] + e.t2[2]], [0, 0, 0]));
+                    let e = pts[j];
+                    // Open ends reach a little past the edge, so no film is left at a corner.
+                    if (!closedChain && (j === 0 || j === pts.length - 1)) {
+                      const tan = norm(j === 0 ? [pts[0][0] - pts[1][0], pts[0][1] - pts[1][1], pts[0][2] - pts[1][2]] : [e[0] - pts[j - 1][0], e[1] - pts[j - 1][1], e[2] - pts[j - 1][2]]);
+                      e = [e[0] + tan[0] * 0.02, e[1] + tan[1] * 0.02, e[2] + tan[2] * 0.02];
+                    }
+                    const bis = norm([t1[0] + t2[0], t1[1] + t2[1], t1[2] + t2[2]]);
+                    return [
+                      [e[0] + t1[0] * r, e[1] + t1[1] * r, e[2] + t1[2] * r],
+                      [e[0] + t2[0] * r, e[1] + t2[1] * r, e[2] + t2[2] * r],
+                      [e[0] - bis[0] * eps, e[1] - bis[1] * eps, e[2] - bis[2] * eps],
+                    ];
+                  };
+                  const secs = pts.map((_, j) => section(j));
+                  const wedges: Manifold[] = [];
+                  for (let j = 0; j < (closedChain ? pts.length : pts.length - 1); j++) {
+                    wedges.push(keep(M.hull([...secs[j], ...secs[(j + 1) % pts.length]])));
+                  }
+                  const tool = keep(M.union(wedges));
+                  body = keep(ef[0].convex ? body.subtract(tool) : body.add(tool));
                 } else {
                   // The rolling ball on the part near every chain of the set, kept within tubes round them.
                   const R = r * 2.5;
@@ -1334,10 +1376,21 @@ export class Kernel {
     try {
       const { solid } = this.construct(spec, spec.features.length, keep);
       const polys = (m: Manifold): Vec2[][] => keep(m.project()).toPolygons().map((p) => p.map((q): Vec2 => [q[0], q[1]]));
+      // Visible and hidden edges per view, in the same view coordinates as the silhouettes.
+      const gl = solid.getMesh();
+      const np = gl.numProp;
+      const pos = new Float32Array((gl.vertProperties.length / np) * 3);
+      for (let i = 0, j = 0; i < gl.vertProperties.length; i += np, j += 3) {
+        pos[j] = gl.vertProperties[i];
+        pos[j + 1] = gl.vertProperties[i + 1];
+        pos[j + 2] = gl.vertProperties[i + 2];
+      }
+      const mesh = [{ positions: pos, indices: gl.triVerts }];
       return {
         front: polys(solid),
         top: polys(keep(solid.rotate([90, 0, 0]))),
         right: polys(keep(solid.rotate([0, -90, 0]))),
+        lines: { front: viewLines(mesh, VIEW_AXES.front), top: viewLines(mesh, VIEW_AXES.top), right: viewLines(mesh, VIEW_AXES.right) },
       };
     } finally {
       release(arena);
@@ -1379,6 +1432,8 @@ export interface DrawingViews {
   front: Vec2[][];
   top: Vec2[][];
   right: Vec2[][];
+  /** Edges seen in each view: visible (solid) and hidden (dashed), x1 y1 x2 y2 ... */
+  lines?: Record<'front' | 'top' | 'right', ViewLines>;
 }
 
 /** Layer outlines of a part printed with `up` as the build direction. */

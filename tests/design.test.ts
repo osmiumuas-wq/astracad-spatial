@@ -239,6 +239,27 @@ describe('production tools', () => {
     expect(near(-25, 20)).toBe(true);
   });
 
+  it('sketches with a typed dimension on every line: lines, angles and tangent arcs, closed form', async () => {
+    const { parseDesign, typedSketch } = await import('../src/engine/design.js');
+    const base = addFeature(start, OPS.BOX, { a: 100, b: 100, c: 10 });
+    const before = gate(base).volume;
+    // A rectangle by its sides.
+    let p = parseDesign('sketch 40 right, 20 up, 40 left, close, 10 tall', base, [-20, 10, 0], undefined, 0)!.params;
+    let g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    expect(g.volume - before).toBeCloseTo(40 * 20 * 10, 3);
+    // A D shape: two lines and a half circle of radius 10, cut 5 deep.
+    p = parseDesign('cut a sketch 30 right, arc 10 left 180, 30 left, close, 5 deep', base, [-15, 10, 10], undefined, 0)!.params;
+    g = gate(p);
+    expect(g.verdict).toBe('verified');
+    expect(before - g.volume).toBeCloseTo((30 * 20 + (Math.PI * 100) / 2) * 5, 3);
+    // An equilateral triangle by length and angle.
+    const tri = typedSketch('sketch 20 right then 20 at 120 then close');
+    expect(tri && 'area' in tri && tri.area).toBeCloseTo((Math.sqrt(3) / 4) * 400, 4);
+    // Words that are not a sketch are left alone.
+    expect(typedSketch('sketch here')).toBeNull();
+  });
+
   it('taps a thread inside a drilled hole', async () => {
     const { parseDesign } = await import('../src/engine/design.js');
     let p = addFeature(start, OPS.BOX, { a: 30, b: 30, c: 20 });

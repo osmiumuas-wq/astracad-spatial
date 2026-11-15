@@ -3,14 +3,18 @@
  * right views (third-angle projection), overall dimensions, a callout for
  * every round through-hole seen in a view, and a title block.
  *
- * The views are the kernel's silhouettes (src/engine/kernel.ts views), so the
- * drawing shows what goes right through in each direction; blind pockets and
- * hidden edges are not drawn. Hole diameters come from the hole polygon's
- * area: the kernel's circle facets are equal-area, so the diameter is exact.
+ * Each view is the kernel's silhouette (src/engine/kernel.ts views) with the
+ * part's edges over it (src/engine/hidden-lines.ts): visible edges as solid
+ * lines, hidden edges dashed, so blind pockets, counterbores, steps and the
+ * walls of holes show as on a drawing from desktop CAD. Through-hole diameters
+ * come from the hole polygon's area: the kernel's circle facets are
+ * equal-area, so the diameter is exact.
  */
 
 import type { DrawingViews } from './kernel.js';
 import type { Vec2 } from './types.js';
+
+type ViewName = 'front' | 'top' | 'right';
 
 export interface DrawingInfo {
   title: string;
@@ -31,7 +35,7 @@ export interface DrawingInfo {
 }
 
 export interface HoleCallout {
-  view: keyof DrawingViews;
+  view: ViewName;
   diameter: number;
   count: number;
   at: Vec2;
@@ -65,7 +69,7 @@ function bounds(loops: Vec2[][]): { min: Vec2; max: Vec2 } {
 }
 
 /** Round holes in a view: loops wound against the outer boundary whose points sit on a circle. */
-export function findHoles(loops: Vec2[][], view: keyof DrawingViews): HoleCallout[] {
+export function findHoles(loops: Vec2[][], view: ViewName): HoleCallout[] {
   const outerSign = Math.sign(loops.reduce((best, l) => (Math.abs(area(l)) > Math.abs(best) ? area(l) : best), 0));
   const found: { d: number; at: Vec2 }[] = [];
   for (const l of loops) {
@@ -120,13 +124,13 @@ export function drawingSvg(views: DrawingViews, info: DrawingInfo): { svg: strin
   const out: string[] = [];
   const holes: HoleCallout[] = [];
   // Sheet axes per view, as model axes (0 = X, 1 = Y, 2 = Z), for exact dimension text.
-  const axes: Record<keyof DrawingViews, [number, number]> = { front: [0, 1], top: [0, 2], right: [2, 1] };
-  const label = (v: keyof DrawingViews, k: 0 | 1, measured: number): string => {
+  const axes: Record<ViewName, [number, number]> = { front: [0, 1], top: [0, 2], right: [2, 1] };
+  const label = (v: ViewName, k: 0 | 1, measured: number): string => {
     const e = info.exact?.[axes[v][k]];
     // Use the exact size when the silhouette agrees with it to within the facet bulge.
     return f(e !== undefined && Math.abs(e - measured) < Math.max(0.05, 0.002 * e) ? e : measured);
   };
-  const toSheet = (v: keyof DrawingViews, [x, y]: Vec2): Vec2 => {
+  const toSheet = (v: ViewName, [x, y]: Vec2): Vec2 => {
     const p = place[v];
     return [p.ox + (x - p.b.min[0]) * s, p.oy + (p.b.max[1] - y) * s];
   };
@@ -135,6 +139,20 @@ export function drawingSvg(views: DrawingViews, info: DrawingInfo): { svg: strin
       .map((l) => `M${l.map((q) => toSheet(v, q).map((n) => n.toFixed(2)).join(' ')).join('L')}Z`)
       .join('');
     out.push(`<path d="${d}" fill="#e8eef8" stroke="#10182c" stroke-width="0.45" fill-rule="evenodd"/>`);
+    const ln = views.lines?.[v];
+    if (ln) {
+      const segs = (a: number[]): string => {
+        let o = '';
+        for (let i = 0; i + 3 < a.length; i += 4) {
+          const [x1, y1] = toSheet(v, [a[i], a[i + 1]]);
+          const [x2, y2] = toSheet(v, [a[i + 2], a[i + 3]]);
+          o += `M${x1.toFixed(2)} ${y1.toFixed(2)}L${x2.toFixed(2)} ${y2.toFixed(2)}`;
+        }
+        return o;
+      };
+      if (ln.hidden.length) out.push(`<path d="${segs(ln.hidden)}" class="hid"/>`);
+      if (ln.visible.length) out.push(`<path d="${segs(ln.visible)}" class="vis"/>`);
+    }
     const p = place[v];
     const vw = (p.b.max[0] - p.b.min[0]) * s;
     const vh = (p.b.max[1] - p.b.min[1]) * s;
@@ -194,7 +212,7 @@ export function drawingSvg(views: DrawingViews, info: DrawingInfo): { svg: strin
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SHEET_W}mm" height="${SHEET_H}mm" viewBox="0 0 ${SHEET_W} ${SHEET_H}">
 <title>${esc(info.name)} drawing</title>
 <defs><marker id="a" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L6 3L0 6z" fill="#10182c"/></marker>
-<style>text{font-family:Arial,Helvetica,sans-serif;fill:#10182c}.num{font-size:3.2px;text-anchor:middle}.lbl{font-size:3px;text-anchor:middle;letter-spacing:.4px;fill:#55607a}.note{font-size:2.8px}.key{font-size:2.4px;fill:#55607a;letter-spacing:.3px}.val{font-size:3px;font-weight:700}.dim{stroke:#10182c;stroke-width:.2;fill:none}.ext{stroke:#10182c;stroke-width:.15}</style></defs>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#10182c}.num{font-size:3.2px;text-anchor:middle}.lbl{font-size:3px;text-anchor:middle;letter-spacing:.4px;fill:#55607a}.note{font-size:2.8px}.key{font-size:2.4px;fill:#55607a;letter-spacing:.3px}.val{font-size:3px;font-weight:700}.dim{stroke:#10182c;stroke-width:.2;fill:none}.ext{stroke:#10182c;stroke-width:.15}.vis{stroke:#10182c;stroke-width:.35;fill:none;stroke-linecap:round}.hid{stroke:#10182c;stroke-width:.2;fill:none;stroke-dasharray:1.2 .8}</style></defs>
 <rect width="${SHEET_W}" height="${SHEET_H}" fill="#fff"/>
 <rect x="5" y="5" width="${SHEET_W - 10}" height="${SHEET_H - 10}" fill="none" stroke="#10182c" stroke-width="0.6"/>
 ${out.join('\n')}

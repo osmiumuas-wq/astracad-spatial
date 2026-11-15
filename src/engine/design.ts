@@ -112,15 +112,53 @@ export function removeLast(p: Params): Params {
   return out;
 }
 
-export function addOutline(p: Params, pts: [number, number][]): { params: Params; index: number } {
+export function addOutline(p: Params, pts: [number, number][], sweeps?: number[]): { params: Params; index: number } {
   let k = 0;
   while (`q${k}n` in p) k++;
   const out: Params = { ...p, [`q${k}n`]: pts.length };
   pts.forEach(([x, y], j) => {
     out[`q${k}x${j}`] = x;
     out[`q${k}y${j}`] = y;
+    // An exact arc from this point to the next: its signed sweep in degrees (+ turns left, anticlockwise).
+    if (sweeps?.[j]) out[`q${k}b${j}`] = sweeps[j];
   });
   return { params: out, index: k };
+}
+
+/** The arc from a to b turning `deg` degrees (+ anticlockwise) as a sketch arc segment. */
+export function arcSeg(a: [number, number], b: [number, number], deg: number): ['A', number, number, number, number, number, number, 1 | -1] {
+  const th = (Math.abs(deg) * Math.PI) / 180;
+  const c = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const r = c / (2 * Math.sin(th / 2));
+  const u = [(b[0] - a[0]) / c, (b[1] - a[1]) / c];
+  const left = [-u[1], u[0]];
+  const s = Math.sign(deg) * r * Math.cos(th / 2);
+  const cx = (a[0] + b[0]) / 2 + left[0] * s;
+  const cy = (a[1] + b[1]) / 2 + left[1] * s;
+  return ['A', cx, cy, a[0], a[1], b[0], b[1], deg > 0 ? 1 : -1];
+}
+
+/** The outline's segments when it holds an arc (else null: a plain polygon). */
+function outlineSegs(p: Params, k: number): unknown[] | null {
+  const m = Math.round(p[`q${k}n`] ?? 0);
+  let arcs = false;
+  const segs: unknown[] = [];
+  for (let j = 0; j < m; j++) {
+    const a: [number, number] = [p[`q${k}x${j}`], p[`q${k}y${j}`]];
+    const b: [number, number] = [p[`q${k}x${(j + 1) % m}`], p[`q${k}y${(j + 1) % m}`]];
+    const sw = p[`q${k}b${j}`] ?? 0;
+    if (sw) {
+      arcs = true;
+      segs.push(arcSeg(a, b, sw));
+    } else segs.push(['L', a[0], a[1], b[0], b[1]]);
+  }
+  return arcs ? segs : null;
+}
+
+/** The sketch feature for an outline: exact arcs and lines when it has arcs, else a polygon. */
+function outlineSketch(p: Params, k: number, id: string, on: string): Feature {
+  const segs = outlineSegs(p, k);
+  return segs ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops: [segs] } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
 }
 
 const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB;
@@ -128,7 +166,19 @@ const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op =
 function outlinePts(p: Params, k: number): [number, number][] {
   const m = Math.round(p[`q${k}n`] ?? 0);
   const pts: [number, number][] = [];
-  for (let j = 0; j < m; j++) pts.push([p[`q${k}x${j}`], p[`q${k}y${j}`]]);
+  for (let j = 0; j < m; j++) {
+    pts.push([p[`q${k}x${j}`], p[`q${k}y${j}`]]);
+    const sw = p[`q${k}b${j}`] ?? 0;
+    if (!sw) continue;
+    const [, cx, cy, ax, ay] = arcSeg([p[`q${k}x${j}`], p[`q${k}y${j}`]], [p[`q${k}x${(j + 1) % m}`], p[`q${k}y${(j + 1) % m}`]], sw);
+    const steps = Math.max(2, Math.ceil(Math.abs(sw) / 7.5));
+    const a0 = Math.atan2(ay - cy, ax - cx);
+    const r = Math.hypot(ax - cx, ay - cy);
+    for (let i = 1; i < steps; i++) {
+      const a = a0 + (((sw * Math.PI) / 180) * i) / steps;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  }
   return pts;
 }
 
@@ -248,16 +298,12 @@ export function designSpec(p: Params): PartSpec {
       const sink = op === OPS.FACE && Math.round(v.g) !== 1 ? 0.01 : 0;
       const origin: [number, number, number] = [v.d - fr.n[0] * sink, v.e - fr.n[1] * sink, v.f - fr.n[2] * sink];
       features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin, normal: fr.n, x_dir: fr.x } });
-      features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
+      features.push(outlineSketch(p, Math.round(v.a), `s${i}`, `pl${i}`));
       if (op === OPS.REVOLVE) features.push({ $op: 'feature.revolve', id, args: { angle: Math.max(1, Math.min(360, v.b || 360)), axis: 'v' } });
       else features.push(Math.round(v.g) === 1 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'reverse' } } : { $op: 'feature.extrude', id, args: v.h > 0 ? { depth: v.c + sink, draft: v.h } : { depth: v.c + sink } });
     } else if (op === OPS.OUTLINE) {
-      const k = Math.round(v.a);
-      const m = Math.round(p[`q${k}n`] ?? 0);
-      const pts: [number, number][] = [];
-      for (let j = 0; j < m; j++) pts.push([p[`q${k}x${j}`], p[`q${k}y${j}`]]);
       features.push(plane(`pl${i}`, v.f));
-      features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: pts } });
+      features.push(outlineSketch(p, Math.round(v.a), `s${i}`, `pl${i}`));
       features.push(Math.round(v.g) === 1 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'normal' } } : { $op: 'feature.extrude', id, args: { depth: v.c } });
     }
   }
@@ -614,8 +660,8 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
 }
 
 /** A sketch drawn on a flat face: a boss 10 mm out of it, ready to be pulled or turned into a cut. */
-export function addFaceSketch(p: Params, pts: [number, number][], origin: [number, number, number], code: number): Params {
-  const o = addOutline(p, pts);
+export function addFaceSketch(p: Params, pts: [number, number][], origin: [number, number, number], code: number, sweeps?: number[]): Params {
+  const o = addOutline(p, pts, sweeps);
   // The picked point, snapped to a thousandth of a millimetre: the face it was picked on.
   const r = (x: number): number => Math.round(x * 1000) / 1000;
   return addFeature(o.params, OPS.FACE, { a: o.index, b: code, c: 10, d: r(origin[0]), e: r(origin[1]), f: r(origin[2]), g: 0 });
@@ -710,6 +756,97 @@ function floorAt(p: Params, x: number, z: number, y: number): number {
     if (inside) best = Math.max(best, top);
   }
   return Number.isFinite(best) ? best : y;
+}
+
+/**
+ * A sketch typed or spoken step by step, each step with its dimension:
+ * "sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8 tall".
+ * Steps: a length and a direction (right, left, up, down: the face's own axes),
+ * "L at A" (A degrees from right, anticlockwise), "line L" (straight on), "turn
+ * left|right A" (then the next line), and "arc R left|right A" (a tangent arc of
+ * radius R turning A degrees). It starts where you point and closes itself.
+ */
+export function typedSketch(t: string): { pts: [number, number][]; sweeps: number[]; depth?: number; cut: boolean; lines: number; arcs: number; area: number; closedBy: boolean } | { error: string } | null {
+  if (!/\b(sketch|draw|profile|polyline|outline)\b/u.test(t)) return null;
+  const body = t.replace(/^.*?\b(sketch|draw|profile|polyline|outline)\b/u, '');
+  const steps = body.split(/,|;|\bthen\b|\band\b/u).map((s) => s.trim()).filter(Boolean);
+  const NUM = '(-?\\d+(?:\\.\\d+)?)';
+  const isStep = (s: string): boolean => new RegExp(`^(arc\\b|line\\b|turn\\b|${NUM}\\s*(mm\\s*)?(right|left|up|down|at\\b|long|forward|on\\b))`, 'u').test(s);
+  if (steps.filter(isStep).length < 2) return null;
+  const DIR: Record<string, number> = { right: 0, up: 90, left: 180, down: 270 };
+  const pts: [number, number][] = [[0, 0]];
+  const sweeps: number[] = [];
+  let heading = 0;
+  let lines = 0;
+  let arcs = 0;
+  let depth: number | undefined;
+  const cut = /\b(cut|pocket|recess)\b/u.test(t);
+  const here = (): [number, number] => pts[pts.length - 1];
+  const go = (l: number, deg: number): void => {
+    const r = (deg * Math.PI) / 180;
+    const [x, y] = here();
+    const q: [number, number] = [x + l * Math.cos(r), y + l * Math.sin(r)];
+    pts.push([Math.round(q[0] * 1e6) / 1e6, Math.round(q[1] * 1e6) / 1e6]);
+    sweeps.push(0);
+    heading = deg;
+    lines++;
+  };
+  for (const s of steps) {
+    let m: RegExpMatchArray | null;
+    if ((m = s.match(new RegExp(`^arc\\s*(?:of\\s*)?(?:radius\\s*)?${NUM}\\s*(?:mm\\s*)?(left|right)?\\s*(?:by\\s*)?${NUM}?`, 'u')))) {
+      const r = parseFloat(m[1]);
+      const turn = (m[2] === 'right' ? -1 : 1) * (m[3] ? parseFloat(m[3]) : 90);
+      if (r <= 0 || Math.abs(turn) >= 360) return { error: `An arc needs a positive radius and a turn under 360 degrees.` };
+      // Tangent arc: centre to the side it turns towards.
+      const h = (heading * Math.PI) / 180;
+      const side = turn > 0 ? 1 : -1;
+      const [x, y] = here();
+      const cx = x - side * r * Math.sin(h);
+      const cy = y + side * r * Math.cos(h);
+      const a0 = Math.atan2(y - cy, x - cx);
+      const a1 = a0 + (turn * Math.PI) / 180;
+      pts.push([Math.round((cx + r * Math.cos(a1)) * 1e6) / 1e6, Math.round((cy + r * Math.sin(a1)) * 1e6) / 1e6]);
+      sweeps.push(turn);
+      heading += turn;
+      arcs++;
+    } else if ((m = s.match(new RegExp(`^turn\\s*(left|right)\\s*${NUM}?`, 'u')))) {
+      heading += (m[1] === 'left' ? 1 : -1) * (m[2] ? parseFloat(m[2]) : 90);
+    } else if ((m = s.match(new RegExp(`^${NUM}\\s*(?:mm\\s*)?at\\s*${NUM}`, 'u')))) {
+      go(parseFloat(m[1]), parseFloat(m[2]));
+    } else if ((m = s.match(new RegExp(`^${NUM}\\s*(?:mm\\s*)?(right|left|up|down)\\b`, 'u')))) {
+      go(parseFloat(m[1]), DIR[m[2]]);
+    } else if ((m = s.match(new RegExp(`^(?:line\\s*)?${NUM}\\s*(?:mm\\s*)?(?:long|forward|on)?$`, 'u'))) && /^line\b|long|forward|on$/u.test(s)) {
+      go(parseFloat(m[1]), heading);
+    } else if ((m = s.match(new RegExp(`${NUM}\\s*(?:mm\\s*)?(tall|high|deep|thick)`, 'u'))) || (m = s.match(new RegExp(`(?:extrude|cut|pocket)\\s*${NUM}`, 'u')))) {
+      depth = parseFloat(m[1]);
+    } else if (/^close/u.test(s) || /^(here|on this face|on the \w+ face)$/u.test(s) || s === '') {
+      // Closing is automatic.
+    }
+  }
+  if (sweeps.length < 2) return { error: 'A sketch needs at least two steps, for example "sketch 40 right, 20 up, close".' };
+  // Close: back to the start with a line (unless the last step landed on it).
+  const last = here();
+  const closedBy = Math.hypot(last[0], last[1]) > 1e-6;
+  if (closedBy) sweeps.push(0);
+  else {
+    pts.pop();
+  }
+  // Signed area with the arcs' segments: shoelace plus each arc's circular segment.
+  let area = 0;
+  for (let j = 0; j < pts.length; j++) {
+    const a = pts[j];
+    const b = pts[(j + 1) % pts.length];
+    area += (a[0] * b[1] - b[0] * a[1]) / 2;
+    const sw = sweeps[j] ?? 0;
+    if (sw) {
+      const th = (Math.abs(sw) * Math.PI) / 180;
+      const c = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const r = c / (2 * Math.sin(th / 2));
+      area += Math.sign(sw) * ((r * r) / 2) * (th - Math.sin(th));
+    }
+  }
+  if (Math.abs(area) < 1e-6) return { error: 'That sketch encloses no area: the lines fold back on themselves.' };
+  return { pts, sweeps, depth, cut, lines: lines + (closedBy ? 1 : 0), arcs, area: Math.abs(area), closedBy };
 }
 
 function parseProduction(t: string, p: Params, here: [number, number, number] | undefined, code: number): DesignEdit | null {
@@ -823,6 +960,18 @@ function parseProduction(t: string, p: Params, here: [number, number, number] | 
     const dia = nums[0] ?? 5;
     const deep = /\bdeep\b/u.test(t) && nums.length > 1 ? nums[1] : 0;
     return { params: addFeature(p, OPS.FCIRC, { a: dia, b: fc, c: deep, d: at[0], e: at[1], f: at[2], g: 1 }), reply: `${dia} mm hole ${deep ? `${deep} mm deep` : 'right through'} on the ${face} face.` };
+  }
+  // A typed sketch: every line and arc with its own dimension.
+  const typed = typedSketch(t);
+  if (typed) {
+    if ('error' in typed) return { params: p, reply: typed.error };
+    const withFace = addFaceSketch(p, typed.pts, at, fc, typed.sweeps);
+    const k = featureCount(withFace) - 1;
+    const depth = typed.depth ?? (typed.cut ? 3 : 10);
+    return {
+      params: { ...withFace, [`c${k}`]: depth, [`g${k}`]: typed.cut ? 1 : 0 },
+      reply: `Sketched ${typed.lines} line${typed.lines === 1 ? '' : 's'}${typed.arcs ? ` and ${typed.arcs} arc${typed.arcs === 1 ? '' : 's'}` : ''} on the ${face} face${typed.closedBy ? ', closed back to the start' : ''}; ${typed.cut ? `cut ${depth} mm in` : `${depth} mm tall`}. Area ${typed.area.toFixed(1)} mm2.`,
+    };
   }
   // Exact sketch shapes on a face.
   const isShape = /\b(sketch|draw|add|put|make)\b/u.test(t) || /\b(here|on this face)\b/u.test(t);

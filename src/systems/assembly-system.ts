@@ -23,6 +23,7 @@ import { COLORS, CSS } from '../app/palette.js';
 import { makeButton, setButton } from '../app/ui3d.js';
 import { massProperties } from '../engine/stability.js';
 import { writeStep } from '../engine/step-export.js';
+import { assemblyDrawingSvg, BomRow } from '../engine/assembly-drawing.js';
 import { MATERIALS } from '../engine/materials.js';
 import { decodeAssembly, encodeAssembly, fitAxis, IDENTITY, Instance, Mate, MateKind, Pose, Quat, Ref, solveAssembly } from '../engine/assembly.js';
 import { loadAssembly, saveAssembly } from '../app/persistence.js';
@@ -515,23 +516,52 @@ export class AssemblySystem extends createSystem({}) {
   }
 
   /** The bill of materials as CSV: item, name, part, material, quantity, mass each (g). */
-  private bomCsv(): string {
-    const rows = new Map<string, { name: string; job: string; material: string; qty: number; mass: number }>();
+  /** The bill of materials: one row per distinct part (same part, sizes and material), and each instance's item. */
+  private bomRows(): { rows: BomRow[]; itemOf: Map<string, number> } {
+    const rows = new Map<string, BomRow>();
+    const itemOf = new Map<string, number>();
     for (const i of this.instances) {
       const key = `${i.job}|${i.material}|${JSON.stringify(i.params)}`;
       const r = rows.get(key);
       if (r) {
         r.qty++;
+        itemOf.set(i.id, r.item);
         continue;
       }
       const v = this.views.get(i.id);
       const vol = v ? massProperties({ positions: v.data.positions, indices: v.data.indices }).volume : 0;
       const density = MATERIALS.find((m) => m.id === i.material)?.density ?? 1.24;
-      rows.set(key, { name: i.name, job: jobById(i.job).title, material: i.material.toUpperCase(), qty: 1, mass: (vol / 1000) * density });
+      const item = rows.size + 1;
+      rows.set(key, { item, name: i.name, part: jobById(i.job).title, material: i.material.toUpperCase(), qty: 1, massG: (vol / 1000) * density });
+      itemOf.set(i.id, item);
     }
+    return { rows: [...rows.values()], itemOf };
+  }
+
+  /** The bill of materials as CSV: item, name, part, material, quantity, mass each (g). */
+  private bomCsv(): string {
     const lines = ['Item,Name,Part,Material,Quantity,Mass each (g)'];
-    [...rows.values()].forEach((r, k) => lines.push(`${k + 1},"${r.name}","${r.job}",${r.material},${r.qty},${r.mass.toFixed(2)}`));
+    for (const r of this.bomRows().rows) lines.push(`${r.item},"${r.name}","${r.part}",${r.material},${r.qty},${r.massG.toFixed(2)}`);
     return lines.join('\n') + '\n';
+  }
+
+  /** Each instance's mesh where it sits in the assembly (millimetres). */
+  private placedMeshes(): { id: string; name: string; positions: Float32Array; indices: ArrayLike<number> }[] {
+    return this.instances.flatMap((inst) => {
+      const v = this.views.get(inst.id);
+      if (!v) return [];
+      v.group.updateMatrix();
+      const e = v.group.matrix.elements;
+      const src = v.data.positions;
+      const out = new Float32Array(src.length);
+      for (let i = 0; i < src.length; i += 3) {
+        const x = src[i], y = src[i + 1], z = src[i + 2];
+        out[i] = e[0] * x + e[4] * y + e[8] * z + e[12];
+        out[i + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+        out[i + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+      }
+      return [{ id: inst.id, name: inst.name, positions: out, indices: v.data.indices }];
+    });
   }
 
   private download(text: string | Uint8Array, name: string, type: string): void {
@@ -555,24 +585,18 @@ export class AssemblySystem extends createSystem({}) {
       const ed = t.match(/\bedit part (\d+)\b/u);
       if (ed) return this.editPart(parseInt(ed[1], 10));
       if (/\b(export|save|download)\b.*\b(step|stp)\b/u.test(t)) {
-        const bodies = this.instances.flatMap((inst) => {
-          const v = this.views.get(inst.id);
-          if (!v) return [];
-          v.group.updateMatrix();
-          const e = v.group.matrix.elements;
-          const src = v.data.positions;
-          const out = new Float32Array(src.length);
-          for (let i = 0; i < src.length; i += 3) {
-            const x = src[i], y = src[i + 1], z = src[i + 2];
-            out[i] = e[0] * x + e[4] * y + e[8] * z + e[12];
-            out[i + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
-            out[i + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
-          }
-          return [{ name: inst.name, positions: out, indices: v.data.indices }];
-        });
+        const bodies = this.placedMeshes();
         if (!bodies.length) return 'The assembly is empty.';
         this.download(writeStep(bodies, 'assembly.step'), 'assembly.step', 'model/step');
         return `Saved assembly.step: ${bodies.length} solids where they sit now.`;
+      }
+      if (/\b(assembly drawing|draw (the|this) assembly|drawing of (the|this) assembly|balloons?)\b/u.test(t)) {
+        const { rows, itemOf } = this.bomRows();
+        const parts = this.placedMeshes().map((m) => ({ item: itemOf.get(m.id) ?? 0, positions: m.positions, indices: m.indices }));
+        if (!parts.length) return 'The assembly is empty.';
+        const d = assemblyDrawingSvg(parts, rows, 'Assembly', new Date().toISOString().slice(0, 10));
+        this.download(d.svg, 'assembly-drawing.svg', 'image/svg+xml');
+        return `Assembly drawing saved: isometric view, ${d.balloons} balloons, and the parts list (${rows.length} items). Open it in a browser to print.`;
       }
       if (/\b(bill of materials|bom|parts list)\b/u.test(t)) {
         this.download(this.bomCsv(), 'assembly-bom.csv', 'text/csv');
