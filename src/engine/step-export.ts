@@ -1,12 +1,13 @@
 /**
- * STEP export (ISO 10303-21, AP203 config_control_design): each body as a
- * FACETED_BREP whose faces are the part's flat regions, merged from the
- * triangle mesh, so a flat face is one STEP face (with its holes as inner
- * loops), and curved surfaces are their facets. Desktop CAD (SolidWorks,
- * Fusion, FreeCAD, Onshape) opens it as a solid body in millimetres.
+ * STEP export (ISO 10303-21, AP214 automotive_design): each body a
+ * MANIFOLD_SOLID_BREP rebuilt from its mesh by step-brep.ts: flat faces as
+ * planes, holes, shafts and straight-edge fillets as true cylinders, edges as
+ * lines and circles. Desktop CAD (SOLIDWORKS, CATIA, Creo, Fusion, FreeCAD)
+ * opens it as a solid in millimetres.
  */
 
 import type { Vec3 } from './types.js';
+import { buildBrep, squareTo } from './step-brep.js';
 
 export interface StepBody {
   name: string;
@@ -135,8 +136,8 @@ export function planarFaces(positions: ArrayLike<number>, indices: ArrayLike<num
 
 /**
  * A STEP file of the bodies, in millimetres: AP214 (automotive_design), each
- * body a MANIFOLD_SOLID_BREP of ADVANCED_FACEs on planes, bounded by edge
- * loops of shared straight edges, the form desktop CAD exports and reads.
+ * body a MANIFOLD_SOLID_BREP of ADVANCED_FACEs on planes and cylinders,
+ * bounded by shared line and circle edges.
  */
 export function writeStep(bodies: StepBody[], fileName = 'part.step', when = new Date()): string {
   const lines: string[] = [];
@@ -161,54 +162,76 @@ export function writeStep(bodies: StepBody[], fileName = 'part.step', when = new
   const dx = add("DIRECTION('',(1.,0.,0.))");
   const items: number[] = [add(`AXIS2_PLACEMENT_3D('',#${o},#${dz},#${dx})`)];
   for (const body of bodies) {
-    const P = (i: number): Vec3 => [body.positions[i * 3], body.positions[i * 3 + 1], body.positions[i * 3 + 2]];
-    const faces = planarFaces(body.positions, body.indices);
+    const brep = buildBrep(body.positions, body.indices);
+    const P = brep.P;
+    const point = (p: Vec3): number => add(`CARTESIAN_POINT('',${vec(p)})`);
+    const dir = (d: Vec3): number => add(`DIRECTION('',${vec(d)})`);
+    const placement = (o: Vec3, z: Vec3, x: Vec3): number => add(`AXIS2_PLACEMENT_3D('',#${point(o)},#${dir(z)},#${dir(x)})`);
     const vertexId = new Map<number, number>();
     const vertex = (i: number): number => {
       let id = vertexId.get(i);
       if (id === undefined) {
-        const cp = add(`CARTESIAN_POINT('',${vec(P(i))})`);
-        id = add(`VERTEX_POINT('',#${cp})`);
+        id = add(`VERTEX_POINT('',#${point(P(i))})`);
         vertexId.set(i, id);
       }
       return id;
     };
-    const edgeId = new Map<string, { id: number; from: number }>();
-    const edge = (a: number, b: number): string => {
-      const k = a < b ? `${a}_${b}` : `${b}_${a}`;
-      let e = edgeId.get(k);
-      if (!e) {
-        const pa = P(a);
-        const pb = P(b);
-        const d = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
-        const l = Math.hypot(d[0], d[1], d[2]) || 1;
-        const cp = add(`CARTESIAN_POINT('',${vec(pa)})`);
-        const dir = add(`DIRECTION('',${vec(d.map((x) => x / l))})`);
-        const v = add(`VECTOR('',#${dir},${fmt(l)})`);
-        const line = add(`LINE('',#${cp},#${v})`);
-        e = { id: add(`EDGE_CURVE('',#${vertex(a)},#${vertex(b)},#${line},.T.)`), from: a };
-        edgeId.set(k, e);
+    const line = (a: number, b: number): number => {
+      const pa = P(a);
+      const d: Vec3 = [P(b)[0] - pa[0], P(b)[1] - pa[1], P(b)[2] - pa[2]];
+      const l = Math.hypot(d[0], d[1], d[2]) || 1;
+      const ln = add(`LINE('',#${point(pa)},#${add(`VECTOR('',#${dir([d[0] / l, d[1] / l, d[2] / l])},${fmt(l)})`)})`);
+      return add(`EDGE_CURVE('',#${vertex(a)},#${vertex(b)},#${ln},.T.)`);
+    };
+    // Each chain's edges, start to end, made the first time a face uses it.
+    const chainEdges = new Map<number, number[]>();
+    const edgesOf = (k: number): number[] => {
+      let ids = chainEdges.get(k);
+      if (ids) return ids;
+      const ch = brep.chains[k];
+      const first = ch.pts[0];
+      const last = ch.pts[ch.pts.length - 1];
+      if (ch.curve.kind === 'line') ids = [line(first, last)];
+      else if (ch.curve.kind === 'circle') {
+        const { c, n, r } = ch.curve;
+        const p0 = P(first);
+        const rd: Vec3 = [p0[0] - c[0], p0[1] - c[1], p0[2] - c[2]];
+        const along = rd[0] * n[0] + rd[1] * n[1] + rd[2] * n[2];
+        const x: Vec3 = [rd[0] - n[0] * along, rd[1] - n[1] * along, rd[2] - n[2] * along];
+        const xl = Math.hypot(x[0], x[1], x[2]) || 1;
+        const circ = add(`CIRCLE('',#${placement(c, n, [x[0] / xl, x[1] / xl, x[2] / xl])},${fmt(r)})`);
+        const v0 = ch.closed && ch.anchor ? add(`VERTEX_POINT('',#${point(ch.anchor)})`) : vertex(first);
+        ids = [add(`EDGE_CURVE('',#${v0},#${ch.closed ? v0 : vertex(last)},#${circ},.T.)`)];
+      } else {
+        ids = [];
+        for (let i = 0; i + 1 < ch.pts.length; i++) ids.push(line(ch.pts[i], ch.pts[i + 1]));
       }
-      return add(`ORIENTED_EDGE('',*,*,#${e.id},${e.from === a ? '.T.' : '.F.'})`) + '';
+      chainEdges.set(k, ids);
+      return ids;
     };
     const faceIds: number[] = [];
-    for (const f of faces) {
+    for (const f of brep.faces) {
       if (!f.loops.length) continue;
-      const first = P(f.loops[0][0]);
-      const second = P(f.loops[0][1]);
-      let rx = [second[0] - first[0], second[1] - first[1], second[2] - first[2]];
-      const rl = Math.hypot(rx[0], rx[1], rx[2]) || 1;
-      rx = rx.map((x) => x / rl);
-      const cp = add(`CARTESIAN_POINT('',${vec(first)})`);
-      const nz = add(`DIRECTION('',${vec(f.normal)})`);
-      const nx = add(`DIRECTION('',${vec(rx)})`);
-      const plane = add(`PLANE('',#${add(`AXIS2_PLACEMENT_3D('',#${cp},#${nz},#${nx})`)})`);
       const bounds = f.loops.map((loop, k) => {
-        const oe = loop.map((v, j) => `#${edge(v, loop[(j + 1) % loop.length])}`);
-        const el = add(`EDGE_LOOP('',(${oe.join(',')}))`);
-        return add(`${k === 0 ? 'FACE_OUTER_BOUND' : 'FACE_BOUND'}('',#${el},.T.)`);
+        const oe: number[] = [];
+        for (const { chain, same } of loop) {
+          const ids = edgesOf(chain);
+          const seq = same ? ids : [...ids].reverse();
+          for (const e of seq) oe.push(add(`ORIENTED_EDGE('',*,*,#${e},${same ? '.T.' : '.F.'})`));
+        }
+        const el = add(`EDGE_LOOP('',(${oe.map((e) => `#${e}`).join(',')}))`);
+        return add(`${k === 0 && f.kind === 'plane' ? 'FACE_OUTER_BOUND' : 'FACE_BOUND'}('',#${el},.T.)`);
       });
-      faceIds.push(add(`ADVANCED_FACE('',(${bounds.map((b) => `#${b}`).join(',')}),#${plane},.T.)`));
+      const list = bounds.map((b) => `#${b}`).join(',');
+      if (f.kind === 'cylinder' && f.cyl) {
+        const { o, a, r, convex } = f.cyl;
+        const surf = add(`CYLINDRICAL_SURFACE('',#${placement(o, a, squareTo(a))},${fmt(r)})`);
+        faceIds.push(add(`ADVANCED_FACE('',(${list}),#${surf},${convex ? '.T.' : '.F.'})`));
+      } else {
+        const first = P(brep.chains[f.loops[0][0].chain].pts[0]);
+        const plane = add(`PLANE('',#${placement(first, f.normal, squareTo(f.normal))})`);
+        faceIds.push(add(`ADVANCED_FACE('',(${list}),#${plane},.T.)`));
+      }
     }
     const shell = add(`CLOSED_SHELL('',(${faceIds.map((f) => `#${f}`).join(',')}))`);
     items.push(add(`MANIFOLD_SOLID_BREP('${body.name.replace(/'/gu, '')}',#${shell})`));
