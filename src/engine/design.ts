@@ -40,6 +40,8 @@
  *             the wall), g normal code of the wall face (2 to 5): a triangular gusset centred on its plane
  *  23 BASE    a imported solid (its slot), b c min / max x, d e min / max y, f g min / max z: an imported
  *             STEP model as a body, so holes, bosses, fillets and chamfers can be added to it
+ *  24 SURF    a size x, b size z, c thickness (0 = filled to the base), d e f centre of its base, g control
+ *             points a side; heights z{i}_{k}: a freeform B-spline patch (src/engine/surface.ts)
  * Bosses (BOX, CYL, OUTLINE, FACE, FCIRC) take h = draft angle in degrees.
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
@@ -51,8 +53,8 @@ import type { Feature, PartSpec } from './types.js';
 import { gearOutline, polygonOutline, rectOutline, slotOutline } from './profiles.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23, SURF: 24 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported', 24: 'Freeform' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -106,6 +108,7 @@ export function addFeature(p: Params, op: number, v: Partial<DesignFeature['v']>
   delete out.sel;
   for (const s of SLOTS) out[`${s}${i}`] = v[s] ?? 0;
   for (const s of EXTRA) delete out[`${s}${i}`];
+  for (const k of Object.keys(out)) if (k.startsWith(`z${i}_`)) delete out[k];
   return out;
 }
 
@@ -131,6 +134,7 @@ export function removeLast(p: Params): Params {
   if (!n) return p;
   const out: Params = { ...p, nf: n - 1 };
   for (const k of ['o', ...SLOTS, ...EXTRA]) delete out[`${k}${n - 1}`];
+  for (const k of Object.keys(out)) if (k.startsWith(`z${n - 1}_`)) delete out[k];
   return out;
 }
 
@@ -243,7 +247,7 @@ function outlineSketch(p: Params, k: number, id: string, on: string): Feature {
   return loops ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
 }
 
-const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE;
+const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE || op === OPS.SURF;
 
 function outlinePts(p: Params, k: number): [number, number][] {
   // The first loop (lofts, sweeps and the like take one profile).
@@ -411,6 +415,10 @@ export function designSpec(p: Params): PartSpec {
       }
     } else if (op === OPS.BASE) {
       features.push({ $op: 'feature.mesh', id, args: { mesh: `imp${Math.round(v.a)}` } });
+    } else if (op === OPS.SURF) {
+      const n = Math.max(2, Math.min(8, Math.round(v.g) || 4));
+      const heights = Array.from({ length: n * n }, (_, k) => p[`z${i}_${k}`] ?? 0);
+      features.push({ $op: 'feature.surface', id, args: { origin: [v.d, v.e, v.f], sx: v.a, sz: v.b, n, heights, thickness: v.c } });
     } else if (op === OPS.RIB) {
       // In the plane of the floor's up and the wall's normal; its legs lie on the wall and the floor.
       const fr = FACE_FRAMES[Math.max(2, Math.min(5, Math.round(v.g)))];
@@ -529,6 +537,8 @@ function liveDefs(p: Params): ParamDef[] {
       return [d('c', 'Bend radius', 0.5, 200, 0.5)];
     case OPS.RIB:
       return [d('a', 'Rib thickness', 0.4, 50, 0.2), d('b', 'Rib length', 1, 300), d('c', 'Rib height', 1, 300)];
+    case OPS.SURF:
+      return [d('a', 'Surface width', 5, 400), d('b', 'Surface depth', 5, 400), d('c', 'Sheet thickness', 0, 30, 0.2)];
     case OPS.MIRROR:
       return [d('b', 'Mirror offset', -150, 150)];
     case OPS.REVOLVE:
@@ -543,6 +553,20 @@ function liveHandles(p: Params): HandleDef[] {
   const i = editing(p);
   if (i < 0) return [];
   const { op, v } = readFeature(p, i);
+  if (op === OPS.SURF) {
+    // A handle on every control point: pull it up or down to shape the surface.
+    const n = Math.max(2, Math.min(8, Math.round(v.g) || 4));
+    return Array.from({ length: n * n }, (_, k) => {
+      const ci = k % n;
+      const cj = Math.floor(k / n);
+      return {
+        param: `z${i}_${k}`,
+        at: (q: Params) => [v.d - v.a / 2 + (v.a * ci) / (n - 1), v.e + (q[`z${i}_${k}`] ?? 0), v.f - v.b / 2 + (v.b * cj) / (n - 1)] as [number, number, number],
+        axis: [0, 1, 0] as [number, number, number],
+        gain: 1,
+      };
+    });
+  }
   if (op === OPS.BOX || op === OPS.CUTBOX) {
     return [
       { param: `a${i}`, at: () => [v.d + v.a / 2, v.f + v.c / 2, v.e], axis: [1, 0, 0], gain: 2 },
@@ -577,6 +601,12 @@ function addedBox(p: Params): { min: [number, number, number]; max: [number, num
       min[0] = Math.min(min[0], v.d - v.a / 2); max[0] = Math.max(max[0], v.d + v.a / 2);
       min[2] = Math.min(min[2], v.e - v.b / 2); max[2] = Math.max(max[2], v.e + v.b / 2);
       min[1] = Math.min(min[1], v.f); max[1] = Math.max(max[1], v.f + v.c);
+    } else if (op === OPS.SURF) {
+      min[0] = Math.min(min[0], v.d - v.a / 2); max[0] = Math.max(max[0], v.d + v.a / 2);
+      min[2] = Math.min(min[2], v.f - v.b / 2); max[2] = Math.max(max[2], v.f + v.b / 2);
+      let hi = 0;
+      for (const k of Object.keys(p)) if (k.startsWith(`z${i}_`)) hi = Math.max(hi, p[k]);
+      min[1] = Math.min(min[1], v.e - v.c); max[1] = Math.max(max[1], v.e + hi);
     } else if (op === OPS.BASE) {
       min[0] = Math.min(min[0], v.b); max[0] = Math.max(max[0], v.c);
       min[1] = Math.min(min[1], v.d); max[1] = Math.max(max[1], v.e);
@@ -672,6 +702,7 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.SWEEP) s = `${Math.max(0, Math.round(p[`q${Math.round(v.b)}n`] ?? 0) - 1)} runs, bends r ${f(v.c)}`;
     else if (op === OPS.RIB) s = `${f(v.a)} thick, ${f(v.b)} x ${f(v.c)}`;
     else if (op === OPS.BASE) s = `${f(v.c - v.b)} x ${f(v.e - v.d)} x ${f(v.g - v.f)} from STEP`;
+    else if (op === OPS.SURF) s = `${f(v.a)} x ${f(v.b)}, ${Math.round(v.g)}x${Math.round(v.g)} points, ${v.c > 0 ? `${f(v.c)} sheet` : 'filled'}`;
     else if (op === OPS.ROUND) s = Math.round(v.b) === 1 ? `r ${f(v.a)}, every edge` : `r ${f(v.a)} on an edge`;
     else if (op === OPS.EDGE) s = `${Math.round(v.b) === 1 ? 'chamfer' : 'fillet'} ${f(v.a)}, ${f(Math.hypot(v.f - v.c, v.g - v.d, v.h - v.e))} long`;
     else if (op === OPS.MIRROR) s = `across ${['X', 'Y', 'Z'][Math.round(v.a)] ?? '?'} = ${f(v.b)}`;
@@ -1065,6 +1096,37 @@ function parseProduction(t: string, p: Params, here: [number, number, number] | 
       params: addFeature(p, OPS.GEAR, { a: module, b: teeth, c: thick, d: at[0], e: at[1], f: at[2], g: fc, h: bore }),
       reply: `A spur gear, module ${module}, ${teeth} teeth (pitch diameter ${(module * teeth).toFixed(1)} mm), ${thick} mm thick${bore ? `, ${bore} mm bore` : ''}, involute 20 degrees.`,
     };
+  }
+  // Freeform surfaces: "freeform surface 80 by 60 thick 3", "freeform top 80 by 60" (filled), "5 by 5 points".
+  if (/\b(freeform|free form|surface patch|nurbs|b-?spline surface)\b/u.test(t)) {
+    const sz = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:by|x)\s*(\d+(?:\.\d+)?)/u);
+    const th = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?thick|\bthick(?:ness)?\s*(\d+(?:\.\d+)?)/u);
+    const np = t.match(/(\d)\s*(?:by|x)\s*\d\s*(?:control )?points/u);
+    const n = np ? Math.max(2, Math.min(8, parseInt(np[1], 10))) : 4;
+    const fill = /\b(top|solid|filled|fill|block)\b/u.test(t) && !th;
+    const sx = sz ? parseFloat(sz[1]) : 80;
+    const sZ = sz ? parseFloat(sz[2]) : 60;
+    const thick = fill ? 0 : th ? parseFloat(th[1] ?? th[2]) : 3;
+    let q = addFeature(p, OPS.SURF, { a: sx, b: sZ, c: thick, d: at[0], e: at[1], f: at[2], g: n });
+    const k = featureCount(q) - 1;
+    for (let j = 0; j < n * n; j++) q = { ...q, [`z${k}_${j}`]: fill ? 10 : 0 };
+    return { params: q, reply: `A freeform ${fill ? 'top' : 'sheet'} ${sx} by ${sZ} mm${fill ? '' : `, ${thick} mm thick`}, ${n} by ${n} control points: pull them up or down, or say "raise point 2 3 by 10".` };
+  }
+  // Shape it: "raise point 2 3 by 10", "lower point 1 1 by 4", "set point 3 2 to 15".
+  const cp = t.match(/\b(raise|lift|lower|drop|set)\s+(?:control\s+)?point\s+(\d+)\s*,?\s*(\d+)\s*(?:by|to)?\s*(-?\d+(?:\.\d+)?)/u);
+  if (cp) {
+    let k = -1;
+    for (let j = featureCount(p) - 1; j >= 0; j--) if (readFeature(p, j).op === OPS.SURF) { k = j; break; }
+    if (k < 0) return { params: p, reply: 'There is no freeform surface; say "freeform surface 80 by 60" first.' };
+    const n = Math.max(2, Math.min(8, Math.round(readFeature(p, k).v.g) || 4));
+    const ci = parseInt(cp[2], 10) - 1;
+    const cj = parseInt(cp[3], 10) - 1;
+    if (ci < 0 || cj < 0 || ci >= n || cj >= n) return { params: p, reply: `Points run 1 to ${n} each way.` };
+    const key = `z${k}_${cj * n + ci}`;
+    const amt = parseFloat(cp[4]);
+    const now = p[key] ?? 0;
+    const next = cp[1] === 'set' ? amt : cp[1] === 'lower' || cp[1] === 'drop' ? now - amt : now + amt;
+    return { params: { ...p, [key]: next }, reply: `Control point ${ci + 1}, ${cj + 1} now ${+next.toFixed(2)} mm.` };
   }
   // Sweeps: "sweep a circle 8 along 40 right then 30 up bend 10".
   if (/\bsweep\b/u.test(t)) {

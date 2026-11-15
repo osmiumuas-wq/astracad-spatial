@@ -47,6 +47,7 @@ function dropSlivers(body: Manifold, keep: <T extends Disposable>(o: T) => T): M
   }
   return out ?? body;
 }
+import { surfaceMesh, surfacePatchOf } from './surface.js';
 import { VIEW_AXES, viewLines, ViewLines } from './hidden-lines.js';
 import { chamferLoops, extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
@@ -86,6 +87,7 @@ export function registerMesh(id: string, positions: Float32Array, indices: Uint3
 
 const ARG_SETS: Record<string, readonly string[]> = {
   'feature.mesh': ['mesh'],
+  'feature.surface': ['origin', 'sx', 'sz', 'n', 'heights', 'thickness'],
   'ref.plane': ['origin', 'normal', 'x_dir', 'base', 'offset'],
   'sketch.rectangle': ['width', 'height', 'x', 'y'],
   'sketch.circle': ['radius', 'diameter', 'x', 'y'],
@@ -650,6 +652,21 @@ export class Kernel {
             }
             const plan = loftPlan((ids as string[]).map((k) => takeNamed(k, f)));
             const tool: Tool = { solid: this.loftSolid(plan, keep), op: 'add' };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.surface') {
+            // A freeform B-spline patch, thickened or filled to its base (src/engine/surface.ts).
+            const sp = surfacePatchOf(a);
+            const sm = surfaceMesh(sp);
+            const mesh = new this.m.Mesh({ numProp: 3, vertProperties: sm.positions, triVerts: sm.indices });
+            mesh.merge();
+            let solid: Manifold;
+            try {
+              solid = keep(new this.m.Manifold(mesh));
+            } catch {
+              throw new SpecError('that surface folds through itself; pull its control points less steeply', f.id);
+            }
+            const tool: Tool = { solid, op: 'add' };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
           } else if (f.$op === 'feature.mesh') {

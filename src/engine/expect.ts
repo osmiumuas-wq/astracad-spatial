@@ -10,6 +10,7 @@
  * "not verifiable in closed form" instead of guessing.
  */
 
+import { surfaceBox, surfacePatchOf, surfaceVolume } from './surface.js';
 import { draftScale, draftVolume } from './profiles.js';
 import {
   Frame,
@@ -304,6 +305,22 @@ export function expectVolume(spec: PartSpec): Expectation {
 
     if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round' || f.$op === 'feature.thread') {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
+    }
+    if (f.$op === 'feature.surface') {
+      // The sampled freeform solid: exact for its grid (src/engine/surface.ts), a body of its own.
+      let sp;
+      try {
+        sp = surfacePatchOf(a);
+      } catch (e) {
+        return unknown(`"${f.id}": ${e instanceof Error ? e.message : String(e)}`, terms);
+      }
+      const why = addBody(surfaceBox(sp), f.id);
+      if (why) return unknown(why, terms);
+      const sv = surfaceVolume(sp);
+      volume = bodies.length > 1 ? volume + sv : sv;
+      terms.push(`${f.id}: freeform patch ${fmt(sp.sx)} x ${fmt(sp.sz)}, ${sp.thickness > 0 ? `sheet ${fmt(sp.thickness)} thick` : 'filled to its base'}: ${fmt(sv)}`);
+      if (bodies.length === 1) revolved = true;
+      continue;
     }
     if (f.$op === 'feature.mesh') {
       return unknown(`"${f.id}": an imported body is measured by the kernel from its STEP geometry, not a formula`, terms);
