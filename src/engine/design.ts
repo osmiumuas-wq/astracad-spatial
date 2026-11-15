@@ -23,6 +23,8 @@
  *  12 MIRROR  a plane (0 x, 1 y, 2 z), b offset: everything so far, mirrored and joined
  *  13 REVOLVE a outline index, b angle (deg), d x, e y, f z origin, g normal code: the outline turned about
  *             its plane's upright axis through the origin (a turned part: a knob, a bottle, a wheel)
+ *  15 EDGE    a radius or distance, b 0 fillet / 1 chamfer, c d e one end, f g h the other end:
+ *             a fillet or chamfer of any straight edge between two flat faces
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
  *
@@ -32,8 +34,8 @@
 import type { Feature, PartSpec } from './types.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -144,6 +146,8 @@ export function designSpec(p: Params): PartSpec {
       features.push({ $op: 'feature.pattern.linear', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), spacing: v.c, direction: Math.round(v.d) === 1 ? 'Z' : 'X' } });
     } else if (op === OPS.CIRCPAT) {
       features.push({ $op: 'feature.pattern.circular', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), axis: { origin: [v.d, 0, v.e], direction: [0, 1, 0] } } });
+    } else if (op === OPS.EDGE) {
+      features.push({ $op: 'feature.edge_fillet', id, args: { from: [v.c, v.d, v.e], to: [v.f, v.g, v.h], radius: v.a, kind: Math.round(v.b) === 1 ? 'chamfer' : 'fillet' } });
     } else if (op === OPS.CHAMFER) {
       features.push({ $op: 'feature.chamfer', id, args: { distance: v.a, feature: `f${Math.round(v.b)}`, edges: 'profile' } });
     } else if (op === OPS.MIRROR) {
@@ -222,6 +226,8 @@ function liveDefs(p: Params): ParamDef[] {
       return [d('c', 'Depth', 0.2, 300)];
     case OPS.CHAMFER:
       return [d('a', 'Chamfer', 0.2, 60, 0.5)];
+    case OPS.EDGE:
+      return [d('a', 'Edge radius', 0.2, 60, 0.5)];
     case OPS.MIRROR:
       return [d('b', 'Mirror offset', -150, 150)];
     case OPS.REVOLVE:
@@ -354,6 +360,7 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.OUTLINE) s = `${Math.round(v.g) === 1 ? 'cut' : 'extruded'} ${f(v.c)}`;
     else if (op === OPS.FACE) s = `${Math.round(v.g) === 1 ? 'cut' : 'boss'} ${f(v.c)} on ${['top', 'bottom', 'right', 'left', 'front', 'back'][Math.round(v.b)] ?? '?'}`;
     else if (op === OPS.CHAMFER) s = `${f(v.a)} on ${Math.round(v.b) + 1}`;
+    else if (op === OPS.EDGE) s = `${Math.round(v.b) === 1 ? 'chamfer' : 'fillet'} ${f(v.a)}, ${f(Math.hypot(v.f - v.c, v.g - v.d, v.h - v.e))} long`;
     else if (op === OPS.MIRROR) s = `across ${['X', 'Y', 'Z'][Math.round(v.a)] ?? '?'} = ${f(v.b)}`;
     else if (op === OPS.REVOLVE) s = `${f(v.b || 360)} deg`;
     out.push(`${i + 1} ${name} ${s}`);
@@ -375,7 +382,7 @@ export interface DesignEdit {
  *   "fillet 3" / "round the corners"  "shell 2" / "hollow it"
  *   "pattern 4 times 15 apart"        "4 around" (circular)        "remove the last feature"
  */
-export function parseDesign(text: string, p: Params, here?: [number, number, number]): DesignEdit | null {
+export function parseDesign(text: string, p: Params, here?: [number, number, number], edgeAt?: (at: [number, number, number]) => { a: [number, number, number]; b: [number, number, number] } | null): DesignEdit | null {
   const t = text.toLowerCase().replace(/(\d)\s*x\s*(\d)/gu, '$1 by $2');
   const nums = [...t.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
   const top = topOf(p);
@@ -400,6 +407,19 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
     const out: Params = { ...p, [`o${last}`]: OPS.REVOLVE, [`b${last}`]: nums[0] ?? 360, [`g${last}`]: Math.round(lastF.v.b), [`d${last}`]: lastF.v.d + fr.x[0] * minU, [`e${last}`]: lastF.v.e + fr.x[1] * minU, [`f${last}`]: lastF.v.f + fr.x[2] * minU };
     pts.forEach(([u], j) => (out[`q${k}x${j}`] = u - minU));
     return { params: out, reply: `Revolved the sketch ${nums[0] ?? 360} degrees about its left edge.` };
+  }
+  // "fillet this edge 3", "chamfer that edge 2": the edge nearest the pointed spot.
+  if (/\b(fillet|round|chamfer|bevel)\b/u.test(t) && /\b(this|that) edge\b|\bedge here\b/u.test(t)) {
+    if (!here || !edgeAt) return { params: p, reply: 'Point at an edge of the part, then say "fillet this edge 3".' };
+    const e = edgeAt(here);
+    if (!e) return { params: p, reply: 'No sharp straight edge there. Point closer to an edge.' };
+    const chamfer = /\b(chamfer|bevel)\b/u.test(t);
+    const size = nums[0] ?? (chamfer ? 1 : 2);
+    const r3 = (x: number): number => Math.round(x * 1e4) / 1e4;
+    return {
+      params: addFeature(p, OPS.EDGE, { a: size, b: chamfer ? 1 : 0, c: r3(e.a[0]), d: r3(e.a[1]), e: r3(e.a[2]), f: r3(e.b[0]), g: r3(e.b[1]), h: r3(e.b[2]) }),
+      reply: `${chamfer ? 'Chamfered' : 'Rounded'} that edge${chamfer ? ' by' : ' to'} ${size} mm (${Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1], e.b[2] - e.a[2]).toFixed(1)} mm long).`,
+    };
   }
   if (/\bchamfer\b/u.test(t)) {
     const body = lastBoss(p);
@@ -470,4 +490,61 @@ export function addFaceSketch(p: Params, pts: [number, number][], origin: [numbe
   // The picked point, snapped to a thousandth of a millimetre: the face it was picked on.
   const r = (x: number): number => Math.round(x * 1000) / 1000;
   return addFeature(o.params, OPS.FACE, { a: o.index, b: code, c: 10, d: r(origin[0]), e: r(origin[1]), f: r(origin[2]), g: 0 });
+}
+
+/**
+ * The straight sharp edge nearest a point (part mm), from a mesh's sharp-edge
+ * segments (xyz pairs): the nearest segment within `reach` mm, extended along
+ * its line over every collinear segment that touches it. Null when none is near.
+ */
+export function edgeNear(edges: ArrayLike<number>, at: [number, number, number], reach = 6): { a: [number, number, number]; b: [number, number, number] } | null {
+  const seg = (i: number): [[number, number, number], [number, number, number]] => [
+    [edges[i * 6], edges[i * 6 + 1], edges[i * 6 + 2]],
+    [edges[i * 6 + 3], edges[i * 6 + 4], edges[i * 6 + 5]],
+  ];
+  const n = Math.floor(edges.length / 6);
+  let best = -1;
+  let bestD = reach;
+  for (let i = 0; i < n; i++) {
+    const [p, q] = seg(i);
+    const d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+    const l2 = d[0] ** 2 + d[1] ** 2 + d[2] ** 2;
+    if (l2 < 1e-12) continue;
+    const t = Math.max(0, Math.min(1, ((at[0] - p[0]) * d[0] + (at[1] - p[1]) * d[1] + (at[2] - p[2]) * d[2]) / l2));
+    const dist = Math.hypot(p[0] + t * d[0] - at[0], p[1] + t * d[1] - at[1], p[2] + t * d[2] - at[2]);
+    if (dist < bestD) {
+      bestD = dist;
+      best = i;
+    }
+  }
+  if (best < 0) return null;
+  const [p0, q0] = seg(best);
+  const L = Math.hypot(q0[0] - p0[0], q0[1] - p0[1], q0[2] - p0[2]);
+  const u = [(q0[0] - p0[0]) / L, (q0[1] - p0[1]) / L, (q0[2] - p0[2]) / L];
+  const along = (x: number[]): number => (x[0] - p0[0]) * u[0] + (x[1] - p0[1]) * u[1] + (x[2] - p0[2]) * u[2];
+  const offLine = (x: number[]): number => {
+    const s = along(x);
+    return Math.hypot(x[0] - p0[0] - u[0] * s, x[1] - p0[1] - u[1] * s, x[2] - p0[2] - u[2] * s);
+  };
+  // Grow the span over collinear segments that overlap or touch it.
+  let lo = 0;
+  let hi = L;
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (let i = 0; i < n; i++) {
+      const [p, q] = seg(i);
+      if (offLine(p) > 1e-3 || offLine(q) > 1e-3) continue;
+      const a = Math.min(along(p), along(q));
+      const b = Math.max(along(p), along(q));
+      if (b < lo - 1e-3 || a > hi + 1e-3) continue;
+      if (a < lo - 1e-9 || b > hi + 1e-9) {
+        lo = Math.min(lo, a);
+        hi = Math.max(hi, b);
+        grew = true;
+      }
+    }
+  }
+  const pt = (s: number): [number, number, number] => [p0[0] + u[0] * s, p0[1] + u[1] * s, p0[2] + u[2] * s];
+  return { a: pt(lo), b: pt(hi) };
 }

@@ -228,6 +228,9 @@ export function expectVolume(spec: PartSpec): Expectation {
       continue;
     }
 
+    if (f.$op === 'feature.edge_fillet') {
+      return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
+    }
     if (f.$op === 'feature.mirror') {
       return unknown(`"${f.id}": a mirrored copy may overlap the original`, terms);
     }

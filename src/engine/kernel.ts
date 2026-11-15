@@ -27,6 +27,7 @@ import {
   sketchLoops,
   tessellateLoop,
 } from './sketch.js';
+import { crossSection as edgeSection, edgeFaces } from './edges.js';
 import { chamferLoops, extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
   BuildOutput,
@@ -78,6 +79,7 @@ const ARG_SETS: Record<string, readonly string[]> = {
   'feature.fillet': ['radius', 'feature', 'edges'],
   'feature.chamfer': ['distance', 'feature', 'edges'],
   'feature.mirror': ['plane', 'offset'],
+  'feature.edge_fillet': ['from', 'to', 'radius', 'kind'],
   'feature.shell': ['thickness', 'feature', 'open'],
   'feature.loft': ['sketches'],
   'feature.sweep': ['sketch', 'path', 'bend_radius'],
@@ -369,6 +371,42 @@ export class Kernel {
             };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
+          } else if (f.$op === 'feature.edge_fillet') {
+            // A fillet or chamfer of any straight edge between two flat faces of the body so far.
+            if (!body) throw new SpecError('nothing to round yet', f.id);
+            const A = a.from as Vec3;
+            const B = a.to as Vec3;
+            if (!Array.isArray(A) || !Array.isArray(B) || A.length !== 3 || B.length !== 3) throw new SpecError('"from" and "to" must be points [x, y, z]', f.id);
+            const size = numArg(a.radius, 'radius');
+            if (!(size > 0)) throw new SpecError('radius must be positive', f.id);
+            const kind = a.kind === 'chamfer' ? 'chamfer' : 'fillet';
+            const mesh = body.getMesh();
+            const np = mesh.numProp;
+            const pos = new Float32Array((mesh.vertProperties.length / np) * 3);
+            for (let i = 0, j = 0; i < mesh.vertProperties.length; i += np, j += 3) {
+              pos[j] = mesh.vertProperties[i];
+              pos[j + 1] = mesh.vertProperties[i + 1];
+              pos[j + 2] = mesh.vertProperties[i + 2];
+            }
+            const ef = edgeFaces(pos, mesh.triVerts, A, B, 2e-3);
+            if (!ef) throw new SpecError('that edge is not a sharp straight edge between two flat faces', f.id);
+            if (ef.phi > Math.PI - 1e-3) throw new SpecError('the faces at that edge are flat to each other', f.id);
+            const poly = edgeSection(ef, size, kind);
+            const u = norm([B[0] - A[0], B[1] - A[1], B[2] - A[2]]);
+            const L = Math.hypot(B[0] - A[0], B[1] - A[1], B[2] - A[2]);
+            const x = ef.t1;
+            const yRaw: Vec3 = [ef.t2[0] - x[0] * Math.cos(ef.phi), ef.t2[1] - x[1] * Math.cos(ef.phi), ef.t2[2] - x[2] * Math.cos(ef.phi)];
+            const y = norm(yRaw);
+            // Right-handed (x, y, along): flip the run direction if needed.
+            const zc = cross(x, y);
+            const along: Vec3 = zc[0] * u[0] + zc[1] * u[1] + zc[2] * u[2] > 0 ? u : [-u[0], -u[1], -u[2]];
+            const start: Vec3 = along === u ? A : B;
+            const cs = keep(new this.m.CrossSection([poly], 'EvenOdd'));
+            const prismed = keep(keep(cs.extrude(L + 0.04)).translate(0, 0, -0.02));
+            const m: Mat4 = [x[0], x[1], x[2], 0, y[0], y[1], y[2], 0, along[0], along[1], along[2], 0, start[0], start[1], start[2], 1];
+            const tool = keep(prismed.transform(m));
+            body = keep(ef.convex ? body.subtract(tool) : body.add(tool));
+            tools.set(f.id, []);
           } else if (f.$op === 'feature.mirror') {
             // Mirror everything built so far across a plane x, y or z = offset, and join the copy.
             if (!body) throw new SpecError('nothing to mirror yet', f.id);

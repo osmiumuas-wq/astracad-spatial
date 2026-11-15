@@ -42,7 +42,7 @@ import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
-import { normalCode, parseDesign } from '../engine/design.js';
+import { edgeNear, normalCode, parseDesign } from '../engine/design.js';
 import { probe } from './context.js';
 import { Understander } from './understand.js';
 
@@ -974,7 +974,9 @@ export class App {
     }
     if (this.jobId.peek() === 'design') {
       const here = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.mm : undefined;
-      const edit = parseDesign(wordsToDigits(sentence), this.params.peek(), here);
+      const mesh = this.built.peek()?.mesh;
+      const edgeAt = mesh ? (at: [number, number, number]) => edgeNear(mesh.edges, at) : undefined;
+      const edit = parseDesign(wordsToDigits(sentence), this.params.peek(), here, edgeAt);
       if (edit) {
         this.replaceParams(edit.params);
         this.say(edit.reply, 'info');

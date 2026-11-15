@@ -53,11 +53,13 @@ hands, and every number on screen backed by a check you can see.
   corners and equal sides hold, and "this side 40" sets a side.
 - **Professional CAD in your hands.** Point at any flat face and say "sketch here": draw on that face and pull it out
   as a boss, cut it in, or revolve it. Chamfer, fillet, shell, mirror, pattern, holes where you point, and "edit
-  feature 3" to change any earlier step, with the feature tree beside the part.
+  feature 3" to change any earlier step, with the feature tree beside the part. Point at any straight edge and say
+  "fillet this edge 3" or "chamfer this edge 2".
 - **Assemblies and motion.** Insert parts and mate them with the hand ray: pinch a face or a pin on one part, then
   where it goes on another, and it glides into place (coincident, concentric, hinge, slider, gear). An exact clash
   check shows interference in red, an exploded view lifts the parts apart, and a motion study plays keyframes:
-  "turn the hinge to 90", "play".
+  "turn the hinge to 90", "play". Closed loops are solved too: "linkage demo" builds a four-bar that turns through a
+  full revolution. Assemblies are saved, and Share puts the whole assembly in the QR code.
 - **The Lab.** Explore builds, verifies and stress-tests six variants and marks the best trade-offs. A tip test finds
   the exact centre of mass and the angle the part falls at, with its load resting on it. Point at the part and say
   "make this thicker". Hear the stress rise as you push. A gyroid lattice core behind a solid skin, cut open to see.

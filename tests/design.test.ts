@@ -139,3 +139,21 @@ describe('pro part tools', () => {
     expect(job.params.map((d) => d.id)).toContain('a0');
   });
 });
+
+describe('fillet or chamfer any picked edge', () => {
+  it('finds the whole edge near a pointed spot and rounds it', async () => {
+    const { parseDesign, edgeNear } = await import('../src/engine/design.js');
+    const { filletArea } = await import('../src/engine/edges.js');
+    const p0 = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 20 });
+    const built = kernel.build(designSpec(designJob.clamp(p0).params));
+    // Near the top front edge (y = 20, z = 20), pointed 1 mm off it.
+    const e = edgeNear(built.mesh.edges, [5, 19.2, 20.5])!;
+    expect(Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1], e.b[2] - e.a[2])).toBeCloseTo(60, 6);
+    const p = parseDesign('fillet this edge 3', p0, [5, 19.2, 20.5], (at) => edgeNear(built.mesh.edges, at))!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    const removed = 48000 - g.volume;
+    expect(removed).toBeGreaterThan(filletArea(3, Math.PI / 2) * 60 * 0.999);
+    expect(removed).toBeLessThan(filletArea(3, Math.PI / 2) * 60 * 1.02);
+  });
+});
