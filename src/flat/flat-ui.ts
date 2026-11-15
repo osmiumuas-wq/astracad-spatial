@@ -58,11 +58,42 @@ function download(data: Uint8Array | string, name: string, type: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
-/** Draw a QR code for `text` onto a canvas (dark modules on a light quiet zone). */
-export function drawQr(canvas: HTMLCanvasElement, text: string, size = 220): void {
-  const qr = qrcode(0, 'M');
-  qr.addData(text);
-  qr.make();
+/** A QR code for `text`, at the strongest error correction it fits in; null when it is too long for any. */
+function makeQr(text: string): ReturnType<typeof qrcode> | null {
+  for (const level of ['M', 'L'] as const) {
+    try {
+      const qr = qrcode(0, level);
+      qr.addData(text);
+      qr.make();
+      return qr;
+    } catch {
+      // Too long at this level: try the next one.
+    }
+  }
+  return null;
+}
+
+/**
+ * Draw a QR code for `text` onto a canvas (dark modules on a light quiet zone). A link too long for any QR
+ * code (a large free design) draws a note to use the link instead; it never throws, because it runs inside
+ * the parameter effects and a throw there would stop the part rebuilding. Returns whether a code was drawn.
+ */
+export function drawQr(canvas: HTMLCanvasElement, text: string, size = 220): boolean {
+  const qr = makeQr(text);
+  if (!qr) {
+    canvas.width = size;
+    canvas.height = size;
+    const c = canvas.getContext('2d') as CanvasRenderingContext2D;
+    c.fillStyle = '#ffffff';
+    c.fillRect(0, 0, size, size);
+    c.fillStyle = '#0b1220';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.font = `600 ${Math.round(size / 12)}px system-ui, sans-serif`;
+    c.fillText('Too large for a QR code:', size / 2, size / 2 - size / 14);
+    c.fillText('use the link', size / 2, size / 2 + size / 14);
+    return false;
+  }
   const n = qr.getModuleCount();
   const quiet = 3;
   const cell = Math.max(1, Math.floor(size / (n + quiet * 2)));
@@ -80,6 +111,7 @@ export function drawQr(canvas: HTMLCanvasElement, text: string, size = 220): voi
       }
     }
   }
+  return true;
 }
 
 const VERDICT_TEXT: Record<string, string> = {

@@ -17,6 +17,7 @@ import {
   LineBasicMaterial,
   LineSegments,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Plane,
   Quaternion,
@@ -28,11 +29,15 @@ import { Appearance, boxUv, textureFor } from './appearance.js';
 
 export type PartLook = 'normal' | 'rolled-back' | 'refused' | 'grown';
 
+/** More edge segments than this and the overlay is left off (see PartView.denseEdges). */
+const DENSE_EDGES = 30000;
+
 export class PartView {
   /** Scaled and seated; children are in millimetres. */
   readonly pivot = new Group();
   readonly mesh: Mesh<BufferGeometry, MeshStandardMaterial>;
   readonly edges: LineSegments<BufferGeometry, LineBasicMaterial>;
+  readonly band: Mesh<BufferGeometry, MeshBasicMaterial>;
   /** Part bounding box, mm. */
   box: PartBox = { min: [0, 0, 0], max: [1, 1, 1] };
   /** Largest dimension, mm. */
@@ -57,6 +62,11 @@ export class PartView {
   private readonly tint = new Color(COLORS.part);
   /** The part's appearance (null: the bench's own look). */
   private appearance: Appearance | null = null;
+  /**
+   * The edge overlay is too dense to read (a thread's helix facets: tens of thousands of segments), so it
+   * is left off and the shading alone shows the form; drawn, it turns the feature into a black smudge.
+   */
+  private denseEdges = false;
 
   /** 0 to 1: how strongly stressed areas glow (rises as the load nears yield). */
   private readonly heat = { value: 0 };
@@ -110,7 +120,13 @@ export class PartView {
     this.edges.name = 'Part edges';
     this.edges.frustumCulled = false;
     this.pivot.name = 'Part pivot';
-    this.pivot.add(this.mesh, this.edges);
+    // A drawn line over the part (a parting line) as a solid band, so it reads at any distance; a GL line is
+    // one pixel wide.
+    this.band = new Mesh(new BufferGeometry(), new MeshBasicMaterial({ color: 0xffb020, toneMapped: false }));
+    this.band.name = 'Part line';
+    this.band.frustumCulled = false;
+    this.band.visible = false;
+    this.pivot.add(this.mesh, this.edges, this.band);
     this.applyScale();
   }
 
@@ -167,7 +183,9 @@ export class PartView {
     eg.setAttribute('position', new BufferAttribute(data.edges.slice(), 3));
     this.edges.geometry.dispose();
     this.edges.geometry = eg;
-    this.edges.visible = true;
+    this.denseEdges = data.edges.length / 6 > DENSE_EDGES;
+    this.edges.visible = !this.denseEdges && !this.appearance;
+    this.band.visible = false;
     this.box = box;
     this.size = Math.max(
       box.max[0] - box.min[0],
@@ -284,14 +302,57 @@ ${block}
     m.needsUpdate = true;
   }
 
-  /** Draw lines over the part (a parting line), in mm; the next build puts the edges back. */
+  /**
+   * Draw lines over the part (a parting line), in mm, as a band about 1 % of the part's size thick (a square
+   * tube along each segment); the next build takes it away.
+   */
   showLines(segments: ArrayLike<number>, color: number): void {
+    const n = Math.floor(segments.length / 6);
+    const w = Math.max(0.4, this.size * 0.006);
+    const pos = new Float32Array(n * 8 * 3);
+    const idx = new Uint32Array(n * 24);
+    // The four long faces of a box from a to b (its ends are hidden where segments meet).
+    const quads = [0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7];
+    const d = new Vector3();
+    const u = new Vector3();
+    const v = new Vector3();
+    for (let i = 0; i < n; i++) {
+      const a = [segments[i * 6], segments[i * 6 + 1], segments[i * 6 + 2]];
+      const b = [segments[i * 6 + 3], segments[i * 6 + 4], segments[i * 6 + 5]];
+      d.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      if (d.lengthSq() < 1e-12) continue;
+      d.normalize();
+      u.set(Math.abs(d.y) < 0.9 ? 0 : 1, Math.abs(d.y) < 0.9 ? 1 : 0, 0).cross(d).normalize().multiplyScalar(w);
+      v.crossVectors(d, u).normalize().multiplyScalar(w);
+      const corners = [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ];
+      for (let e = 0; e < 2; e++) {
+        const p = e ? b : a;
+        for (let c = 0; c < 4; c++) {
+          const o = (i * 8 + e * 4 + c) * 3;
+          const [cu, cv] = corners[c];
+          pos[o] = p[0] + u.x * cu + v.x * cv;
+          pos[o + 1] = p[1] + u.y * cu + v.y * cv;
+          pos[o + 2] = p[2] + u.z * cu + v.z * cv;
+        }
+      }
+      for (let q = 0; q < 4; q++) {
+        const [k0, k1, k2, k3] = quads.slice(q * 4, q * 4 + 4).map((k) => i * 8 + k);
+        idx.set([k0, k1, k2, k0, k2, k3], i * 24 + q * 6);
+      }
+    }
     const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(new Float32Array(segments), 3));
-    this.edges.geometry.dispose();
-    this.edges.geometry = g;
-    this.edges.material.color.setHex(color);
-    this.edges.visible = true;
+    g.setAttribute('position', new BufferAttribute(pos, 3));
+    g.setIndex(new BufferAttribute(idx, 1));
+    this.band.geometry.dispose();
+    this.band.geometry = g;
+    this.band.material.color.setHex(color);
+    this.band.material.side = DoubleSide;
+    this.band.visible = true;
   }
 
   /** Show the part in an appearance (a metal, a colour, carbon fibre, wood...), or null for the bench look. */
@@ -321,7 +382,7 @@ ${block}
       this.rim.value = 0.55;
     }
     if (!m.vertexColors) m.color.copy(this.tint);
-    this.edges.visible = !a;
+    this.edges.visible = !a && !this.denseEdges;
     m.needsUpdate = true;
   }
 
@@ -374,7 +435,7 @@ ${block}
     m.vertexColors = false;
     m.color.copy(this.tint);
     m.needsUpdate = true;
-    this.edges.visible = true;
+    this.edges.visible = !this.denseEdges && !this.appearance;
     const pos = this.mesh.geometry.getAttribute('position') as BufferAttribute | undefined;
     if (pos && pos.array.length === this.base.length) {
       (pos.array as Float32Array).set(this.base);
