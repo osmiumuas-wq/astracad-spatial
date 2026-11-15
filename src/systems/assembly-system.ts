@@ -21,7 +21,9 @@ import { CancelledError } from '../app/engine-client.js';
 import { TextLabel, faceViewer } from '../app/labels.js';
 import { COLORS, CSS } from '../app/palette.js';
 import { makeButton, setButton } from '../app/ui3d.js';
-import { fitAxis, IDENTITY, Instance, Mate, MateKind, Pose, Quat, Ref, solveAssembly } from '../engine/assembly.js';
+import { decodeAssembly, encodeAssembly, fitAxis, IDENTITY, Instance, Mate, MateKind, Pose, Quat, Ref, solveAssembly } from '../engine/assembly.js';
+import { loadAssembly, saveAssembly } from '../app/persistence.js';
+import { JOBS } from '../engine/jobs.js';
 import { addFeature, OPS } from '../engine/design.js';
 import { jobById, Params } from '../engine/jobs.js';
 import type { MeshData, Vec3 } from '../engine/types.js';
@@ -109,6 +111,14 @@ export class AssemblySystem extends createSystem({}) {
     this.refreshUi();
     app.actions.assembly = () => this.toggle();
     app.assemblyCommand = (text) => this.command(text);
+    app.assemblyLink = () => (this.active && this.instances.length ? encodeAssembly({ instances: this.instances, mates: this.mates }) : null);
+    // Opened from a shared link: rebuild that assembly once the engine is up.
+    const m = /[#&]asm=([A-Za-z0-9_-]+)/u.exec(globalThis.location?.hash ?? '');
+    if (m) {
+      const doc = decodeAssembly(m[1], (id) => JOBS.some((j) => j.id === id));
+      if (doc) setTimeout(() => void this.restore(doc, 'Opened the shared assembly.'), 2500);
+      else app.say('That assembly link is damaged; nothing was opened.', 'warn');
+    }
   }
 
   // ----- modes ---------------------------------------------------------------------------------
@@ -119,7 +129,15 @@ export class AssemblySystem extends createSystem({}) {
       return;
     }
     this.setActive(true);
-    if (!this.instances.length) void this.addCurrent();
+    if (!this.instances.length) {
+      const saved = loadAssembly();
+      const doc = saved ? decodeAssembly(saved, (id) => JOBS.some((j) => j.id === id)) : null;
+      if (doc?.instances.length) {
+        void this.restore(doc, 'Your last assembly, as you left it.');
+        return;
+      }
+      void this.addCurrent();
+    }
     ctx.app.say('Assembly: "+ This part" inserts the part on the bench. Mate: pinch a face or a round surface of the part that moves, then of the part it goes onto. Or say "assembly demo".', 'info');
   }
 
@@ -181,6 +199,7 @@ export class AssemblySystem extends createSystem({}) {
     this.makeView(inst, data);
     this.reseat();
     this.refreshUi();
+    this.persist();
     return inst;
   }
 
@@ -206,6 +225,38 @@ export class AssemblySystem extends createSystem({}) {
     if (!v) return;
     v.group.position.set(pose.p[0], pose.p[1], pose.p[2]);
     v.group.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+  }
+
+  /** Keep the assembly in the browser, so it is there next time. */
+  private persist(): void {
+    saveAssembly(this.instances.length ? encodeAssembly({ instances: this.instances, mates: this.mates }) : null);
+  }
+
+  /** Rebuild an assembly from a saved or shared document. */
+  private async restore(doc: { instances: Instance[]; mates: Mate[] }, message: string): Promise<void> {
+    const { app } = ctx;
+    if (!this.active) this.setActive(true);
+    for (const v of this.views.values()) this.root.remove(v.group);
+    this.views.clear();
+    this.instances = [];
+    this.mates = [];
+    this.keys = [];
+    try {
+      for (const i of doc.instances) {
+        const data = await this.build(i.job, i.params);
+        this.instances.push({ ...i });
+        this.makeView(i, data);
+        this.nextId = Math.max(this.nextId, parseInt(i.id.replace(/\D/gu, ''), 10) + 1 || this.nextId);
+      }
+      this.mates = doc.mates.map((m) => ({ ...m }));
+      this.recentre = true;
+      this.solve(true);
+      this.refreshUi();
+      this.persist();
+      app.say(`${message} ${this.instances.length} parts, ${this.mates.length} mates.`, 'good');
+    } catch (e) {
+      if (!(e instanceof CancelledError)) app.say(e instanceof Error ? e.message : String(e), 'warn');
+    }
   }
 
   private async addCurrent(): Promise<void> {
@@ -288,6 +339,7 @@ export class AssemblySystem extends createSystem({}) {
     const mate: Mate = { id: `m${this.mates.length + 1}`, kind, a: moving, ra: mref, b: target, rb: tref, value: 0 };
     this.mates.push(mate);
     this.solve(true);
+    this.persist();
     app.say(`${kind[0].toUpperCase()}${kind.slice(1)}: ${this.name(moving)} to ${this.name(target)}.${kind === 'hinge' ? ' Say "turn the hinge to 90", or add keyframes and play.' : ''}`, 'good');
     ctx.sfx.play('bind');
     this.refreshUi();
@@ -423,6 +475,10 @@ export class AssemblySystem extends createSystem({}) {
   /** Voice: "turn the hinge to 90", "slide to 20", "assembly demo". */
   private command(text: string): string | null {
     const t = text.toLowerCase();
+    if (/\b(linkage|four bar|4 bar)( demo)?\b/u.test(t)) {
+      void this.linkage();
+      return 'Building a four-bar linkage: a closed loop, solved as one.';
+    }
     if (/\bassembly demo\b|\bdemo assembly\b/u.test(t)) {
       void this.demo();
       return 'Building a hinged arm on a base: a demo assembly.';
@@ -434,6 +490,7 @@ export class AssemblySystem extends createSystem({}) {
       if (!h) return 'There is no hinge to turn.';
       h.value = parseFloat(n[1]);
       this.solve(true);
+      this.persist();
       return `Hinge at ${h.value} degrees.`;
     }
     if (/\b(slide|move)\b/u.test(t) && n) {
@@ -441,6 +498,7 @@ export class AssemblySystem extends createSystem({}) {
       if (!s) return 'There is no slider to move.';
       s.value = parseFloat(n[1]);
       this.solve(true);
+      this.persist();
       return `Slider at ${s.value} mm.`;
     }
     if (/\b(animate|play)\b/u.test(t)) {
@@ -456,6 +514,58 @@ export class AssemblySystem extends createSystem({}) {
       return 'Exploded view.';
     }
     return null;
+  }
+
+  /**
+   * A four-bar linkage: a frame with two pins 40 mm apart, a 15 mm crank, a 40 mm coupler and a 35 mm rocker.
+   * The loop closes only when all four are solved together; turning the crank drives the rocker
+   * (Grashof crank-rocker: 15 + 40 <= 35 + 40), the motion checked against Freudenstein's equation in the tests.
+   */
+  private async linkage(): Promise<void> {
+    const { app } = ctx;
+    if (!this.active) this.setActive(true);
+    for (const v of this.views.values()) this.root.remove(v.group);
+    this.views.clear();
+    this.instances = [];
+    this.mates = [];
+    this.keys = [];
+    const bar = (len: number, pinUp: boolean): Params => {
+      let p: Params = { nf: 0 };
+      p = addFeature(p, OPS.BOX, { a: len + 12, b: 10, c: 4, d: len / 2 });
+      p = addFeature(p, OPS.FILLET, { a: 4.9, b: 0 });
+      p = addFeature(p, OPS.HOLE, { a: 6.6, b: 0, d: 0, e: 0, f: 4 });
+      p = pinUp ? addFeature(p, OPS.CYL, { a: 6, c: 8, d: len, e: 0, f: 4 }) : addFeature(p, OPS.HOLE, { a: 6.6, b: 0, d: len, e: 0, f: 4 });
+      return p;
+    };
+    let frame: Params = { nf: 0 };
+    frame = addFeature(frame, OPS.BOX, { a: 76, b: 24, c: 6, d: 0 });
+    frame = addFeature(frame, OPS.FILLET, { a: 5, b: 0 });
+    frame = addFeature(frame, OPS.CYL, { a: 6, c: 10, d: -20, e: 0, f: 6 });
+    frame = addFeature(frame, OPS.CYL, { a: 6, c: 10, d: 20, e: 0, f: 6 });
+    try {
+      const f = await this.addInstance('design', frame, 'pla', undefined, 'Frame');
+      const crank = await this.addInstance('design', bar(15, true), 'petg', { p: [-20, 6, 30], q: IDENTITY }, 'Crank');
+      const rocker = await this.addInstance('design', bar(35, true), 'abs', { p: [20, 6, 30], q: [0, 0.7, 0, 0.71] }, 'Rocker');
+      const coupler = await this.addInstance('design', bar(40, false), 'pla', { p: [-5, 10, 40], q: IDENTITY }, 'Coupler');
+      const axisY = (x: number): Ref => ({ kind: 'axis', point: [x, 0, 0], dir: [0, 1, 0] });
+      const face = (y: number, up: boolean): Ref => ({ kind: 'plane', point: [0, y, 0], dir: [0, up ? 1 : -1, 0] });
+      this.mates = [
+        { id: 'm1', kind: 'hinge', a: crank.id, ra: axisY(0), b: f.id, rb: axisY(-20), value: 30 },
+        { id: 'm2', kind: 'coincident', a: crank.id, ra: face(0, false), b: f.id, rb: face(6, true) },
+        { id: 'm3', kind: 'concentric', a: rocker.id, ra: axisY(0), b: f.id, rb: axisY(20) },
+        { id: 'm4', kind: 'coincident', a: rocker.id, ra: face(0, false), b: f.id, rb: face(6, true) },
+        { id: 'm5', kind: 'concentric', a: coupler.id, ra: axisY(0), b: crank.id, rb: axisY(15) },
+        { id: 'm6', kind: 'coincident', a: coupler.id, ra: face(0, false), b: crank.id, rb: face(4, true) },
+        { id: 'm7', kind: 'concentric', a: coupler.id, ra: axisY(40), b: rocker.id, rb: axisY(35) },
+      ];
+      this.recentre = true;
+      this.solve(true);
+      this.keys = Array.from({ length: 9 }, (_, k) => ({ t: k * 0.6, values: { m1: 30 + k * 45 } }));
+      this.persist();
+      app.say('Four-bar linkage: frame, crank, coupler and rocker, a closed loop solved together. Play motion turns the crank a full turn; the rocker rocks.', 'good');
+    } catch (e) {
+      if (!(e instanceof CancelledError)) app.say(e instanceof Error ? e.message : String(e), 'warn');
+    }
   }
 
   /** A base with a pin, an arm hinged on it, and a link: built from free designs, mated by the solver. */
@@ -502,6 +612,7 @@ export class AssemblySystem extends createSystem({}) {
         { t: 3.2, values: { m1: -45 } },
         { t: 4.8, values: { m1: 0 } },
       ];
+      this.persist();
       app.say('Demo: an arm hinged on the base, and a link geared to the arm at 2 to 1. Play motion, explode, or run a clash check.', 'good');
     } catch (e) {
       if (!(e instanceof CancelledError)) app.say(e instanceof Error ? e.message : String(e), 'warn');
@@ -553,6 +664,7 @@ export class AssemblySystem extends createSystem({}) {
       const end = this.keys[this.keys.length - 1].t;
       if (this.playing > end) {
         this.playing = -1;
+        this.persist();
       } else {
         let k = 0;
         while (k + 1 < this.keys.length - 1 && this.keys[k + 1].t <= this.playing) k++;

@@ -791,8 +791,13 @@ export class App {
 
   // ----- keep ----------------------------------------------------------------
 
+  /** The open assembly as a link fragment (src/systems/assembly-system.ts), or null when none is open. */
+  assemblyLink: (() => string | null) | null = null;
+
   shareUrl(): string {
     const base = `${location.origin}${location.pathname}`;
+    const asm = this.assemblyLink?.();
+    if (asm) return `${base}#asm=${asm}`;
     return `${base}#${encodeShare({ job: this.jobId.peek(), material: this.material.peek(), params: this.params.peek() })}`;
   }
 

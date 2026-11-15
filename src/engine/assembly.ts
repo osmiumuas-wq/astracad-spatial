@@ -297,7 +297,10 @@ export function solveAssembly(instances: Instance[], mates: Mate[]): SolveReport
           const onLine = add(rb.point, scale(rb.dir, along));
           pose = { p: add(pose.p, sub(onLine, pa)), q: pose.q };
           if (m.kind !== 'concentric') {
-            pose = turnAbout(pose, rb.point, rb.dir, ((hingeAngle.get(m.id) ?? 0) * Math.PI) / 180);
+            // Absolute: the angle from the other part's zero direction to this part's, about the axis.
+            const now = hingeNow({ ...A, pose }, m, B);
+            const want = ((hingeAngle.get(m.id) ?? 0) * Math.PI) / 180;
+            pose = turnAbout(pose, rb.point, rb.dir, want - now);
           }
           A.pose = pose;
           free[A.id] = Math.min(free[A.id], 2);
@@ -352,10 +355,214 @@ export function solveAssembly(instances: Instance[], mates: Mate[]): SolveReport
     }
   }
   for (const m of pending) failed.push({ id: m.id, reason: 'mated only to parts that are not placed' });
+  // Loops (a four-bar linkage, a part held by two others) are closed by refining every placed part together.
+  // A far-off first guess can need more than one round; each round starts where the last stopped.
+  let refined = refine(out, mates, hingeAngle);
+  for (let round = 0; round < 4 && refined.residual > 1e-6; round++) refined = refine(out, mates, hingeAngle);
+  if (refined.residual > 1e-6) failed.push({ id: 'loop', reason: `the mates conflict (left over ${refined.residual.toExponential(1)})` });
   return { instances: out, failed, free };
+}
+
+/** A direction perpendicular to an axis, fixed in the part: the zero of a hinge angle. */
+function zeroDir(dir: Vec3): Vec3 {
+  return unit(Math.abs(dir[0]) < 0.9 ? cross3(dir, [1, 0, 0]) : cross3(dir, [0, 1, 0]));
+}
+
+/** The hinge angle now (rad): from B's zero direction to A's, about B's axis. */
+function hingeNow(A: Instance, m: Mate, B: Instance): number {
+  const axis = unit(dirToWorld(B.pose, m.rb.dir));
+  const zb = dirToWorld(B.pose, zeroDir(m.rb.dir));
+  const za = dirToWorld(A.pose, zeroDir(m.ra.dir));
+  // Project A's zero onto the plane of the axis.
+  const pa = sub(za, scale(axis, dot3(za, axis)));
+  return Math.atan2(dot3(cross3(zb, pa), axis), dot3(zb, pa));
+}
+
+const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** Residuals of every mate (mm, or mm-scaled for angles) for the current poses. */
+function residuals(inst: Map<string, Instance>, mates: Mate[], angle: Map<string, number>): number[] {
+  const out: number[] = [];
+  const L = 20; // mm per radian, so angles weigh like a 20 mm lever
+  for (const m of mates) {
+    const A = inst.get(m.a);
+    const B = inst.get(m.b);
+    if (!A || !B) continue;
+    const ra = worldRef(A, m.ra);
+    const rb = worldRef(B, m.rb);
+    if (m.kind === 'concentric' || m.kind === 'hinge' || m.kind === 'gear') {
+      const c = cross3(ra.dir, rb.dir);
+      const d = sub(ra.point, rb.point);
+      const perp = sub(d, scale(rb.dir, dot3(d, rb.dir)));
+      out.push(c[0] * L, c[1] * L, c[2] * L, perp[0], perp[1], perp[2]);
+      if (m.kind !== 'concentric') out.push(wrap(hingeNow(A, m, B) - ((angle.get(m.id) ?? 0) * Math.PI) / 180) * L);
+    } else if (m.kind === 'coincident' || m.kind === 'distance' || m.kind === 'slider') {
+      const s = add(ra.dir, rb.dir);
+      out.push(s[0] * L, s[1] * L, s[2] * L, dot3(sub(ra.point, rb.point), rb.dir) - (m.kind === 'distance' ? m.value ?? 0 : 0));
+    } else if (m.kind === 'parallel') {
+      const c = cross3(ra.dir, rb.dir);
+      out.push(c[0] * L, c[1] * L, c[2] * L);
+    } else if (m.kind === 'angle') {
+      out.push((dot3(ra.dir, rb.dir) - Math.cos(((m.value ?? 90) * Math.PI) / 180)) * L);
+    }
+  }
+  return out;
+}
+
+/**
+ * Levenberg-Marquardt over every non-grounded part's pose (3 translations, 3
+ * small rotations each), numeric Jacobian. Starts from the constructive result,
+ * so a chain is already solved and only loops need it. Returns the final RMS residual.
+ */
+export function refine(instances: Instance[], mates: Mate[], angle: Map<string, number>): { residual: number; iterations: number } {
+  const free = instances.filter((i) => !i.grounded && mates.some((m) => m.a === i.id || m.b === i.id));
+  const byId = new Map(instances.map((i) => [i.id, i]));
+  const n = free.length * 6;
+  const rms = (r: number[]): number => Math.sqrt(r.reduce((s, v) => s + v * v, 0) / Math.max(1, r.length));
+  let r = residuals(byId, mates, angle);
+  if (!n || rms(r) < 1e-10) return { residual: rms(r), iterations: 0 };
+  const base = free.map((i) => ({ p: [...i.pose.p] as Vec3, q: [...i.pose.q] as Quat }));
+  const apply = (x: number[]): void => {
+    free.forEach((inst, k) => {
+      const t = x.slice(k * 6, k * 6 + 3) as Vec3;
+      const w = x.slice(k * 6 + 3, k * 6 + 6) as Vec3;
+      const ang = len3(w);
+      const dq = ang > 1e-15 ? qaxis(w, ang) : IDENTITY;
+      inst.pose = { p: add(base[k].p, t), q: qmul(dq, base[k].q) };
+    });
+  };
+  let x = new Array<number>(n).fill(0);
+  let lambda = 1e-3;
+  let it = 0;
+  for (; it < 200; it++) {
+    apply(x);
+    r = residuals(byId, mates, angle);
+    const cost = r.reduce((s, v) => s + v * v, 0);
+    if (Math.sqrt(cost / r.length) < 1e-10) break;
+    // Jacobian by forward differences.
+    const J: number[][] = [];
+    for (let j = 0; j < n; j++) {
+      const h = j % 6 < 3 ? 1e-6 : 1e-7;
+      const xp = x.slice();
+      xp[j] += h;
+      apply(xp);
+      const rp = residuals(byId, mates, angle);
+      J.push(rp.map((v, k) => (v - r[k]) / h));
+    }
+    // (J^T J + lambda diag) dx = -J^T r
+    const A: number[][] = Array.from({ length: n }, (_, a) => Array.from({ length: n }, (_, b) => J[a].reduce((s, v, k) => s + v * J[b][k], 0)));
+    const g = Array.from({ length: n }, (_, a) => J[a].reduce((s, v, k) => s + v * r[k], 0));
+    let improved = false;
+    for (let tries = 0; tries < 10 && !improved; tries++) {
+      // Marquardt scaling plus a small fixed term: directions the mates leave free (sliding along a pin)
+      // get no step, instead of drifting on rounding noise.
+      const M = A.map((row, a) => row.map((v, b) => (a === b ? v * (1 + lambda) + 1e-6 : v)));
+      const dx = solveLinear(M, g.map((v) => -v));
+      if (!dx) {
+        lambda *= 10;
+        continue;
+      }
+      const xn = x.map((v, k) => v + dx[k]);
+      apply(xn);
+      const cn = residuals(byId, mates, angle).reduce((s, v) => s + v * v, 0);
+      if (cn < cost) {
+        x = xn;
+        lambda = Math.max(1e-12, lambda / 10);
+        improved = true;
+      } else {
+        lambda *= 10;
+      }
+    }
+    if (!improved) break;
+  }
+  apply(x);
+  // Fold the step into the poses (already applied) and renormalise the rotations.
+  for (const i of free) {
+    const l = Math.hypot(...i.pose.q);
+    i.pose.q = [i.pose.q[0] / l, i.pose.q[1] / l, i.pose.q[2] / l, i.pose.q[3] / l];
+  }
+  return { residual: rms(residuals(byId, mates, angle)), iterations: it };
+}
+
+/** Gaussian elimination with partial pivoting; null when singular. */
+function solveLinear(A: number[][], b: number[]): number[] | null {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-14) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      if (f !== 0) for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((row, i) => row[n] / row[i]);
 }
 
 /** The angle (deg) a gear follows from: this = -ratio x that. Exposed for the motion study. */
 export function gearAngle(driver: number, ratio: number): number {
   return -ratio * driver;
+}
+
+// ----- saving and sharing ------------------------------------------------------------------------
+
+export interface AssemblyDoc {
+  instances: Instance[];
+  mates: Mate[];
+}
+
+const r6 = (v: number): number => Math.round(v * 1e6) / 1e6;
+const refOut = (r: Ref): unknown[] => [r.kind === 'axis' ? 1 : 0, ...r.point.map(r6), ...r.dir.map(r6)];
+const refIn = (a: unknown): Ref | null => {
+  if (!Array.isArray(a) || a.length !== 7 || !a.every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const n = a as number[];
+  return { kind: n[0] === 1 ? 'axis' : 'plane', point: [n[1], n[2], n[3]], dir: [n[4], n[5], n[6]] };
+};
+
+/** The assembly as a short, URL-safe string (compact JSON, base64url). */
+export function encodeAssembly(doc: AssemblyDoc): string {
+  const json = JSON.stringify({
+    v: 1,
+    i: doc.instances.map((i) => [i.id, i.name, i.job, i.material, Object.fromEntries(Object.entries(i.params).map(([k, v]) => [k, r6(v)])), [...i.pose.p.map(r6), ...i.pose.q.map(r6)], i.grounded ? 1 : 0]),
+    m: doc.mates.map((m) => [m.id, m.kind, m.a, refOut(m.ra), m.b, refOut(m.rb), m.value ?? null, m.follows ?? null, m.ratio ?? null]),
+  });
+  const bytes = new TextEncoder().encode(json);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');
+}
+
+const KINDS: MateKind[] = ['coincident', 'concentric', 'distance', 'angle', 'parallel', 'hinge', 'slider', 'gear'];
+
+/** Read an assembly string; anything malformed gives null, never a guessed assembly. `knownJob` checks part ids. */
+export function decodeAssembly(text: string, knownJob: (id: string) => boolean): AssemblyDoc | null {
+  try {
+    const b64 = text.replace(/-/gu, '+').replace(/_/gu, '/');
+    const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    const o = JSON.parse(new TextDecoder().decode(bytes)) as { v: number; i: unknown[][]; m: unknown[][] };
+    if (o.v !== 1 || !Array.isArray(o.i) || !Array.isArray(o.m)) return null;
+    const instances: Instance[] = [];
+    for (const r of o.i) {
+      const [id, name, job, material, params, pose, grounded] = r as [string, string, string, string, Record<string, number>, number[], number];
+      if (typeof id !== 'string' || typeof job !== 'string' || !knownJob(job) || !Array.isArray(pose) || pose.length !== 7) return null;
+      if (!pose.every(Number.isFinite) || !params || typeof params !== 'object' || !Object.values(params).every(Number.isFinite)) return null;
+      instances.push({ id, name: String(name), job, material: String(material), params, pose: { p: [pose[0], pose[1], pose[2]], q: [pose[3], pose[4], pose[5], pose[6]] }, grounded: grounded === 1 });
+    }
+    const ids = new Set(instances.map((i) => i.id));
+    const mates: Mate[] = [];
+    for (const r of o.m) {
+      const [id, kind, a, ra, b, rb, value, follows, ratio] = r as [string, MateKind, string, unknown, string, unknown, number | null, string | null, number | null];
+      const A = refIn(ra);
+      const B = refIn(rb);
+      if (!KINDS.includes(kind) || !ids.has(a) || !ids.has(b) || !A || !B) return null;
+      mates.push({ id: String(id), kind, a, ra: A, b, rb: B, value: value ?? undefined, follows: follows ?? undefined, ratio: ratio ?? undefined });
+    }
+    return { instances, mates };
+  } catch {
+    return null;
+  }
 }

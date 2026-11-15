@@ -143,3 +143,12 @@ export function bumpStreak(p: Progress, day = today()): Progress {
 
 export const uid = (): string =>
   `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+
+/** The assembly on the bench (src/engine/assembly.ts encodeAssembly), or null. */
+export function loadAssembly(): string | null {
+  return read<{ doc: string | null }>('assembly', { doc: null }).doc;
+}
+
+export function saveAssembly(doc: string | null): boolean {
+  return write('assembly', { doc });
+}

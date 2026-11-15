@@ -101,3 +101,61 @@ describe('assembly mates', () => {
     expect(flat).toBeNull();
   });
 });
+
+describe('saving and sharing an assembly', () => {
+  it('round-trips through a link and refuses garbage', async () => {
+    const { encodeAssembly, decodeAssembly } = await import('../src/engine/assembly.js');
+    const doc = {
+      instances: [inst('a', [0, 0, 0], IDENTITY, true), { ...inst('b', [1.5, -2, 3], qaxis([0, 1, 0], 0.4)), params: { nf: 1, a0: 12.25 } }],
+      mates: [{ id: 'm1', kind: 'hinge' as const, a: 'b', ra: { kind: 'axis' as const, point: [1, 2, 3] as Vec3, dir: [0, 1, 0] as Vec3 }, b: 'a', rb: { kind: 'plane' as const, point: [0, 5, 0] as Vec3, dir: [0, 1, 0] as Vec3 }, value: 45 }],
+    };
+    const back = decodeAssembly(encodeAssembly(doc), (j) => j === 'design')!;
+    expect(back.instances.map((i) => i.id)).toEqual(['a', 'b']);
+    expect(back.instances[1].params.a0).toBe(12.25);
+    expect(back.instances[1].pose.q[1]).toBeCloseTo(Math.sin(0.2), 6);
+    expect(back.mates[0]).toMatchObject({ kind: 'hinge', a: 'b', b: 'a', value: 45 });
+    expect(back.mates[0].ra.kind).toBe('axis');
+    expect(decodeAssembly('not-a-link', () => true)).toBeNull();
+    expect(decodeAssembly(encodeAssembly(doc), (j) => j !== 'design')).toBeNull();
+  });
+});
+
+describe('closed loops', () => {
+  it('solves a four-bar linkage and matches Freudenstein at every crank angle', () => {
+    const ax = (x: number): { kind: 'axis'; point: Vec3; dir: Vec3 } => ({ kind: 'axis', point: [x, 0, 0], dir: [0, 0, 1] });
+    const a = 15, b = 40, c = 35, d = 40;
+    const ground = inst('ground', [0, 0, 0], IDENTITY, true);
+    for (const deg of [10, 60, 120, 200, 300]) {
+      const crank = inst('crank', [3, 5, 0], qaxis([0, 0, 1], 0.3));
+      const coupler = inst('coupler', [10, 30, 0], qaxis([0, 0, 1], 0.2));
+      const rocker = inst('rocker', [40, 0, 0], qaxis([0, 0, 1], 1.4));
+      const mates: Mate[] = [
+        { id: 'h', kind: 'hinge', a: 'crank', ra: ax(0), b: 'ground', rb: ax(0), value: deg },
+        { id: 'r', kind: 'concentric', a: 'rocker', ra: ax(0), b: 'ground', rb: ax(d) },
+        { id: 'c1', kind: 'concentric', a: 'coupler', ra: ax(0), b: 'crank', rb: ax(a) },
+        { id: 'c2', kind: 'concentric', a: 'coupler', ra: ax(b), b: 'rocker', rb: ax(c) },
+      ];
+      const r = solveAssembly([ground, crank, coupler, rocker], mates);
+      expect(r.failed).toEqual([]);
+      const get = (id: string): Instance => r.instances.find((i) => i.id === id)!;
+      const t = (Math.PI * deg) / 180;
+      // The crank tip is where the crank angle says; both coupler holes sit on their pins.
+      const tip = toWorld(get('crank').pose, [a, 0, 0]);
+      expect(tip[0]).toBeCloseTo(a * Math.cos(t), 5);
+      expect(tip[1]).toBeCloseTo(a * Math.sin(t), 5);
+      expect(len3(sub(toWorld(get('coupler').pose, [0, 0, 0]), tip))).toBeLessThan(1e-5);
+      const P = toWorld(get('rocker').pose, [c, 0, 0]);
+      expect(len3(sub(toWorld(get('coupler').pose, [b, 0, 0]), P))).toBeLessThan(1e-5);
+      // Freudenstein: the rocker angle is one of the two closed-form solutions.
+      const K1 = d / a, K2 = d / c, K3 = (a * a - b * b + c * c + d * d) / (2 * a * c);
+      const A = Math.cos(t) - K1 - K2 * Math.cos(t) + K3;
+      const B = -2 * Math.sin(t);
+      const C = K1 - (K2 + 1) * Math.cos(t) + K3;
+      const disc = Math.sqrt(B * B - 4 * A * C);
+      const sols = [2 * Math.atan2(-B + disc, 2 * A), 2 * Math.atan2(-B - disc, 2 * A)];
+      const got = Math.atan2(P[1], P[0] - d);
+      const diff = Math.min(...sols.map((s) => Math.abs(Math.atan2(Math.sin(s - got), Math.cos(s - got)))));
+      expect(diff).toBeLessThan(1e-5);
+    }
+  });
+});
