@@ -35,7 +35,8 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (203 tests: the sketch workbench (tools, relations, dimensions, regions), kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+Engine tests (212 tests: the sketch workbench (tools, relations, dimensions, regions, fillet, trim, offset, mirror,
+splines, revolve axes, sweeps, lofts), kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
 CalculiX and its convergence study, modal, flow, STEP import and export (true cylinders, imported bodies made
 editable), hinge, drawings with hidden lines, assembly drawings, describe, spoken commands, voice, co-design,
 calibration, stability, explore, lattice, drilling template, G-code, constraint sketching, typed sketches, ray scan,
@@ -174,8 +175,14 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   loop and its holes) into a feature, with exact arcs, checked in closed form. The feature ribbon on the left has tabs
   (Create, Holes, Modify, Output) for sketch, boxes, cylinders, pockets, ribs, gears, holes, counterbores, taps,
   threads, patterns, fillets and chamfers on a pointed edge, round all, shell, draft, mirror, STEP and drawings.
-  Not in the sketcher yet: splines, ellipses, sketch fillets, trim and extend, offsets, sketch mirror and patterns,
-  and sketches on offset or angled planes.
+  The sketch toolbar has tabs too (Draw, Modify, Relate, Finish). Modify: sketch fillet (a tangent arc of a set
+  radius at a corner), trim (to the crossings either side, a circle to an arc), offset (a line parallel, a circle or
+  arc concentric, a closed outline as a whole), mirror (across a construction line, kept symmetric by the solver).
+  Draw adds splines (a Catmull-Rom curve through the picks, written as short straight pieces, not a NURBS curve).
+  Finish: Extrude, Cut, Revolve (about a vertical construction line when there is one), Sweep (a rod or bar along
+  the sketch's open chain of lines, bent round its corners), Loft (this profile, then a second sketch on a plane the
+  given distance out), and offset planes ("plane 10"). Not in the sketcher yet: ellipses, extend, sketch patterns,
+  angled planes, and revolving about a line that is not vertical in the sketch.
 - Typed sketches give every line its own dimension: "sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8
   tall" (lengths, directions, angles, tangent arcs, then a depth or a cut). Arcs are stored as exact arcs. Features
   can be placed by numbers instead of the hand: "drill a 6 mm hole at 12.5, -7". A pointed position snaps to a 0.5 mm

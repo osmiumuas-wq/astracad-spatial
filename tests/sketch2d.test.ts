@@ -147,4 +147,72 @@ describe('sketch workbench: tools, constraints, dimensions', () => {
     const g = gate(p);
     expect(g.volume).toBeCloseTo(Math.PI * (15 * 15 - 5 * 5) * 20, 0);
   });
+
+  it('sketch fillet rounds a corner, tangent, at its radius', async () => {
+    const { filletCorner } = await import('../src/engine/sketch2d.js');
+    const sk = newSketch();
+    addRectangle(sk, S(0, 0), S(40, 20));
+    filletCorner(sk, 40.5, 20.4, 5);
+    expect(solve(gcs, sk).ok).toBe(true);
+    const [r] = profiles(sk);
+    expect(r.area).toBeCloseTo(800 - (1 - Math.PI / 4) * 25, 6);
+    const g = gate(sketchFeatures(block, [r], [-20, 10, 10], 0, 'extrude', 5));
+    expect(g.verdict).toBe('verified');
+  });
+
+  it('trims a line back to the lines it crosses, and a circle to an arc', async () => {
+    const { trimAt } = await import('../src/engine/sketch2d.js');
+    const sk = newSketch();
+    addRectangle(sk, S(0, 0), S(40, 20));
+    const v = addLine(sk, S(20, -10), S(20, 30));
+    trimAt(sk, 20, -5);
+    trimAt(sk, 20, 25);
+    expect(measure(sk, v)!.value).toBeCloseTo(20, 9);
+    const c = newSketch();
+    addCircle(c, S(0, 0), S(10, 0));
+    addLine(c, S(-20, 0), S(20, 0));
+    trimAt(c, 0, -10);
+    expect(c.ents.some((e) => e.kind === 'arc')).toBe(true);
+    expect(c.ents.some((e) => e.kind === 'circle')).toBe(false);
+  });
+
+  it('offsets a closed outline outwards: a frame with a hole', async () => {
+    const { offsetEntity } = await import('../src/engine/sketch2d.js');
+    const sk = newSketch();
+    const [bottom] = addRectangle(sk, S(0, 0), S(40, 20));
+    offsetEntity(sk, bottom, 5, { x: 20, y: -10 });
+    expect(solve(gcs, sk).ok).toBe(true);
+    const regions = profiles(sk);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].area).toBeCloseTo(50 * 30 - 40 * 20, 6);
+  });
+
+  it('mirrors half a profile across a construction centre line: symmetric, closed', async () => {
+    const { mirrorEntities } = await import('../src/engine/sketch2d.js');
+    const sk = newSketch();
+    const axis = addLine(sk, S(0, -5), S(0, 30), true);
+    const a = addLine(sk, S(0, 0), S(20, 0));
+    const b = addLine(sk, snap(sk, 20, 0), S(20, 10));
+    const c = addLine(sk, snap(sk, 20, 10), S(0, 20));
+    mirrorEntities(sk, [a, b, c], axis);
+    expect(solve(gcs, sk).ok).toBe(true);
+    const regions = profiles(sk);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].area).toBeCloseTo(600, 6);
+  });
+
+  it('a spline closed by a line is a profile; its solid is exact to its own outline', async () => {
+    const { addSpline } = await import('../src/engine/sketch2d.js');
+    const sk = newSketch();
+    addSpline(sk, [S(0, 0), S(10, 8), S(20, 6), S(30, 0)]);
+    addLine(sk, snap(sk, 30, 0), snap(sk, 0, 0));
+    expect(solve(gcs, sk).ok).toBe(true);
+    const regions = profiles(sk);
+    expect(regions).toHaveLength(1);
+    expect(regions[0].area).toBeGreaterThan(100);
+    const g = gate(sketchFeatures(block, regions, [-20, 10, 10], 0, 'extrude', 4));
+    expect(g.verdict).toBe('verified');
+    expect(g.volume - 96000).toBeCloseTo(regions[0].area * 4, 3);
+  });
 });
+

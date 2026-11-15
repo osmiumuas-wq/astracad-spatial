@@ -1009,10 +1009,15 @@ export class App {
 
   /** Finish the open sketch as a feature. */
   finishSketchBench(op: 'extrude' | 'cut' | 'revolve', size: number): string {
+    return this.benchApply((b, p) => b.finish(p, op, size));
+  }
+
+  /** Run a finishing step of the sketch workbench (a feature from the sketch), close it and build. */
+  benchApply(fn: (b: SketchBench, p: Params) => { params: Params; reply: string }): string {
     const b = this.sketchBench;
     if (!b) return 'No sketch is open.';
     try {
-      const r = b.finish(this.params.peek(), op, size);
+      const r = fn(b, this.params.peek());
       this.closeSketchBench();
       this.replaceParams(r.params);
       return r.reply;
@@ -1077,6 +1082,40 @@ export class App {
     // The sketch workbench takes its own words while a sketch is open.
     if (this.sketchBench) {
       const s = wordsToDigits(sentence).toLowerCase();
+      const bench = this.sketchBench;
+      // Sweep a rod or bar along the sketched path: "sweep 8", "sweep a rectangle 10 by 6 bend 12".
+      if (/\bsweep\b/u.test(s)) {
+        const rect = s.match(/\b(?:rectangle|bar|square)\D*?(\d+(?:\.\d+)?)\s*(?:by|x)\s*(\d+(?:\.\d+)?)/u);
+        const bend = s.match(/\bbend\s*(?:radius\s*)?(\d+(?:\.\d+)?)/u);
+        const dia = s.replace(/\bbend\s*(?:radius\s*)?\d+(?:\.\d+)?/u, '').match(/(\d+(?:\.\d+)?)/u);
+        const reply = this.benchApply((b, p) => b.finishSweep(p, dia ? parseFloat(dia[1]) : 8, bend ? parseFloat(bend[1]) : undefined, rect ? [parseFloat(rect[1]), parseFloat(rect[2])] : undefined));
+        this.say(reply, 'info');
+        return reply;
+      }
+      // Loft: "loft 25" keeps this profile and opens the second sketch 25 mm out; "finish loft" makes it.
+      if (/\bloft\b/u.test(s)) {
+        if (bench.loftFrom && (/\b(finish|done|end|make|close)\b/u.test(s) || !/\d/u.test(s))) {
+          const reply = this.benchApply((b, p) => b.finishLoft(p));
+          this.say(reply, 'info');
+          return reply;
+        }
+        const d = s.match(/(\d+(?:\.\d+)?)/u);
+        try {
+          const reply = bench.startLoft(d ? parseFloat(d[1]) : 20);
+          this.say(reply, 'info');
+          return reply;
+        } catch (e) {
+          return e instanceof Error ? e.message : String(e);
+        }
+      }
+      // Offset reference plane: "plane 10" (out of the face), "plane in 5".
+      const pl = s.match(/\b(?:offset |reference )?plane\b\D*?(-?\d+(?:\.\d+)?)/u);
+      if (pl) {
+        const d = parseFloat(pl[1]) * (/\b(in|down|back|below|inside)\b/u.test(s) ? -1 : 1);
+        const reply = bench.offsetPlane(d);
+        this.say(reply, 'info');
+        return reply;
+      }
       const fin = s.match(/\b(extrude|boss|pull|cut|pocket|revolve)\b(?:\D*?(\d+(?:\.\d+)?))?/u);
       if (fin) {
         const op = /\b(cut|pocket)\b/u.test(fin[1]) ? 'cut' : fin[1] === 'revolve' ? 'revolve' : 'extrude';

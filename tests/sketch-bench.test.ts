@@ -60,4 +60,81 @@ describe('the sketch workbench, driven like a user', () => {
     expect(b.undo()).toBe('Undone.');
     expect(b.sk.ents.some((e) => e.construction)).toBe(false);
   });
+
+  const build = (params: Record<string, number>): { verdict: string; volume: number; components: number } => {
+    const spec = designSpec(designJob.clamp(params).params);
+    const out = kernel.build(spec);
+    return { verdict: runGate({ props: out.props, generic: expectVolume(spec) }).verdict, volume: out.props.volume, components: out.props.components };
+  };
+
+  it('revolves about a vertical construction line: a ring', () => {
+    const b = new SketchBench([0, 0, 0], 4, gcs);
+    b.setTool('line');
+    b.click(30, -5);
+    b.click(30, 40);
+    b.setTool('select');
+    b.click(30, 10);
+    b.command('construction');
+    b.setTool('rect');
+    b.click(40, 0);
+    b.click(50, 20);
+    const { params } = b.finish({ nf: 0 }, 'revolve', 360);
+    const g = build(params);
+    // About the line at u = 30: inner radius 10, outer 20, 20 tall.
+    expect(g.volume).toBeCloseTo(Math.PI * (400 - 100) * 20, 0);
+  });
+
+  it('sweeps a rod along a sketched path lying on the face', () => {
+    const b = new SketchBench([-30, 10, 10], 0, gcs);
+    b.setTool('line');
+    b.click(0, 0);
+    b.click(40, 0);
+    b.click(40, 20);
+    b.setTool('select');
+    const { params, reply } = b.finishSweep(addFeature({ nf: 0 }, OPS.BOX, { a: 100, b: 70, c: 10 }), 6, 8);
+    expect(reply).toMatch(/2-line path/);
+    const g = build(params);
+    expect(g.components).toBe(1);
+    expect(g.volume).toBeGreaterThan(70000 + Math.PI * 9 * 40);
+  });
+
+  it('lofts from a square to a circle on an offset plane', () => {
+    const b = new SketchBench([0, 10, 0], 0, gcs);
+    b.setTool('rect');
+    b.click(-10, -10);
+    b.click(10, 10);
+    expect(b.startLoft(25)).toMatch(/second profile/);
+    expect(b.origin[1]).toBeCloseTo(35, 9);
+    b.setTool('circle');
+    b.click(0, 0);
+    b.click(6, 0);
+    const { params } = b.finishLoft(addFeature({ nf: 0 }, OPS.BOX, { a: 60, b: 60, c: 10 }));
+    const g = build(params);
+    expect(g.components).toBe(1);
+    // Between the circle's and the square's prisms.
+    expect(g.volume - 36000).toBeGreaterThan(Math.PI * 36 * 25);
+    expect(g.volume - 36000).toBeLessThan(400 * 25);
+  });
+
+  it('fillet, trim, offset, mirror and spline tools by clicks', () => {
+    const b = new SketchBench([0, 0, 0], 0, gcs);
+    b.setTool('rect');
+    b.click(0, 0);
+    b.click(40, 20);
+    expect(b.command('fillet 4')).toMatch(/Sketch fillet/);
+    expect(b.click(40.3, 20.2)).toMatch(/Fillet R4/);
+    expect(b.command('offset 3')).toMatch(/Offset/);
+    b.click(20, 0.2);
+    expect(b.click(20, -5)).toMatch(/Offset 3 mm/);
+    b.setTool('spline');
+    b.click(60, 0);
+    b.click(70, 8);
+    b.click(80, 0);
+    expect(b.click(80, 0)).toMatch(/Spline through 3 points/);
+    b.setTool('line');
+    b.click(50, -10);
+    b.click(50, 30);
+    expect(b.command('trim')).toMatch(/Trim/);
+    expect(b.click(50, 25)).toMatch(/Deleted|Trimmed/);
+  });
 });

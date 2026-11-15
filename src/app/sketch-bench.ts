@@ -7,7 +7,7 @@
  */
 
 import type { GcsWrapper } from '@salusoft89/planegcs';
-import { sketchFeatures } from '../engine/design.js';
+import { addFeature, addOutline, addPath, FACE_FRAMES, OPS, sketchFeatures } from '../engine/design.js';
 import type { Params } from '../engine/jobs.js';
 import {
   addArc3,
@@ -18,9 +18,15 @@ import {
   addRectangle,
   addSlot,
   addTangentArc,
+  addSpline,
   dimension,
+  filletCorner,
   measure,
+  mirrorEntities,
   newSketch,
+  offsetEntity,
+  openChains,
+  trimAt,
   pickEntity,
   profiles,
   removeEntity,
@@ -30,7 +36,7 @@ import {
   solve,
 } from '../engine/sketch2d.js';
 
-export type SketchTool = 'line' | 'rect' | 'circle' | 'arc' | 'tangentArc' | 'slot' | 'polygon' | 'select' | 'dimension' | 'delete';
+export type SketchTool = 'line' | 'rect' | 'circle' | 'arc' | 'tangentArc' | 'slot' | 'polygon' | 'spline' | 'select' | 'dimension' | 'delete' | 'fillet' | 'trim' | 'offset' | 'mirror';
 
 export const TOOL_NAMES: Record<SketchTool, string> = {
   line: 'Line',
@@ -40,9 +46,14 @@ export const TOOL_NAMES: Record<SketchTool, string> = {
   tangentArc: 'Tangent arc',
   slot: 'Slot',
   polygon: 'Polygon',
+  spline: 'Spline',
   select: 'Select',
   dimension: 'Smart dimension',
   delete: 'Delete',
+  fillet: 'Sketch fillet',
+  trim: 'Trim',
+  offset: 'Offset',
+  mirror: 'Mirror',
 };
 
 /** Clicks each tool takes, and what to ask for at each. */
@@ -54,9 +65,14 @@ const STEPS: Record<SketchTool, string[]> = {
   tangentArc: ['Pick where the arc ends (it leaves the last line tangent)'],
   slot: ['Pick one end centre', 'Pick the other end centre', 'Pick the width'],
   polygon: ['Pick the centre', 'Pick a corner'],
+  spline: ['Pick points along the curve; pick the last one again (or an existing point) to finish'],
   select: ['Pick a line, arc or circle (up to two)'],
   dimension: ['Pick a line, arc or circle, then say its size or turn the dial'],
   delete: ['Pick what to delete'],
+  fillet: ['Pick a corner where two lines meet ("fillet 5" sets the radius)'],
+  trim: ['Pick the piece to cut away'],
+  offset: ['Pick a line, arc, circle or outline', 'Pick the side to offset to ("offset 5" sets the distance)'],
+  mirror: ['Select what to mirror first, then pick the mirror line'],
 };
 
 export class SketchBench {
@@ -65,6 +81,10 @@ export class SketchBench {
   pending: Snap[] = [];
   selected: string[] = [];
   polygonSides = 6;
+  filletR = 3;
+  offsetD = 5;
+  /** A loft's first profile (its outer loop) and how far the second sketch is from it, once started. */
+  loftFrom: { pts: [number, number][]; sweeps: number[]; distance: number; origin: [number, number, number] } | null = null;
   /** The line just drawn (a tangent arc leaves it). */
   lastLine: string | null = null;
   /** The first point of the line chain being drawn, to close it. */
@@ -76,7 +96,7 @@ export class SketchBench {
   private history: string[] = [];
 
   constructor(
-    readonly origin: [number, number, number],
+    public origin: [number, number, number],
     readonly code: number,
     private readonly gcs: GcsWrapper,
   ) {
@@ -87,7 +107,7 @@ export class SketchBench {
     this.tool = t;
     this.pending = [];
     this.chainStart = null;
-    if (t !== 'select' && t !== 'dimension') this.selected = [];
+    if (t !== 'select' && t !== 'dimension' && t !== 'mirror') this.selected = [];
     this.version++;
     if (t === 'tangentArc' && !this.lastLine) return (this.status = 'Draw a line first: a tangent arc leaves the end of the last line.');
     return (this.status = `${TOOL_NAMES[t]}: ${STEPS[t][0]}.`);
@@ -147,6 +167,56 @@ export class SketchBench {
         this.selected = this.selected.includes(id) ? this.selected.filter((x) => x !== id) : [...this.selected.slice(-1), id];
         this.version++;
         return (this.status = `${this.selected.length} selected. Say or press a relation: horizontal, vertical, parallel, perpendicular, equal, tangent.`);
+      }
+      if (t === 'fillet') {
+        this.remember();
+        filletCorner(this.sk, u, v, this.filletR);
+        return this.settle(`Fillet R${this.filletR}.`);
+      }
+      if (t === 'trim') {
+        this.remember();
+        const what = trimAt(this.sk, u, v);
+        this.selected = [];
+        return this.settle(what);
+      }
+      if (t === 'mirror') {
+        const axis = pickEntity(this.sk, u, v, 3);
+        if (!axis) return (this.status = 'Pick the mirror line (a construction centre line is usual).');
+        if (!this.selected.length) return (this.status = 'Select what to mirror first (Select tool), then pick the mirror line.');
+        this.remember();
+        const made = mirrorEntities(this.sk, this.selected, axis);
+        this.selected = [];
+        return this.settle(`Mirrored ${made.length} item${made.length === 1 ? '' : 's'}; they stay symmetric.`);
+      }
+      if (t === 'offset') {
+        if (!this.pending.length) {
+          const id = pickEntity(this.sk, u, v, 3);
+          if (!id) return (this.status = 'Pick a line, arc, circle or outline to offset.');
+          this.selected = [id];
+          this.pending = [s];
+          this.version++;
+          return (this.status = `Offset ${this.offsetD} mm: ${STEPS.offset[1]}.`);
+        }
+        const id = this.selected[0];
+        this.pending = [];
+        this.remember();
+        const made = offsetEntity(this.sk, id, this.offsetD, { x: u, y: v });
+        this.selected = [];
+        return this.settle(`Offset ${this.offsetD} mm: ${made.length} new item${made.length === 1 ? '' : 's'}.`);
+      }
+      if (t === 'spline') {
+        const last = this.pending[this.pending.length - 1];
+        const done = this.pending.length >= 2 && (Math.hypot(s.x - last.x, s.y - last.y) < 1e-6 || s.point);
+        if (!done) {
+          this.pending.push(s);
+          this.version++;
+          return (this.status = `Spline: ${this.pending.length} point${this.pending.length === 1 ? '' : 's'}. ${STEPS.spline[0]}.`);
+        }
+        const picks = Math.hypot(s.x - last.x, s.y - last.y) < 1e-6 ? this.pending : [...this.pending, s];
+        this.pending = [];
+        this.remember();
+        addSpline(this.sk, picks);
+        return this.settle(`Spline through ${picks.length} points.`);
       }
       this.pending.push(s);
       const need = STEPS[t].length;
@@ -255,20 +325,117 @@ export class SketchBench {
     return (this.status = e.construction ? 'Construction geometry: it guides, it is not part of the profile.' : 'Back to solid geometry.');
   }
 
-  /** The finished sketch as features: Extrude (boss), Cut (pocket) or Revolve (about the sketch's vertical axis). */
+  /**
+   * The finished sketch as features: Extrude (boss), Cut (pocket) or Revolve. A revolve turns about a vertical
+   * construction line when the sketch has one (else about the vertical through the sketch's origin).
+   */
   finish(params: Params, op: 'extrude' | 'cut' | 'revolve', size: number): { params: Params; reply: string } {
-    const regions = profiles(this.sk);
-    const out = sketchFeatures(params, regions, this.origin, this.code, op, size);
+    let regions = profiles(this.sk);
+    let origin = this.origin;
+    let about = '';
+    if (op === 'revolve') {
+      const axis = this.sk.ents.find((e) => {
+        if (e.kind !== 'line' || !e.construction) return false;
+        const a = this.sk.points.find((q) => q.id === e.a)!;
+        const b = this.sk.points.find((q) => q.id === e.b)!;
+        return Math.abs(a.x - b.x) < 1e-6;
+      });
+      if (axis && axis.kind === 'line') {
+        const c = this.sk.points.find((q) => q.id === axis.a)!.x;
+        const f = FACE_FRAMES[this.code];
+        origin = [origin[0] + f.x[0] * c, origin[1] + f.x[1] * c, origin[2] + f.x[2] * c];
+        regions = regions.map((r) => ({ ...r, loops: r.loops.map((l) => ({ ...l, pts: l.pts.map(([x, y]) => [x - c, y] as [number, number]) })) }));
+        about = ' about the construction line';
+      }
+    }
+    const out = sketchFeatures(params, regions, origin, this.code, op, size);
     const area = regions.reduce((s, r) => s + r.area, 0);
     const n = regions.length;
-    const what = op === 'revolve' ? `Revolved ${size} degrees` : op === 'cut' ? `Cut ${size} mm deep` : `Extruded ${size} mm`;
+    const what = op === 'revolve' ? `Revolved ${size} degrees${about}` : op === 'cut' ? `Cut ${size} mm deep` : `Extruded ${size} mm`;
     return { params: out, reply: `${what}: ${n} region${n === 1 ? '' : 's'}, ${area.toFixed(1)} mm2 of profile.` };
+  }
+
+  /** Move the sketch plane along its normal (an offset reference plane), with what is drawn on it. */
+  offsetPlane(d: number): string {
+    const f = FACE_FRAMES[this.code];
+    this.origin = [this.origin[0] + f.n[0] * d, this.origin[1] + f.n[1] * d, this.origin[2] + f.n[2] * d];
+    this.version++;
+    return (this.status = `Sketch plane moved ${d > 0 ? 'out' : 'in'} ${Math.abs(d)} mm (an offset plane).`);
+  }
+
+  /** Start a loft: this sketch's profile is the first; a new sketch opens `distance` mm out for the second. */
+  startLoft(distance: number): string {
+    const [r] = profiles(this.sk);
+    const f = FACE_FRAMES[this.code];
+    this.loftFrom = { pts: r.loops[0].pts, sweeps: r.loops[0].sweeps, distance, origin: [...this.origin] as [number, number, number] };
+    this.remember();
+    this.sk = newSketch();
+    this.origin = [this.origin[0] + f.n[0] * distance, this.origin[1] + f.n[1] * distance, this.origin[2] + f.n[2] * distance];
+    this.selected = [];
+    this.pending = [];
+    this.version++;
+    return (this.status = `Loft: first profile kept. Now sketch the second profile here, ${distance} mm out, then say "finish loft".`);
+  }
+
+  /** Finish a loft from the first profile to this sketch's. */
+  finishLoft(params: Params): { params: Params; reply: string } {
+    const from = this.loftFrom;
+    if (!from) throw new Error('start a loft first: sketch the first profile and say "loft 20"');
+    const [r] = profiles(this.sk);
+    const a = addOutline(params, from.pts, from.sweeps);
+    const b = addOutline(a.params, r.loops[0].pts, r.loops[0].sweeps);
+    const o = from.origin;
+    const out = addFeature(b.params, OPS.LOFT, { a: a.index, b: b.index, c: from.distance, d: o[0], e: o[1], f: o[2], g: this.code });
+    return { params: out, reply: `Lofted ${from.distance} mm from the first profile to the second.` };
+  }
+
+  /**
+   * Sweep a round (or rectangular) profile along the sketch's open chain of lines: a rail, a handle, a pipe
+   * lying on the face, its corners bent round.
+   */
+  finishSweep(params: Params, dia: number, bend?: number, rect?: [number, number]): { params: Params; reply: string } {
+    const chains = openChains(this.sk);
+    if (!chains.length) throw new Error('draw the path as an open chain of lines (its ends free), then sweep');
+    const len = (c: [number, number][]): number => c.reduce((s, q, i) => (i ? s + Math.hypot(q[0] - c[i - 1][0], q[1] - c[i - 1][1]) : 0), 0);
+    const path2 = chains.sort((x, y) => len(y) - len(x))[0];
+    const f = FACE_FRAMES[this.code];
+    // Sunk a fifth of its thickness into the face, so it fuses (a rod only touching the face would not).
+    const lift = 0.8 * (rect ? rect[1] / 2 : dia / 2);
+    const o = this.origin;
+    const path: [number, number, number][] = path2.map(([u, v]) => [
+      o[0] + f.x[0] * u + f.y[0] * v + f.n[0] * lift,
+      o[1] + f.x[1] * u + f.y[1] * v + f.n[1] * lift,
+      o[2] + f.x[2] * u + f.y[2] * v + f.n[2] * lift,
+    ]);
+    const prof: [number, number][] = rect
+      ? [[-rect[0] / 2, -rect[1] / 2], [rect[0] / 2, -rect[1] / 2], [rect[0] / 2, rect[1] / 2], [-rect[0] / 2, rect[1] / 2]]
+      : Array.from({ length: 48 }, (_, k) => [(dia / 2) * Math.cos((2 * Math.PI * k) / 48), (dia / 2) * Math.sin((2 * Math.PI * k) / 48)] as [number, number]);
+    const op = addOutline(params, prof);
+    const pa = addPath(op.params, path);
+    const r = bend ?? +(2 * Math.max(dia, rect ? Math.max(...rect) : 0)).toFixed(2);
+    const out = addFeature(pa.params, OPS.SWEEP, { a: op.index, b: pa.index, c: r });
+    return { params: out, reply: `Swept ${rect ? `a ${rect[0]} by ${rect[1]} mm bar` : `a ${dia} mm rod`} along the ${path2.length - 1}-line path${path2.length > 2 ? `, bends R${r}` : ''}.` };
   }
 
   /** Words while sketching: tools, relations, sizes, undo. Null when not a sketch command. */
   command(t: string): string | null {
     const T = t.toLowerCase();
+    const fr = T.match(/\b(?:sketch )?fillet\s*(?:radius\s*)?(\d+(?:\.\d+)?)/u);
+    if (fr) {
+      this.filletR = parseFloat(fr[1]);
+      return this.setTool('fillet');
+    }
+    const od = T.match(/\boffset\s*(\d+(?:\.\d+)?)/u);
+    if (od && !/\bplane\b/u.test(T)) {
+      this.offsetD = parseFloat(od[1]);
+      return this.setTool('offset');
+    }
     const tools: [RegExp, SketchTool][] = [
+      [/\bspline\b|\bcurve\b/u, 'spline'],
+      [/\b(sketch )?fillet\b/u, 'fillet'],
+      [/\btrim\b/u, 'trim'],
+      [/\boffset\b/u, 'offset'],
+      [/\bmirror\b/u, 'mirror'],
       [/\btangent arc\b/u, 'tangentArc'],
       [/\b(three point arc|3 point arc|arc tool|^arc$|draw an arc)\b/u, 'arc'],
       [/\b(rectangle|rect)\b/u, 'rect'],
@@ -277,7 +444,7 @@ export class SketchBench {
       [/\b(polygon|hexagon)\b/u, 'polygon'],
       [/\b(smart dimension|dimension)\b/u, 'dimension'],
       [/\b(select)\b/u, 'select'],
-      [/\b(delete|trim|erase)\b/u, 'delete'],
+      [/\b(delete|erase)\b/u, 'delete'],
       [/\b(line|lines)\b/u, 'line'],
     ];
     if (/\bundo\b/u.test(T)) return this.undo();

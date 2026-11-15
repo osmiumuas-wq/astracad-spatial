@@ -25,7 +25,9 @@ export type SkEntity =
   | { id: string; kind: 'line'; a: string; b: string; construction?: boolean }
   | { id: string; kind: 'circle'; c: string; r: number; construction?: boolean }
   /** Anticlockwise from a to b about c. */
-  | { id: string; kind: 'arc'; c: string; a: string; b: string; construction?: boolean };
+  | { id: string; kind: 'arc'; c: string; a: string; b: string; construction?: boolean }
+  /** A smooth curve through its points (Catmull-Rom), from a (pts[0]) to b (the last). */
+  | { id: string; kind: 'spline'; a: string; b: string; pts: string[]; construction?: boolean };
 
 export type SkConstraint =
   | { id: string; kind: 'horizontal' | 'vertical'; e: string }
@@ -33,6 +35,7 @@ export type SkConstraint =
   | { id: string; kind: 'fix'; p: string }
   | { id: string; kind: 'coincident'; p1: string; p2: string }
   | { id: string; kind: 'pointOnLine'; p: string; e: string }
+  | { id: string; kind: 'symmetric'; p1: string; p2: string; e: string }
   | { id: string; kind: 'length'; e: string; value: number }
   | { id: string; kind: 'distance'; p1: string; p2: string; value: number }
   | { id: string; kind: 'radius'; e: string; value: number }
@@ -59,6 +62,32 @@ const pt = (sk: Sketch2D, id: string): SkPoint => {
   return q;
 };
 const ent = (sk: Sketch2D, id: string): SkEntity | undefined => sk.ents.find((e) => e.id === id);
+
+/** A centripetal Catmull-Rom curve through the points: the polyline (ends included), `per` pieces a span. */
+export function splinePts(q: [number, number][], per = 8): [number, number][] {
+  if (q.length < 3) return q.slice();
+  const out: [number, number][] = [q[0]];
+  const ext = [[2 * q[0][0] - q[1][0], 2 * q[0][1] - q[1][1]] as [number, number], ...q, [2 * q[q.length - 1][0] - q[q.length - 2][0], 2 * q[q.length - 1][1] - q[q.length - 2][1]] as [number, number]];
+  for (let i = 1; i + 2 < ext.length; i++) {
+    const [p0, p1, p2, p3] = [ext[i - 1], ext[i], ext[i + 1], ext[i + 2]];
+    const d = (a: [number, number], b: [number, number]): number => Math.max(1e-9, Math.sqrt(Math.hypot(b[0] - a[0], b[1] - a[1])));
+    const t0 = 0;
+    const t1 = t0 + d(p0, p1);
+    const t2 = t1 + d(p1, p2);
+    const t3 = t2 + d(p2, p3);
+    for (let k = 1; k <= per; k++) {
+      const t = t1 + ((t2 - t1) * k) / per;
+      const L = (a: [number, number], b: [number, number], ta: number, tb: number): [number, number] => [((tb - t) * a[0] + (t - ta) * b[0]) / (tb - ta), ((tb - t) * a[1] + (t - ta) * b[1]) / (tb - ta)];
+      const A1 = L(p0, p1, t0, t1);
+      const A2 = L(p1, p2, t1, t2);
+      const A3 = L(p2, p3, t2, t3);
+      const B1 = L(A1, A2, t0, t2);
+      const B2 = L(A2, A3, t1, t3);
+      out.push(L(B1, B2, t1, t2));
+    }
+  }
+  return out;
+}
 
 export interface Snap {
   x: number;
@@ -281,6 +310,7 @@ export function removeEntity(sk: Sketch2D, id: string): void {
   for (const e of sk.ents) {
     if (e.kind === 'line') used.add(e.a).add(e.b);
     else if (e.kind === 'circle') used.add(e.c);
+    else if (e.kind === 'spline') for (const q of e.pts) used.add(q);
     else used.add(e.c).add(e.a).add(e.b);
   }
   sk.points = sk.points.filter((p) => used.has(p.id));
@@ -307,6 +337,16 @@ export function pickEntity(sk: Sketch2D, x: number, y: number, reach = 3): strin
     } else if (e.kind === 'circle') {
       const c = pt(sk, e.c);
       d = Math.abs(Math.hypot(x - c.x, y - c.y) - e.r);
+    } else if (e.kind === 'spline') {
+      const poly = splinePts(e.pts.map((id) => [pt(sk, id).x, pt(sk, id).y] as [number, number]));
+      for (let i = 0; i + 1 < poly.length; i++) {
+        const [ax, ay] = poly[i];
+        const dx = poly[i + 1][0] - ax;
+        const dy = poly[i + 1][1] - ay;
+        const l2 = dx * dx + dy * dy;
+        const t = l2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+        d = Math.min(d, Math.hypot(ax + dx * t - x, ay + dy * t - y));
+      }
     } else {
       const c = pt(sk, e.c);
       const a = pt(sk, e.a);
@@ -331,6 +371,7 @@ export function measure(sk: Sketch2D, id: string): { kind: 'length' | 'radius'; 
     return { kind: 'length', value: Math.hypot(b.x - a.x, b.y - a.y) };
   }
   if (e.kind === 'circle') return { kind: 'radius', value: e.r };
+  if (e.kind === 'spline') return null;
   const c = pt(sk, e.c);
   const a = pt(sk, e.a);
   return { kind: 'radius', value: Math.hypot(a.x - c.x, a.y - c.y) };
@@ -366,6 +407,7 @@ export function solve(gcs: GcsWrapper, sk: Sketch2D): SolveResult {
   for (const e of sk.ents) {
     if (e.kind === 'line') prims.push({ id: e.id, type: 'line', p1_id: e.a, p2_id: e.b } as SketchPrimitive);
     else if (e.kind === 'circle') prims.push({ id: e.id, type: 'circle', c_id: e.c, radius: e.r } as SketchPrimitive);
+    else if (e.kind === 'spline') continue;
     else {
       const c = P(e.c);
       const a = P(e.a);
@@ -439,6 +481,9 @@ export function solve(gcs: GcsWrapper, sk: Sketch2D): SolveResult {
         break;
       case 'pointOnLine':
         prims.push({ id: c.id, type: 'point_on_line_pl', p_id: c.p, l_id: c.e } as SketchPrimitive);
+        break;
+      case 'symmetric':
+        prims.push({ id: c.id, type: 'p2p_symmetric_ppl', p1_id: c.p1, p2_id: c.p2, l_id: c.e } as SketchPrimitive);
         break;
       case 'length': {
         const l = ent(sk, c.e);
@@ -577,6 +622,16 @@ export function profiles(sk: Sketch2D): Region[] {
         const sw = sweepOf(e) * (forward ? 1 : -1);
         sweeps.push(sw);
         poly.push(...arcPts(P(e.c), P(from), sw));
+      } else if (e.kind === 'spline') {
+        // The curve as short straight pieces (its inner samples join the loop).
+        const s = splinePts(e.pts.map(P));
+        const inner = (forward ? s : [...s].reverse()).slice(1, -1);
+        sweeps.push(0);
+        for (const q of inner) {
+          pts.push(q);
+          poly.push(q);
+          sweeps.push(0);
+        }
       } else sweeps.push(0);
       const next = (at.get(to) ?? []).find((i) => i !== cur);
       if (next === undefined || used.has(next)) break;
@@ -642,3 +697,383 @@ export function profiles(sk: Sketch2D): Region[] {
   if (!regions.length) throw new Error('the sketch has no closed profile');
   return regions;
 }
+
+/** A spline through picked points (at least two). */
+export function addSpline(sk: Sketch2D, picks: Snap[]): string {
+  if (picks.length < 2) throw new Error('a spline needs at least two points');
+  const ids = picks.map((p) => pointFor(sk, p));
+  const id = nid(sk, 's');
+  sk.ents.push({ id, kind: 'spline', a: ids[0], b: ids[ids.length - 1], pts: ids });
+  return id;
+}
+
+/** The lines meeting at a point (by id). */
+function linesAt(sk: Sketch2D, p: string): Extract<SkEntity, { kind: 'line' }>[] {
+  return sk.ents.filter((e): e is Extract<SkEntity, { kind: 'line' }> => e.kind === 'line' && (e.a === p || e.b === p));
+}
+
+/**
+ * A sketch fillet: the corner where two lines meet is rounded with an arc of radius r, tangent to both; the
+ * lines are cut back to where it touches them (as in SOLIDWORKS' Sketch Fillet).
+ */
+export function filletCorner(sk: Sketch2D, x: number, y: number, r: number): string {
+  // The corner: the point nearest the pick that has exactly two lines.
+  let best: SkPoint | null = null;
+  let bestD = 4;
+  for (const q of sk.points) {
+    if (linesAt(sk, q.id).length !== 2) continue;
+    const d = Math.hypot(q.x - x, q.y - y);
+    if (d < bestD) {
+      bestD = d;
+      best = q;
+    }
+  }
+  if (!best) throw new Error('pick a corner where two lines meet');
+  const P = best;
+  const [l1, l2] = linesAt(sk, P.id);
+  const far = (l: Extract<SkEntity, { kind: 'line' }>): SkPoint => pt(sk, l.a === P.id ? l.b : l.a);
+  const A = far(l1);
+  const B = far(l2);
+  const u1 = [A.x - P.x, A.y - P.y];
+  const u2 = [B.x - P.x, B.y - P.y];
+  const L1 = Math.hypot(u1[0], u1[1]);
+  const L2 = Math.hypot(u2[0], u2[1]);
+  u1[0] /= L1; u1[1] /= L1;
+  u2[0] /= L2; u2[1] /= L2;
+  const cosT = u1[0] * u2[0] + u1[1] * u2[1];
+  const theta = Math.acos(Math.max(-1, Math.min(1, cosT)));
+  if (theta < 1e-3 || theta > Math.PI - 1e-3) throw new Error('those lines are in line; there is no corner to round');
+  const t = r / Math.tan(theta / 2);
+  if (t >= L1 - 1e-6 || t >= L2 - 1e-6) throw new Error(`a ${r} mm fillet does not fit those lines`);
+  const bis = [u1[0] + u2[0], u1[1] + u2[1]];
+  const bl = Math.hypot(bis[0], bis[1]);
+  const h = r / Math.sin(theta / 2);
+  const T1 = pointFor(sk, { x: P.x + u1[0] * t, y: P.y + u1[1] * t, kind: 'free' });
+  const T2 = pointFor(sk, { x: P.x + u2[0] * t, y: P.y + u2[1] * t, kind: 'free' });
+  const C = pointFor(sk, { x: P.x + (bis[0] / bl) * h, y: P.y + (bis[1] / bl) * h, kind: 'free' });
+  if (l1.a === P.id) l1.a = T1;
+  else l1.b = T1;
+  if (l2.a === P.id) l2.a = T2;
+  else l2.b = T2;
+  // Anticlockwise from T1 to T2 about C, or the other way round.
+  const c = pt(sk, C);
+  const a1 = Math.atan2(pt(sk, T1).y - c.y, pt(sk, T1).x - c.x);
+  const a2 = Math.atan2(pt(sk, T2).y - c.y, pt(sk, T2).x - c.x);
+  let sweep = a2 - a1;
+  while (sweep <= -Math.PI) sweep += 2 * Math.PI;
+  while (sweep > Math.PI) sweep -= 2 * Math.PI;
+  const id = nid(sk, 'a');
+  sk.ents.push(sweep > 0 ? { id, kind: 'arc', c: C, a: T1, b: T2 } : { id, kind: 'arc', c: C, a: T2, b: T1 });
+  addConstraint(sk, { kind: 'tangent', e1: l1.id, e2: id });
+  addConstraint(sk, { kind: 'tangent', e1: l2.id, e2: id });
+  addConstraint(sk, { kind: 'radius', e: id, value: r });
+  // The old corner point goes, with anything that held it.
+  if (!sk.ents.some((e) => (e.kind === 'line' || e.kind === 'arc' || e.kind === 'spline' ? e.a === P.id || e.b === P.id : e.c === P.id) || (e.kind === 'arc' && e.c === P.id))) {
+    sk.points = sk.points.filter((q) => q.id !== P.id || q.id === 'o');
+    sk.cons = sk.cons.filter((k) => !(('p' in k && k.p === P.id) || ('p1' in k && (k.p1 === P.id || k.p2 === P.id))));
+  }
+  return id;
+}
+
+/** Where a line segment (a to b) crosses other geometry: parameters along it, 0 to 1. */
+function crossings(sk: Sketch2D, a: [number, number], b: [number, number], skip: string): number[] {
+  const out: number[] = [];
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  for (const e of sk.ents) {
+    if (e.id === skip) continue;
+    if (e.kind === 'line') {
+      const p = pt(sk, e.a);
+      const q = pt(sk, e.b);
+      const ex = q.x - p.x;
+      const ey = q.y - p.y;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((p.x - a[0]) * ey - (p.y - a[1]) * ex) / den;
+      const s = ((p.x - a[0]) * dy - (p.y - a[1]) * dx) / den;
+      if (t > 1e-9 && t < 1 - 1e-9 && s >= -1e-9 && s <= 1 + 1e-9) out.push(t);
+    } else if (e.kind === 'circle' || e.kind === 'arc') {
+      const c = pt(sk, e.c);
+      const r = e.kind === 'circle' ? e.r : Math.hypot(pt(sk, e.a).x - c.x, pt(sk, e.a).y - c.y);
+      const fx = a[0] - c.x;
+      const fy = a[1] - c.y;
+      const A = dx * dx + dy * dy;
+      const B = 2 * (fx * dx + fy * dy);
+      const C = fx * fx + fy * fy - r * r;
+      const disc = B * B - 4 * A * C;
+      if (disc < 0) continue;
+      for (const t of [(-B - Math.sqrt(disc)) / (2 * A), (-B + Math.sqrt(disc)) / (2 * A)]) {
+        if (!(t > 1e-9 && t < 1 - 1e-9)) continue;
+        if (e.kind === 'arc') {
+          const ang = Math.atan2(a[1] + dy * t - c.y, a[0] + dx * t - c.x);
+          const a0 = Math.atan2(pt(sk, e.a).y - c.y, pt(sk, e.a).x - c.x);
+          let s1 = Math.atan2(pt(sk, e.b).y - c.y, pt(sk, e.b).x - c.x) - a0;
+          while (s1 <= 0) s1 += 2 * Math.PI;
+          let sa = ang - a0;
+          while (sa < 0) sa += 2 * Math.PI;
+          if (sa > s1) continue;
+        }
+        out.push(t);
+      }
+    }
+  }
+  return out.sort((x, y) => x - y);
+}
+
+/**
+ * Trim: remove the piece of a line between the crossings either side of the pick (or to its end); a line
+ * that crosses nothing is deleted. A circle is cut back to an arc between the crossings either side.
+ */
+export function trimAt(sk: Sketch2D, x: number, y: number): string {
+  const id = pickEntity(sk, x, y, 3);
+  if (!id) throw new Error('pick the piece to trim');
+  const e = ent(sk, id)!;
+  if (e.kind === 'line') {
+    const A = pt(sk, e.a);
+    const B = pt(sk, e.b);
+    const a: [number, number] = [A.x, A.y];
+    const b: [number, number] = [B.x, B.y];
+    const ts = crossings(sk, a, b, id);
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const tp = ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy);
+    const lo = [0, ...ts].filter((t) => t < tp).pop() ?? 0;
+    const hi = [...ts, 1].find((t) => t > tp) ?? 1;
+    const at = (t: number): Snap => ({ x: a[0] + dx * t, y: a[1] + dy * t, kind: 'free' });
+    if (lo === 0 && hi === 1) {
+      removeEntity(sk, id);
+      return 'Deleted (it crosses nothing).';
+    }
+    if (lo === 0) {
+      e.a = pointFor(sk, at(hi));
+      return 'Trimmed to the crossing.';
+    }
+    if (hi === 1) {
+      e.b = pointFor(sk, at(lo));
+      return 'Trimmed to the crossing.';
+    }
+    const mid = pointFor(sk, at(hi));
+    const end = e.b;
+    e.b = pointFor(sk, at(lo));
+    const nl = nid(sk, 'l');
+    sk.ents.push({ id: nl, kind: 'line', a: mid, b: end, construction: e.construction });
+    return 'Trimmed out the piece between the crossings.';
+  }
+  if (e.kind === 'circle') {
+    // Crossings as angles round the circle.
+    const c = pt(sk, e.c);
+    const angs: number[] = [];
+    for (const o of sk.ents) {
+      if (o.id === id || o.kind !== 'line') continue;
+      const p = pt(sk, o.a);
+      const q = pt(sk, o.b);
+      const dx = q.x - p.x;
+      const dy = q.y - p.y;
+      const fx = p.x - c.x;
+      const fy = p.y - c.y;
+      const A = dx * dx + dy * dy;
+      const B = 2 * (fx * dx + fy * dy);
+      const C = fx * fx + fy * fy - e.r * e.r;
+      const disc = B * B - 4 * A * C;
+      if (disc < 0) continue;
+      for (const t of [(-B - Math.sqrt(disc)) / (2 * A), (-B + Math.sqrt(disc)) / (2 * A)]) {
+        if (t >= -1e-9 && t <= 1 + 1e-9) angs.push(Math.atan2(p.y + dy * t - c.y, p.x + dx * t - c.x));
+      }
+    }
+    if (angs.length < 2) {
+      removeEntity(sk, id);
+      return 'Deleted (it crosses fewer than two lines).';
+    }
+    const norm = (v: number): number => ((v % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    const ap = Math.atan2(y - c.y, x - c.x);
+    const sorted = angs.map((v) => norm(v - ap)).sort((u, v) => u - v);
+    // Keep from the crossing after the pick round to the one before it.
+    const start = norm(sorted[0] + ap);
+    const stop = norm(sorted[sorted.length - 1] + ap);
+    const pa = pointFor(sk, { x: c.x + e.r * Math.cos(start), y: c.y + e.r * Math.sin(start), kind: 'free' });
+    const pb = pointFor(sk, { x: c.x + e.r * Math.cos(stop), y: c.y + e.r * Math.sin(stop), kind: 'free' });
+    const r = e.r;
+    removeEntity(sk, id);
+    if (!sk.points.some((q) => q.id === e.c)) sk.points.push(c);
+    const na = nid(sk, 'a');
+    sk.ents.push({ id: na, kind: 'arc', c: e.c, a: pa, b: pb, construction: e.construction });
+    void r;
+    return 'Trimmed the circle to an arc.';
+  }
+  removeEntity(sk, id);
+  return 'Deleted.';
+}
+
+/**
+ * Offset: a line copied parallel at distance d towards the side picked; a circle or arc copied concentric,
+ * d larger or smaller (towards the pick); a closed outline of lines offset as a whole (outwards for d > 0).
+ */
+export function offsetEntity(sk: Sketch2D, id: string, d: number, side: { x: number; y: number }): string[] {
+  const e = ent(sk, id);
+  if (!e) throw new Error('pick a line, arc or circle to offset');
+  if (e.kind === 'circle' || e.kind === 'arc') {
+    const c = pt(sk, e.c);
+    const r0 = e.kind === 'circle' ? e.r : Math.hypot(pt(sk, e.a).x - c.x, pt(sk, e.a).y - c.y);
+    const r = Math.hypot(side.x - c.x, side.y - c.y) > r0 ? r0 + d : r0 - d;
+    if (r <= 0) throw new Error('that offset is larger than the radius');
+    if (e.kind === 'circle') {
+      const nidc = nid(sk, 'c');
+      sk.ents.push({ id: nidc, kind: 'circle', c: e.c, r });
+      return [nidc];
+    }
+    const k = r / r0;
+    const A = pt(sk, e.a);
+    const B = pt(sk, e.b);
+    const pa = pointFor(sk, { x: c.x + (A.x - c.x) * k, y: c.y + (A.y - c.y) * k, kind: 'free' });
+    const pb = pointFor(sk, { x: c.x + (B.x - c.x) * k, y: c.y + (B.y - c.y) * k, kind: 'free' });
+    const na = nid(sk, 'a');
+    sk.ents.push({ id: na, kind: 'arc', c: e.c, a: pa, b: pb });
+    return [na];
+  }
+  if (e.kind !== 'line') throw new Error('splines are not offset yet');
+  // A closed loop of lines through this one: offset the whole outline.
+  const loop: Extract<SkEntity, { kind: 'line' }>[] = [];
+  let cur = e;
+  let from = e.a;
+  for (let guard = 0; guard < 400; guard++) {
+    loop.push(cur);
+    const to = cur.a === from ? cur.b : cur.a;
+    const next = linesAt(sk, to).find((l) => l.id !== cur.id);
+    if (!next || next.id === e.id) break;
+    cur = next;
+    from = to;
+  }
+  const closed = loop.length > 2 && linesAt(sk, from === loop[loop.length - 1].a ? loop[loop.length - 1].b : loop[loop.length - 1].a).some((l) => l.id === e.id);
+  if (closed) {
+    // Vertices in order, then each corner moved to where the offset sides meet.
+    const vs: [number, number][] = [];
+    let f = e.a;
+    for (const l of loop) {
+      const q = pt(sk, f);
+      vs.push([q.x, q.y]);
+      f = l.a === f ? l.b : l.a;
+    }
+    let area = 0;
+    for (let i = 0; i < vs.length; i++) area += vs[i][0] * vs[(i + 1) % vs.length][1] - vs[(i + 1) % vs.length][0] * vs[i][1];
+    // Outwards is to the right of travel for an anticlockwise outline.
+    const out = area > 0 ? 1 : -1;
+    const insidePick = (() => {
+      let r = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const a = vs[i];
+        const b = vs[j];
+        if (a[1] > side.y !== b[1] > side.y && side.x < ((b[0] - a[0]) * (side.y - a[1])) / (b[1] - a[1]) + a[0]) r = !r;
+      }
+      return r;
+    })();
+    const dd = insidePick ? -d : d;
+    const n = vs.length;
+    const shifted = vs.map((_, i) => {
+      const a = vs[i];
+      const b = vs[(i + 1) % n];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const nx = (out * (b[1] - a[1])) / L;
+      const ny = (out * -(b[0] - a[0])) / L;
+      return [[a[0] + nx * dd, a[1] + ny * dd], [b[0] + nx * dd, b[1] + ny * dd]] as [[number, number], [number, number]];
+    });
+    const corners: Snap[] = shifted.map((s1, i) => {
+      const s0 = shifted[(i - 1 + n) % n];
+      const [p, q] = s0;
+      const [r1, r2] = s1;
+      const den = (q[0] - p[0]) * (r2[1] - r1[1]) - (q[1] - p[1]) * (r2[0] - r1[0]);
+      if (Math.abs(den) < 1e-12) return { x: r1[0], y: r1[1], kind: 'free' };
+      const t = ((r1[0] - p[0]) * (r2[1] - r1[1]) - (r1[1] - p[1]) * (r2[0] - r1[0])) / den;
+      return { x: p[0] + (q[0] - p[0]) * t, y: p[1] + (q[1] - p[1]) * t, kind: 'free' };
+    });
+    const ids = corners.map((c0) => pointFor(sk, c0));
+    return ids.map((a, i) => {
+      const lid = nid(sk, 'l');
+      sk.ents.push({ id: lid, kind: 'line', a, b: ids[(i + 1) % n] });
+      return lid;
+    });
+  }
+  const A = pt(sk, e.a);
+  const B = pt(sk, e.b);
+  const L = Math.hypot(B.x - A.x, B.y - A.y);
+  let nx = -(B.y - A.y) / L;
+  let ny = (B.x - A.x) / L;
+  if ((side.x - A.x) * nx + (side.y - A.y) * ny < 0) {
+    nx = -nx;
+    ny = -ny;
+  }
+  const id2 = addLine(sk, { x: A.x + nx * d, y: A.y + ny * d, kind: 'free' }, { x: B.x + nx * d, y: B.y + ny * d, kind: 'free' });
+  addConstraint(sk, { kind: 'parallel', e1: id, e2: id2 });
+  return [id2];
+}
+
+/** Mirror entities across a line (usually a construction centre line): copies kept symmetric by the solver. */
+export function mirrorEntities(sk: Sketch2D, ids: string[], axis: string): string[] {
+  const ax = ent(sk, axis);
+  if (!ax || ax.kind !== 'line') throw new Error('mirror across a line: pick a (construction) line as the mirror');
+  const A = pt(sk, ax.a);
+  const B = pt(sk, ax.b);
+  const dx = B.x - A.x;
+  const dy = B.y - A.y;
+  const l2 = dx * dx + dy * dy;
+  const map = new Map<string, string>();
+  const image = (id: string): string => {
+    const got = map.get(id);
+    if (got) return got;
+    const q = pt(sk, id);
+    const t = ((q.x - A.x) * dx + (q.y - A.y) * dy) / l2;
+    const fx = A.x + dx * t;
+    const fy = A.y + dy * t;
+    const mx = 2 * fx - q.x;
+    const my = 2 * fy - q.y;
+    // A point on the mirror line is its own image.
+    if (Math.hypot(mx - q.x, my - q.y) < 1e-6) {
+      map.set(id, id);
+      return id;
+    }
+    const nidp = pointFor(sk, { x: mx, y: my, kind: 'free' });
+    map.set(id, nidp);
+    addConstraint(sk, { kind: 'symmetric', p1: id, p2: nidp, e: axis });
+    return nidp;
+  };
+  const out: string[] = [];
+  for (const id of ids) {
+    const e = ent(sk, id);
+    if (!e || id === axis) continue;
+    const nidE = nid(sk, e.kind === 'line' ? 'l' : e.kind === 'circle' ? 'c' : e.kind === 'arc' ? 'a' : 's');
+    if (e.kind === 'line') sk.ents.push({ id: nidE, kind: 'line', a: image(e.a), b: image(e.b), construction: e.construction });
+    else if (e.kind === 'circle') sk.ents.push({ id: nidE, kind: 'circle', c: image(e.c), r: e.r, construction: e.construction });
+    // A mirror turns anticlockwise into clockwise: the image runs from b's image to a's.
+    else if (e.kind === 'arc') sk.ents.push({ id: nidE, kind: 'arc', c: image(e.c), a: image(e.b), b: image(e.a), construction: e.construction });
+    else {
+      const pts = e.pts.map(image);
+      sk.ents.push({ id: nidE, kind: 'spline', a: pts[0], b: pts[pts.length - 1], pts, construction: e.construction });
+    }
+    out.push(nidE);
+  }
+  return out;
+}
+
+/** Open chains of solid lines (a sweep path): each as its points in order. */
+export function openChains(sk: Sketch2D): [number, number][][] {
+  const lines = sk.ents.filter((e): e is Extract<SkEntity, { kind: 'line' }> => e.kind === 'line' && !e.construction);
+  const deg = new Map<string, number>();
+  for (const l of lines) for (const p of [l.a, l.b]) deg.set(p, (deg.get(p) ?? 0) + 1);
+  const used = new Set<string>();
+  const out: [number, number][][] = [];
+  for (const [p, n] of deg) {
+    if (n !== 1) continue;
+    const chain: [number, number][] = [];
+    let at = p;
+    for (let guard = 0; guard < 500; guard++) {
+      const q = pt(sk, at);
+      chain.push([q.x, q.y]);
+      const next = lines.find((l) => !used.has(l.id) && (l.a === at || l.b === at));
+      if (!next) break;
+      used.add(next.id);
+      at = next.a === at ? next.b : next.a;
+    }
+    if (chain.length >= 2 && !out.some((c) => c[0][0] === chain[chain.length - 1][0] && c[0][1] === chain[chain.length - 1][1])) out.push(chain);
+  }
+  return out;
+}
+

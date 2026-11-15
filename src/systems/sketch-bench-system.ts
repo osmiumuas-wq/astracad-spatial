@@ -14,11 +14,13 @@ import { CSS } from '../app/palette.js';
 import { SketchTool, TOOL_NAMES } from '../app/sketch-bench.js';
 import { makeButton, setButton } from '../app/ui3d.js';
 import { FACE_FRAMES } from '../engine/design.js';
-import { measure } from '../engine/sketch2d.js';
+import { measure, splinePts } from '../engine/sketch2d.js';
 
 const MAX_QUADS = 6000;
 
-type Btn = [key: string, label: string, run: () => void];
+const TABS = ['Draw', 'Modify', 'Relate', 'Finish'] as const;
+type Tab = (typeof TABS)[number];
+type Btn = [key: string, label: string, run: () => void, tab: Tab];
 
 export class SketchBenchSystem extends createSystem({}) {
   private readonly strip = new Group();
@@ -27,7 +29,8 @@ export class SketchBenchSystem extends createSystem({}) {
   private readonly col = new Float32Array(MAX_QUADS * 4 * 3);
   private quads = 0;
   private drawn = -1;
-  private keys: string[] = [];
+  private keys: [string, Tab][] = [];
+  private tab: Tab = 'Draw';
   private status!: TextLabel;
   private labels: TextLabel[] = [];
   /** Each label in a group that undoes the part's millimetre scale (the label sizes itself in metres). */
@@ -49,44 +52,67 @@ export class SketchBenchSystem extends createSystem({}) {
     const tool = (t: SketchTool): (() => void) => () => this.say(app.sketchBench?.setTool(t));
     const run = (f: () => string | undefined): (() => void) => () => this.say(f());
     const b = (): NonNullable<typeof app.sketchBench> => app.sketchBench!;
+    const say = (text: string): (() => void) => () => this.say(app.runCommand(text));
     const buttons: Btn[] = [
-      ['sk:line', 'Line', tool('line')],
-      ['sk:rect', 'Rectangle', tool('rect')],
-      ['sk:circle', 'Circle', tool('circle')],
-      ['sk:arc', '3-pt arc', tool('arc')],
-      ['sk:tarc', 'Tangent arc', tool('tangentArc')],
-      ['sk:slot', 'Slot', tool('slot')],
-      ['sk:poly', 'Polygon', tool('polygon')],
-      ['sk:select', 'Select', tool('select')],
-      ['sk:dim', 'Smart dim', tool('dimension')],
-      ['sk:del', 'Delete', tool('delete')],
-      ['sk:constr', 'Construction', run(() => b().toggleConstruction())],
-      ['sk:undo', 'Undo', run(() => b().undo())],
-      ['sk:h', 'Horizontal', run(() => b().constrain('horizontal'))],
-      ['sk:v', 'Vertical', run(() => b().constrain('vertical'))],
-      ['sk:par', 'Parallel', run(() => b().constrain('parallel'))],
-      ['sk:perp', 'Perpendicular', run(() => b().constrain('perpendicular'))],
-      ['sk:eq', 'Equal', run(() => b().constrain('equal'))],
-      ['sk:tan', 'Tangent', run(() => b().constrain('tangent'))],
-      ['sk:minus', 'Size -1', run(() => this.nudge(-1))],
-      ['sk:plus', 'Size +1', run(() => this.nudge(1))],
-      ['sk:extrude', 'Extrude 10', run(() => app.finishSketchBench('extrude', 10))],
-      ['sk:cut', 'Cut 5', run(() => app.finishSketchBench('cut', 5))],
-      ['sk:revolve', 'Revolve', run(() => app.finishSketchBench('revolve', 360))],
+      ['sk:line', 'Line', tool('line'), 'Draw'],
+      ['sk:rect', 'Rectangle', tool('rect'), 'Draw'],
+      ['sk:circle', 'Circle', tool('circle'), 'Draw'],
+      ['sk:arc', '3-pt arc', tool('arc'), 'Draw'],
+      ['sk:tarc', 'Tangent arc', tool('tangentArc'), 'Draw'],
+      ['sk:slot', 'Slot', tool('slot'), 'Draw'],
+      ['sk:poly', 'Polygon', tool('polygon'), 'Draw'],
+      ['sk:spline', 'Spline', tool('spline'), 'Draw'],
+      ['sk:constr', 'Construction', run(() => b().toggleConstruction()), 'Draw'],
+      ['sk:select', 'Select', tool('select'), 'Modify'],
+      ['sk:dim', 'Smart dim', tool('dimension'), 'Modify'],
+      ['sk:minus', 'Size -1', run(() => this.nudge(-1)), 'Modify'],
+      ['sk:plus', 'Size +1', run(() => this.nudge(1)), 'Modify'],
+      ['sk:fillet', 'Fillet R3', run(() => b().command('fillet 3') ?? undefined), 'Modify'],
+      ['sk:trim', 'Trim', tool('trim'), 'Modify'],
+      ['sk:offset', 'Offset 5', run(() => b().command('offset 5') ?? undefined), 'Modify'],
+      ['sk:mirror', 'Mirror', tool('mirror'), 'Modify'],
+      ['sk:del', 'Delete', tool('delete'), 'Modify'],
+      ['sk:undo', 'Undo', run(() => b().undo()), 'Modify'],
+      ['sk:h', 'Horizontal', run(() => b().constrain('horizontal')), 'Relate'],
+      ['sk:v', 'Vertical', run(() => b().constrain('vertical')), 'Relate'],
+      ['sk:par', 'Parallel', run(() => b().constrain('parallel')), 'Relate'],
+      ['sk:perp', 'Perpendicular', run(() => b().constrain('perpendicular')), 'Relate'],
+      ['sk:eq', 'Equal', run(() => b().constrain('equal')), 'Relate'],
+      ['sk:tan', 'Tangent', run(() => b().constrain('tangent')), 'Relate'],
+      ['sk:extrude', 'Extrude 10', run(() => app.finishSketchBench('extrude', 10)), 'Finish'],
+      ['sk:cut', 'Cut 5', run(() => app.finishSketchBench('cut', 5)), 'Finish'],
+      ['sk:revolve', 'Revolve', run(() => app.finishSketchBench('revolve', 360)), 'Finish'],
+      ['sk:sweep', 'Sweep \u23008', say('sweep 8'), 'Finish'],
+      ['sk:loft', 'Loft 20', say('loft 20'), 'Finish'],
+      ['sk:loftend', 'Finish loft', say('finish loft'), 'Finish'],
+      ['sk:planeup', 'Plane +10', say('plane 10'), 'Finish'],
+      ['sk:planedn', 'Plane -10', say('plane in 10'), 'Finish'],
       ['sk:exit', 'Exit sketch', run(() => {
         app.closeSketchBench();
         return 'Sketch closed without a feature.';
-      })],
+      }), 'Finish'],
     ];
-    buttons.forEach(([key, label, fn], i) => {
-      const tone = key === 'sk:extrude' || key === 'sk:cut' || key === 'sk:revolve' ? 'primary' : key === 'sk:exit' ? 'warn' : 'default';
+    TABS.forEach((tab, i) => {
+      const m = makeButton(e, { key: `sk:tab:${tab}`, label: tab, width: 0.045, height: 0.017, tone: 'ghost' }, () => {
+        ctx.sfx.play('select');
+        this.tab = tab;
+        this.show(this.open);
+      });
+      m.position.set(i * 0.0475 - 0.071, 0.104, 0);
+      setButton(`sk:tab:${tab}`, { visible: false });
+    });
+    const slot = new Map<Tab, number>();
+    buttons.forEach(([key, label, fn, tab]) => {
+      const i = slot.get(tab) ?? 0;
+      slot.set(tab, i + 1);
+      const tone = key === 'sk:extrude' || key === 'sk:cut' || key === 'sk:revolve' || key === 'sk:sweep' || key === 'sk:loft' || key === 'sk:loftend' ? 'primary' : key === 'sk:exit' ? 'warn' : 'default';
       const m = makeButton(e, { key, label, width: 0.058, height: 0.02, tone }, () => {
         ctx.sfx.play('select');
         fn();
       });
-      m.position.set((i % 3) * 0.062 - 0.062, 0.1 - Math.floor(i / 3) * 0.024, 0);
+      m.position.set((i % 3) * 0.062 - 0.062, 0.078 - Math.floor(i / 3) * 0.024, 0);
       setButton(key, { visible: false });
-      this.keys.push(key);
+      this.keys.push([key, tab]);
     });
     this.status = new TextLabel(0.013);
     this.status.mesh.position.set(0, 0.128, 0);
@@ -136,7 +162,8 @@ export class SketchBenchSystem extends createSystem({}) {
 
   private show(on: boolean): void {
     this.open = on;
-    for (const k of this.keys) setButton(k, { visible: on });
+    for (const [k, tab] of this.keys) setButton(k, { visible: on && tab === this.tab });
+    for (const tab of TABS) setButton(`sk:tab:${tab}`, { visible: on, toggled: tab === this.tab });
     // The design strip hides itself while a sketch is open (src/systems/design-system.ts).
     this.status.visible = on;
     this.mesh.visible = on;
@@ -233,6 +260,9 @@ export class SketchBenchSystem extends createSystem({}) {
         const c = P(e.c);
         arc(c, [c[0] + e.r, c[1]], 2 * Math.PI, colr);
         if (!e.construction) label(c[0], c[1] + e.r, `${driven.has(e.id) ? '' : '~'}⌀${(2 * e.r).toFixed(1)}`);
+      } else if (e.kind === 'spline') {
+        const s = splinePts(e.pts.map(P));
+        for (let i = 0; i + 1 < s.length; i++) this.segment(s[i][0], s[i][1], s[i + 1][0], s[i + 1][1], e.construction ? w * 0.5 : w, colr);
       } else {
         const c = P(e.c);
         const a = P(e.a);
@@ -269,7 +299,9 @@ export class SketchBenchSystem extends createSystem({}) {
     (g.getAttribute('position') as BufferAttribute).needsUpdate = true;
     (g.getAttribute('color') as BufferAttribute).needsUpdate = true;
     g.setDrawRange(0, this.quads * 6);
-    this.status.set(`${TOOL_NAMES[b.tool]}: ${b.status.replace(/^[^:]*: /u, '')}`.slice(0, 64), { bg: CSS.panel, border: b.dof === 0 ? CSS.green : CSS.cyan });
+    // Short enough to read at arm's length: the tool and the first sentence of the status.
+    const first = b.status.replace(/^[^:]*: /u, '').split(/(?<=\.) /u)[0];
+    this.status.set(`${TOOL_NAMES[b.tool]}: ${first}`.slice(0, 46), { bg: CSS.panel, border: b.dof === 0 ? CSS.green : CSS.cyan });
     probe.sketchBench = { tool: b.tool, ents: b.sk.ents.length, dof: b.dof, status: b.status };
   }
 

@@ -68,7 +68,9 @@ hands, and every number on screen backed by a check you can see.
 - **A real sketcher in VR.** Point at a face, press Sketch, and pick tools from the toolbar: line, rectangle,
   circle, arc, tangent arc, slot, polygon. Pinch to place points; they snap to ends, centres, midpoints and a grid.
   Select two lines and press Perpendicular, or Tangent, or Equal. Smart dimension a line and say "45". The sketch
-  tells you when it is fully defined. Then Extrude, Cut or Revolve; FreeCAD's solver runs underneath. A ribbon with
+  tells you when it is fully defined. Fillet a corner, trim, offset an outline, mirror across a centre line, draw
+  a spline. Then Extrude, Cut, Revolve about a centre line, Sweep a rod along a sketched path, or Loft to a second
+  sketch on an offset plane; FreeCAD's solver runs underneath. A ribbon with
   tabs holds every feature: holes, counterbores, taps, threads, patterns, fillets, chamfers, shell, draft, mirror.
 - **Exact by numbers.** "Sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8 tall" gives every line its own
   dimension. "Drill a 6 mm hole at 12.5, -7" places it exactly. Chamfer any edge, curved or not.
