@@ -28,6 +28,7 @@ export type Request =
   | { id: number; type: 'flow'; job: string; params: Params; wind: Wind }
   | { id: number; type: 'modes'; job: string; params: Params; material: string }
   | { id: number; type: 'views'; job: string; params: Params }
+  | { id: number; type: 'mould'; job: string; params: Params; pull: [number, number, number]; margin: number; shrink: number; level: number }
   | {
       id: number;
       type: 'solve';
@@ -123,4 +124,5 @@ export type Response =
   | { id: number; type: 'moded'; frequencies: number[]; shapes: Float32Array[]; cell: number; elements: number; ms: number; fixtureLabel: string }
   | { id: number; type: 'mode-progress'; mode: number; iteration: number }
   | { id: number; type: 'viewed'; views: DrawingViews }
+  | { id: number; type: 'moulded'; cavity: MeshData; core: MeshData; cavityVolume: number; coreVolume: number }
   | { id: number; type: 'error'; message: string; featureId?: string };

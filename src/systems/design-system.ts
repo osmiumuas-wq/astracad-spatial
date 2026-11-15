@@ -36,6 +36,9 @@ const TOOLS: [string, string, string, Tab][] = [
   ['design:knurl', 'Knurl here', 'knurl 20 diameter 20 long diamond', 'Modify'],
   ['design:engrave', 'Engrave here', 'engrave PART 1 here 6 high 0.5 deep', 'Modify'],
   ['design:brushed', 'Brushed alu', 'appearance brushed aluminium', 'Output'],
+  ['design:draftcheck', 'Draft check', 'draft analysis 1', 'Output'],
+  ['design:parting', 'Parting line', 'parting line', 'Output'],
+  ['design:mould', 'Make mould', 'make mould margin 15 shrink 0.5', 'Output'],
   ['design:carbon', 'Carbon fibre', 'appearance carbon fibre', 'Output'],
   ['design:surface', 'Freeform', 'freeform surface 80 by 60 thick 3', 'Sheet'],
   ['design:top', 'Freeform top', 'freeform top 80 by 60', 'Sheet'],
@@ -107,6 +110,8 @@ export class DesignSystem extends createSystem({}) {
       app.jobId.subscribe(() => this.refresh()),
       app.sketchBenchOpen.subscribe(() => this.refresh()),
       app.appearance.subscribe((a) => ctx.bench.part.setAppearance(a)),
+      app.draftColors.subscribe((c) => c && ctx.bench.part.setVertexColors(c)),
+      app.partingLines.subscribe((l) => l && ctx.bench.part.showLines(l, 0xffb020)),
     );
     app.actions.design = () => {
       app.selectJob('design');

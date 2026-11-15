@@ -6,6 +6,8 @@
 
 import { SketchBench } from './sketch-bench.js';
 import { Appearance, appearanceOf } from './appearance.js';
+import { draftAnalysis, partingLine } from '../engine/mould.js';
+import { toBinaryStl } from '../engine/exporters.js';
 import { writeStep } from '../engine/step-export.js';
 import { batch, Signal, signal } from '@iwsdk/core';
 import { Finding, runAgents, safetyFactor, StressSummary } from '../engine/agents.js';
@@ -1176,6 +1178,41 @@ export class App {
       this.download(s.step, `${s.name}.step`, 'model/step');
       return `Saved ${s.name}.step: a solid with ${s.faces} faces, ready for SOLIDWORKS, CATIA or Creo.`;
     }
+    // Moulds and castings: "draft analysis 2" (degrees, pull up; "pull z" for another direction), "parting line",
+    // "make mould margin 15 shrink 0.5".
+    const ms = sentence.toLowerCase();
+    if (/\b(draft analysis|check draft|draft check|parting line|make (?:a )?mou?ld|core and cavity|mou?ld halves)\b/u.test(ms)) {
+      const built = this.built.peek();
+      if (!built) return 'Build a part first.';
+      const axis = ms.match(/\bpull\s*(?:along\s*)?([-+]?)\s*([xyz])\b/u);
+      const pull: [number, number, number] = [0, 0, 0];
+      pull[axis ? 'xyz'.indexOf(axis[2]) : 1] = axis && axis[1] === '-' ? -1 : 1;
+      const m = built.mesh;
+      if (/\bdraft\b/u.test(ms) && !/\bmou?ld\b/u.test(ms)) {
+        const deg = ms.match(/(\d*\.?\d+)\s*(?:deg|degrees|°)?/u);
+        const r = draftAnalysis(m.positions, m.normals, m.indices, pull, deg ? parseFloat(deg[1]) : 1);
+        this.draftColors.value = r.colors;
+        const tot = r.positive + r.negative + r.insufficient;
+        return `Draft analysis (pull ${axis ? axis[0] : 'up'}, ${deg ? deg[1] : 1} degrees): green ${((100 * r.positive) / tot).toFixed(0)} % releases with the pull, blue ${((100 * r.negative) / tot).toFixed(0)} % against it, amber ${((100 * r.insufficient) / tot).toFixed(0)} % (${r.insufficient.toFixed(0)} mm2) needs more draft.`;
+      }
+      const pl = partingLine(m.positions, m.indices, pull);
+      if (/\bparting line\b/u.test(ms) && !/\bmou?ld\b/u.test(ms)) {
+        this.partingLines.value = pl.segments;
+        return pl.length ? `Parting line: ${pl.length.toFixed(0)} mm round the part, at ${pl.level.toFixed(1)} mm along the pull (shown in amber).` : 'No parting line: nothing turns away from that pull.';
+      }
+      const mg = ms.match(/\bmargin\s*(\d+(?:\.\d+)?)/u);
+      const sh = ms.match(/\bshrink(?:age)?\s*(\d*\.?\d+)\s*(%|percent)?/u);
+      const shrink = sh ? parseFloat(sh[1]) / 100 : 0.005;
+      void this.engine
+        .run<'moulded'>({ type: 'mould', job: this.jobId.peek(), params: this.params.peek(), pull, margin: mg ? parseFloat(mg[1]) : 15, shrink, level: pl.length ? pl.level : 0 })
+        .then((r) => {
+          this.download(toBinaryStl(r.cavity.positions, r.cavity.indices, 'cavity'), `${this.job.id}-cavity.stl`, 'model/stl');
+          this.download(toBinaryStl(r.core.positions, r.core.indices, 'core'), `${this.job.id}-core.stl`, 'model/stl');
+          this.say(`Mould saved: cavity ${(r.cavityVolume / 1000).toFixed(1)} cm3 and core ${(r.coreVolume / 1000).toFixed(1)} cm3, split at the parting line, ${(shrink * 100).toFixed(2)} % shrinkage allowed.`, 'good');
+        })
+        .catch((e: unknown) => this.say(e instanceof Error ? e.message : String(e), 'bad'));
+      return 'Making the core and cavity.';
+    }
     // Appearance: "appearance brushed aluminium", "make it anodised red", "finish carbon fibre", "no appearance".
     if (/\b(appearance|finish|looks? like|render(?:ed)? (?:in|as)|make it (?:look )?(?:brushed|anodi[sz]ed|chrome|polished|matte?|gloss|carbon|wood|rubber|glass))\b/u.test(sentence.toLowerCase()) && !/\bsurface finish\b/u.test(sentence.toLowerCase())) {
       const t = sentence.toLowerCase();
@@ -1508,6 +1545,11 @@ export class App {
   }
 
   /** A three-view A4 drawing of the current part, as SVG text. */
+  /** A draft analysis's colours for the part (null when none is shown). */
+  readonly draftColors: Signal<Float32Array | null> = signal(null);
+  /** A parting line to draw over the part (segments, mm), or null. */
+  readonly partingLines: Signal<number[] | null> = signal(null);
+
   /** The part's appearance (src/app/appearance.ts), or null for the bench look. */
   readonly appearance: Signal<Appearance | null> = signal(null);
 

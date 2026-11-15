@@ -126,6 +126,11 @@ async function handle(req: Request): Promise<void> {
     return;
   }
 
+  if (req.type === 'mould') {
+    const m = kernel.mould(job.spec(params), req.pull, req.margin, req.shrink, req.level);
+    scope.postMessage({ id: req.id, type: 'moulded', ...m }, [...meshBuffers(m.cavity), ...meshBuffers(m.core)]);
+    return;
+  }
   if (req.type === 'views') {
     scope.postMessage({ id: req.id, type: 'viewed', views: kernel.views(job.spec(params)) });
     return;

@@ -1473,6 +1473,40 @@ export class Kernel {
    * (x = X, y = -Z); right: looking along -X (x = -Z, y = Y). A hole shows
    * only where it goes right through in that direction.
    */
+  /**
+   * A two-part mould for the part: a block `margin` mm round it, less the part grown by `shrink` (a fraction, for
+   * the material's shrinkage), split square to `pull` at `level` (along the pull, part mm) into the cavity (the
+   * half the pull points into) and the core.
+   */
+  mould(spec: PartSpec, pull: Vec3, margin: number, shrink: number, level: number): { cavity: MeshData; core: MeshData; cavityVolume: number; coreVolume: number } {
+    const arena: Disposable[] = [];
+    const keep = <T extends Disposable>(o: T): T => {
+      arena.push(o);
+      return o;
+    };
+    try {
+      const { solid } = this.construct(spec, spec.features.length, keep);
+      const bb = solid.boundingBox();
+      const c: Vec3 = [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2];
+      const k = 1 + shrink;
+      const grown = keep(keep(keep(solid.translate([-c[0], -c[1], -c[2]])).scale(k)).translate(c));
+      const size: Vec3 = [(bb.max[0] - bb.min[0]) * k + 2 * margin, (bb.max[1] - bb.min[1]) * k + 2 * margin, (bb.max[2] - bb.min[2]) * k + 2 * margin];
+      const block = keep(this.m.Manifold.cube(size, true).translate(c));
+      keep(block);
+      const shell = keep(block.subtract(grown));
+      const u = norm(pull);
+      // The level moves with the shrinkage scaling about the centre.
+      const cl = dot3k(c, u);
+      const lv = cl + (level - cl) * k;
+      const [hi, lo] = shell.splitByPlane(u, lv);
+      keep(hi);
+      keep(lo);
+      return { cavity: this.extract(hi, keep).mesh, core: this.extract(lo, keep).mesh, cavityVolume: hi.volume(), coreVolume: lo.volume() };
+    } finally {
+      release(arena);
+    }
+  }
+
   views(spec: PartSpec): DrawingViews {
     const arena: Disposable[] = [];
     const keep = <T extends Disposable>(o: T): T => {

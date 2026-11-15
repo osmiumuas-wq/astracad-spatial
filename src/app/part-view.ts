@@ -273,6 +273,27 @@ ${block}
     m.needsUpdate = true;
   }
 
+  /** Colour the part per vertex (a draft analysis); cleared by the next build or clearStress. */
+  setVertexColors(colors: Float32Array): void {
+    if (colors.length !== this.base.length) return;
+    this.colors = colors.slice();
+    this.mesh.geometry.setAttribute('color', new BufferAttribute(this.colors, 3));
+    const m = this.mesh.material;
+    m.vertexColors = true;
+    m.color.setHex(0xffffff);
+    m.needsUpdate = true;
+  }
+
+  /** Draw lines over the part (a parting line), in mm; the next build puts the edges back. */
+  showLines(segments: ArrayLike<number>, color: number): void {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(new Float32Array(segments), 3));
+    this.edges.geometry.dispose();
+    this.edges.geometry = g;
+    this.edges.material.color.setHex(color);
+    this.edges.visible = true;
+  }
+
   /** Show the part in an appearance (a metal, a colour, carbon fibre, wood...), or null for the bench look. */
   setAppearance(a: Appearance | null): void {
     this.appearance = a;
