@@ -35,8 +35,9 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (212 tests: the sketch workbench (tools, relations, dimensions, regions, fillet, trim, offset, mirror,
-splines, revolve axes, sweeps, lofts), kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+Engine tests (225 tests: the sketch workbench (tools, relations, dimensions, regions, fillet, trim, extend, offset,
+mirror, patterns, splines, ellipses, angled planes, revolve axes, sweeps, lofts), freeform surfaces, sheet metal,
+weldments, GD&T, equations, kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
 CalculiX and its convergence study, modal, flow, STEP import and export (true cylinders, imported bodies made
 editable), hinge, drawings with hidden lines, assembly drawings, describe, spoken commands, voice, co-design,
 calibration, stability, explore, lattice, drilling template, G-code, constraint sketching, typed sketches, ray scan,
@@ -181,8 +182,34 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   Draw adds splines (a Catmull-Rom curve through the picks, written as short straight pieces, not a NURBS curve).
   Finish: Extrude, Cut, Revolve (about a vertical construction line when there is one), Sweep (a rod or bar along
   the sketch's open chain of lines, bent round its corners), Loft (this profile, then a second sketch on a plane the
-  given distance out), and offset planes ("plane 10"). Not in the sketcher yet: ellipses, extend, sketch patterns,
-  angled planes, and revolving about a line that is not vertical in the sketch.
+  given distance out), offset planes ("plane 10"), angled planes ("tilt plane 30", "turn plane 45": the sketch
+  plane tilted about its horizontal axis and turned in itself), ellipses (96 area-compensated pieces, exactly pi a
+  b), extend, and linear and circular sketch patterns. Revolve turns about a construction line at any angle.
+- Freeform surfacing: "freeform surface 80 by 60 thick 3" makes a B-spline patch (clamped cubic, the NURBS basis
+  with unit weights) over a rectangle, with a handle on every control point to pull it up or down ("raise point 2 3
+  by 10" by voice). It becomes a sheet thickened straight down, or a solid filled down to its base ("freeform top").
+  It is sampled on a 32 x 32 grid; its volume is exact for that grid (a sheet is area x thickness whatever its shape)
+  and verified. Not modelled: rational weights, trimmed or boundary surfaces, surface sweeps and lofts, and G2 blends
+  between surfaces; STEP export writes the patch as small flat faces.
+- Sheet metal: "sheet metal 120 by 70 thick 2 bend 2" (or "sheet metal 2" from a sketch) makes a base flange; "flange
+  25" on the edge pointed at (or "flange edge 3 20 at 60 down") adds an edge flange bent round the inside radius
+  through any angle, from exact arcs, verified in closed form. Where two flanges meet, each is set back R + t (corner
+  relief). "Flat pattern" saves the unfolded part as DXF (CUT and BEND layers) and SVG: each bend unrolled by its bend
+  allowance angle x (R + K t), K-factor 0.44 unless set ("k factor 0.4"). Not yet: hems, jogs, mitre flanges,
+  flanges on flanges, and bend reliefs other than the set-back.
+- Weldments: a frame sketched as lines becomes structural members ("weldment square tube 20 by 2", also
+  rectangular and round tube, angle and flat bar), each its exact section along its line, joined where they meet.
+  "Cut list" saves the members grouped by profile and length with their mass. Joints are not mitred or trimmed
+  (members run to the ends of their centre lines), and there are no end caps or gussets yet.
+- Geometric tolerancing on drawings (ISO 1101): datums A (base), B (left face) and C (back face); a position frame
+  on every through-hole callout (a diameter zone to A, B, C); flatness of the top face; perpendicularity of B to A;
+  and the general tolerance class (ISO 2768) in the title block. Each tolerance is set by voice ("position
+  tolerance 0.05", "tolerance class fine"); "no GD&T" removes them. The scheme is fixed (no annotations placed by
+  hand, no material-condition modifiers, no tolerance stack-up).
+- Equations and configurations: "variable width 60", "feature 2 height equals width divided by 3" (expressions with
+  + - * / ^, brackets, sqrt, sin, cos, tan in degrees, min, max), "width equals 80" updates everything driven by it.
+  "Save configuration long", "configuration short" switch whole sets of sizes and variables; "design table" saves
+  them side by side as CSV. Equations drive a feature's sizes from variables, not from other features' sizes.
 - Typed sketches give every line its own dimension: "sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8
   tall" (lengths, directions, angles, tangent arcs, then a depth or a cut). Arcs are stored as exact arcs. Features
   can be placed by numbers instead of the hand: "drill a 6 mm hole at 12.5, -7". A pointed position snaps to a 0.5 mm

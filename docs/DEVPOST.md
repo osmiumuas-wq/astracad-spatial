@@ -72,6 +72,12 @@ hands, and every number on screen backed by a check you can see.
   a spline. Then Extrude, Cut, Revolve about a centre line, Sweep a rod along a sketched path, or Loft to a second
   sketch on an offset plane; FreeCAD's solver runs underneath. A ribbon with
   tabs holds every feature: holes, counterbores, taps, threads, patterns, fillets, chamfers, shell, draft, mirror.
+- **Beyond parts: surfaces, sheet metal, weldments.** Pull the control points of a freeform B-spline surface by
+  hand. Make a sheet-metal bracket, flange its edges up or down at any angle, and save the flat pattern as DXF for
+  the laser, with bend lines and bend allowance. Sketch a frame and turn it into square-tube members with a cut list.
+- **Engineering intent.** Drawings carry datums and feature control frames (position, flatness, perpendicularity)
+  to ISO 1101, with ISO 2768 general tolerances. Variables and equations drive dimensions ("height equals width
+  divided by 3"); configurations switch whole sets of sizes, and a design table lists them.
 - **Exact by numbers.** "Sketch 40 right, 20 up, arc 10 left 90, 15 at 135, close, 8 tall" gives every line its own
   dimension. "Drill a 6 mm hole at 12.5, -7" places it exactly. Chamfer any edge, curved or not.
 - **Drawings like desktop CAD.** Three views with hidden edges dashed, and an assembly drawing with balloons and the

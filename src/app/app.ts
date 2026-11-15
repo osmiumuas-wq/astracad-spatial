@@ -44,7 +44,8 @@ import { DEFAULT_GDT, drawingSvg, GdtScheme } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
-import { addFeature, designFlatPattern, designMembers, edgeNear, normalCode, OPS, parseDesign } from '../engine/design.js';
+import { addFeature, designFlatPattern, designMembers, edgeNear, featureDefs, normalCode, OPS, parseDesign } from '../engine/design.js';
+import { applyEquations, emptyEquations, EquationSet, evalExpr, spokenToExpr } from '../engine/equations.js';
 import { cutListCsv, parseProfile } from '../engine/weldment.js';
 import { flatPatternDxf, flatPatternSvg } from '../engine/sheetmetal.js';
 import { probe } from './context.js';
@@ -1174,6 +1175,12 @@ export class App {
       this.download(s.step, `${s.name}.step`, 'model/step');
       return `Saved ${s.name}.step: a solid with ${s.faces} faces, ready for SOLIDWORKS, CATIA or Creo.`;
     }
+    // Equations, variables and configurations.
+    const eqr = this.equationCommand(wordsToDigits(sentence).toLowerCase());
+    if (eqr) {
+      this.say(eqr, 'info');
+      return eqr;
+    }
     // Geometric tolerancing on drawings.
     const gd = this.gdtCommand(sentence.toLowerCase());
     if (gd) {
@@ -1487,6 +1494,110 @@ export class App {
   }
 
   /** A three-view A4 drawing of the current part, as SVG text. */
+  /** Global variables and the equations that drive dimensions from them (src/engine/equations.ts). */
+  equations: EquationSet = emptyEquations();
+  /** Named configurations of the design: its parameters and variables. */
+  private configs: Map<string, { params: Params; globals: Record<string, number> }> | null = null;
+
+  private loadConfigs(): Map<string, { params: Params; globals: Record<string, number> }> {
+    if (this.configs) return this.configs;
+    this.configs = new Map();
+    try {
+      const raw = localStorage.getItem('astracad:configs');
+      if (raw) for (const [k, v] of Object.entries(JSON.parse(raw) as Record<string, { params: Params; globals: Record<string, number> }>)) this.configs.set(k, v);
+    } catch {
+      // Storage blocked or empty: configurations live for the session.
+    }
+    return this.configs;
+  }
+
+  private saveConfigs(): void {
+    try {
+      localStorage.setItem('astracad:configs', JSON.stringify(Object.fromEntries(this.loadConfigs())));
+    } catch {
+      // Not stored; still usable this session.
+    }
+  }
+
+  /** Apply the equations to the part; the reply names what moved. */
+  private applyEq(lead: string): string {
+    const r = applyEquations(this.params.peek(), this.equations);
+    if (r.changed.length) this.replaceParams(r.params);
+    const tail = r.errors.length ? ` Not applied: ${r.errors.join('; ')}.` : r.changed.length ? ` Updated: ${r.changed.join(', ')}.` : '';
+    return `${lead}${tail}`;
+  }
+
+  /**
+   * Equations and configurations by voice: "variable width 60", "width equals 80", "feature 2 height equals width
+   * divided by 3", "show equations", "save configuration long", "configuration short", "design table".
+   */
+  equationCommand(t: string): string | null {
+    const eq = this.equations;
+    const v1 = t.match(/\b(?:variable|global|let)\s+([a-z][a-z0-9_]*)\s*(?:=|equals|to|is|be)?\s*(-?\d+(?:\.\d+)?)/u) ?? (() => {
+      const m = t.match(/^\s*([a-z][a-z0-9_]*)\s*(?:=|equals|is now)\s*(-?\d+(?:\.\d+)?)\s*$/u);
+      return m && m[1] in eq.globals ? m : null;
+    })();
+    if (v1) {
+      eq.globals[v1[1]] = parseFloat(v1[2]);
+      return this.applyEq(`${v1[1]} = ${v1[2]}.`);
+    }
+    const rule = t.match(/\bfeature\s+(\d+)\s+(.+?)\s+(?:=|equals|is)\s+(.+)$/u);
+    if (rule && this.jobId.peek() === 'design') {
+      const k = parseInt(rule[1], 10) - 1;
+      const defs = featureDefs(this.params.peek(), k);
+      const words = rule[2].replace(/\bthe\b/gu, '').trim();
+      const def = defs.find((d) => d.label.toLowerCase() === words) ?? defs.find((d) => d.label.toLowerCase().includes(words));
+      if (!def) return `Feature ${k + 1} has: ${defs.map((d) => d.label.toLowerCase()).join(', ') || 'no sizes'}.`;
+      const expr = spokenToExpr(rule[3]);
+      try {
+        evalExpr(expr, eq.globals);
+      } catch (e) {
+        return `That equation does not work yet: ${e instanceof Error ? e.message : String(e)}.`;
+      }
+      eq.rules = eq.rules.filter((r) => r.target !== def.id);
+      eq.rules.push({ target: def.id, expr, label: `feature ${k + 1} ${def.label.toLowerCase()}` });
+      return this.applyEq(`Feature ${k + 1} ${def.label.toLowerCase()} = ${expr}.`);
+    }
+    if (/\b(show|list) (the )?(equations|variables)\b/u.test(t)) {
+      const g = Object.entries(eq.globals).map(([k, v]) => `${k} = ${v}`);
+      const r = eq.rules.map((x) => `${x.label} = ${x.expr}`);
+      return g.length || r.length ? `Variables: ${g.join(', ') || 'none'}. Equations: ${r.join('; ') || 'none'}.` : 'No variables or equations yet: say "variable width 60".';
+    }
+    if (/\b(clear|remove|delete) (all )?(the )?equations\b/u.test(t)) {
+      this.equations = emptyEquations();
+      return 'Equations and variables cleared.';
+    }
+    const save = t.match(/\bsave (?:as )?(?:a )?configuration\s+([a-z0-9][a-z0-9 _-]*)/u);
+    if (save) {
+      const name = save[1].trim();
+      this.loadConfigs().set(name, { params: { ...this.params.peek() }, globals: { ...eq.globals } });
+      this.saveConfigs();
+      return `Configuration "${name}" saved (${this.loadConfigs().size} in all).`;
+    }
+    if (/\b(list|show) (the )?configurations\b/u.test(t)) {
+      const names = [...this.loadConfigs().keys()];
+      return names.length ? `Configurations: ${names.join(', ')}.` : 'No configurations yet: say "save configuration long".';
+    }
+    const use = t.match(/\b(?:switch to |use |show |open )?configuration\s+([a-z0-9][a-z0-9 _-]*)/u);
+    if (use) {
+      const name = use[1].trim();
+      const c = this.loadConfigs().get(name);
+      if (!c) return `There is no configuration "${name}". ${this.loadConfigs().size ? `There are: ${[...this.loadConfigs().keys()].join(', ')}.` : ''}`;
+      this.equations.globals = { ...c.globals };
+      this.replaceParams({ ...c.params });
+      return `Configuration "${name}".`;
+    }
+    if (/\bdesign table\b/u.test(t)) {
+      const cfgs = [...this.loadConfigs()];
+      if (cfgs.length < 2) return 'A design table needs two configurations or more.';
+      const keys = [...new Set(cfgs.flatMap(([, c]) => Object.keys(c.params)))].filter((k) => new Set(cfgs.map(([, c]) => c.params[k])).size > 1);
+      const lines = [['Configuration', ...keys].join(','), ...cfgs.map(([n, c]) => [n, ...keys.map((k) => c.params[k] ?? '')].join(','))];
+      this.download(lines.join('\n') + '\n', 'design-table.csv', 'text/csv');
+      return `Design table saved: ${cfgs.length} configurations, ${keys.length} values that differ.`;
+    }
+    return null;
+  }
+
   /** The drawing's geometric tolerancing (datums A, B, C and the frames' tolerances), or null for none. */
   gdt: GdtScheme | null = { ...DEFAULT_GDT };
 

@@ -618,6 +618,11 @@ export function editing(p: Params): number {
   return s >= 0 && s < n ? s : n - 1;
 }
 
+/** The editable sizes of feature k (0-based): what an equation can drive. */
+export function featureDefs(p: Params, k: number): ParamDef[] {
+  return liveDefs({ ...p, sel: k });
+}
+
 /** Editable sizes: those of the feature being edited, so "make it 10 taller" and the handles act on it. */
 function liveDefs(p: Params): ParamDef[] {
   const i = editing(p);
