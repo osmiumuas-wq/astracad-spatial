@@ -260,6 +260,36 @@ describe('production tools', () => {
     expect(typedSketch('sketch here')).toBeNull();
   });
 
+  it('bosses, gears, sweeps, ribs and mirrors stand exactly on their faces: one solid, verified in closed form', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    const solid = (p: Params): { verdict: string; components: number; volume: number } => {
+      const spec = designSpec(designJob.clamp(p).params);
+      const out = kernel.build(spec);
+      return { verdict: runGate({ props: out.props, generic: expectVolume(spec) }).verdict, components: out.props.components, volume: out.props.volume };
+    };
+    const base = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 10 });
+    // A boss picked a few micrometres off the top face (as a float32 mesh gives it) still lands on it.
+    const boss = parseDesign('sketch a rectangle 20 by 10 here 5 tall', base, [0, 10.0000038, 0], undefined, 0)!.params;
+    expect(solid(boss)).toMatchObject({ verdict: 'verified', components: 1 });
+    expect(solid(boss).volume).toBeCloseTo(24000 + 1000, 3);
+    const gear = parseDesign('gear module 2 with 20 teeth 8 thick', base)!.params;
+    expect(solid(gear)).toMatchObject({ verdict: 'verified', components: 1 });
+    const pipe = parseDesign('sweep a circle 8 along 30 up then 20 right bend 8', base)!.params;
+    expect(solid(pipe)).toMatchObject({ verdict: 'verified', components: 1 });
+    const mirror = addFeature(base, OPS.MIRROR, { a: 0, b: 30 });
+    expect(solid(mirror)).toMatchObject({ verdict: 'verified', components: 1 });
+    expect(solid(mirror).volume).toBeCloseTo(48000, 3);
+    // An L bracket with a rib: three bodies that touch.
+    let l = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 5 });
+    l = addFeature(l, OPS.BOX, { a: 5, b: 40, c: 30, d: -27.5, e: 0, f: 5 });
+    l = parseDesign('rib 4 thick 20 by 15', l, [-25, 20, 0], undefined, 2)!.params;
+    expect(solid(l)).toMatchObject({ components: 1 });
+    expect(solid(l).volume).toBeCloseTo(12000 + 6000 + 600, 3);
+    // A hole through the base only, beside the boss: still derived.
+    const holed = parseDesign('drill a 6 mm hole', addFeature(boss, OPS.MIRROR, { a: 2, b: -20 }), undefined, undefined, 0);
+    expect(holed).not.toBeNull();
+  });
+
   it('taps a thread inside a drilled hole', async () => {
     const { parseDesign } = await import('../src/engine/design.js');
     let p = addFeature(start, OPS.BOX, { a: 30, b: 30, c: 20 });

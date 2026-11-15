@@ -203,6 +203,51 @@ function squareTo(d: [number, number, number]): [number, number, number] {
   return [c[0] / l, c[1] / l, c[2] / l];
 }
 
+/**
+ * Flat faces of the features before `upto` square to axis k (0 x, 1 y, 2 z): their exact coordinates.
+ * A picked point is a few micrometres off its face (the mesh is float32); snapped onto it, a boss
+ * starts exactly on the face and fuses with it, and the bodies touch without overlapping.
+ */
+function facePlanes(p: Params, upto: number, k: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < Math.min(upto, featureCount(p)); i++) {
+    const { op, v } = readFeature(p, i);
+    if (op === OPS.BOX || op === OPS.CUTBOX) {
+      if (k === 0) out.push(v.d - v.a / 2, v.d + v.a / 2);
+      if (k === 1) out.push(v.f, v.f + v.c);
+      if (k === 2) out.push(v.e - v.b / 2, v.e + v.b / 2);
+    } else if (op === OPS.CYL || op === OPS.BORE || op === OPS.OUTLINE) {
+      if (k === 1) out.push(v.f, v.f + v.c);
+    } else if (op === OPS.FACE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.LOFT) {
+      const code = Math.round(op === OPS.FACE || op === OPS.FCIRC ? v.b : v.g);
+      const fr = FACE_FRAMES[Math.max(0, Math.min(5, code))];
+      const axis = fr.n.findIndex((x) => Math.abs(x) > 0.5);
+      if (axis !== k) continue;
+      const o = [v.d, v.e, v.f][k];
+      const cut = (op === OPS.FACE || op === OPS.FCIRC) && Math.round(v.g) === 1;
+      out.push(o, o + fr.n[k] * (cut ? -v.c : v.c));
+    }
+  }
+  return out;
+}
+
+/** A point moved along axis k onto the nearest face plane within 0.011 mm (else unchanged). */
+function onFace(p: Params, upto: number, at: [number, number, number], k: number): [number, number, number] {
+  let best = at[k];
+  let bestD = 0.011;
+  for (const c of facePlanes(p, upto, k)) {
+    if (Math.abs(c - at[k]) < bestD) {
+      bestD = Math.abs(c - at[k]);
+      best = c;
+    }
+  }
+  const out: [number, number, number] = [at[0], at[1], at[2]];
+  out[k] = best;
+  return out;
+}
+
+const axisOf = (code: number): number => FACE_FRAMES[Math.max(0, Math.min(5, code))].n.findIndex((x) => Math.abs(x) > 0.5);
+
 /** The feature list as Part Language v2. */
 export function designSpec(p: Params): PartSpec {
   const n = featureCount(p);
@@ -237,7 +282,8 @@ export function designSpec(p: Params): PartSpec {
       const cut = op === OPS.FCIRC && Math.round(v.g) === 1;
       // Exactly on the face (the origin is snapped): a gear or boss wider than the face must not poke out below it.
       const sink = 0;
-      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: [v.d - fr.n[0] * sink, v.e - fr.n[1] * sink, v.f - fr.n[2] * sink], normal: fr.n, x_dir: fr.x } });
+      const o = onFace(p, i, [v.d, v.e, v.f], axisOf(Math.round(op === OPS.FCIRC ? v.b : v.g)));
+      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: o, normal: fr.n, x_dir: fr.x } });
       if (op === OPS.FCIRC) {
         features.push({ $op: 'sketch.circle', id: `s${i}`, sketched_on: `pl${i}`, args: { diameter: v.a, x: 0, y: 0 } });
         if (cut) features.push(v.c > 0 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'reverse' } } : { $op: 'feature.cut', id, args: { through_all: true } });
@@ -254,17 +300,25 @@ export function designSpec(p: Params): PartSpec {
       const internal = Math.round(v.h) === 1;
       // A rod grows out of the face; a tapped thread runs into the material.
       const axis = internal ? [-fr.n[0], -fr.n[1], -fr.n[2]] : fr.n;
-      features.push({ $op: 'feature.thread', id, args: { origin: [v.d, v.e, v.f], axis, major: v.a, pitch: v.b, length: v.c, internal } });
+      features.push({ $op: 'feature.thread', id, args: { origin: onFace(p, i, [v.d, v.e, v.f], axisOf(Math.round(v.g))), axis, major: v.a, pitch: v.b, length: v.c, internal } });
     } else if (op === OPS.LOFT) {
       const fr = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(v.g)))];
-      features.push({ $op: 'ref.plane', id: `pa${i}`, args: { origin: [v.d, v.e, v.f], normal: fr.n, x_dir: fr.x } });
+      const o = onFace(p, i, [v.d, v.e, v.f], axisOf(Math.round(v.g)));
+      features.push({ $op: 'ref.plane', id: `pa${i}`, args: { origin: o, normal: fr.n, x_dir: fr.x } });
       features.push({ $op: 'sketch.profile', id: `sa${i}`, sketched_on: `pa${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
-      features.push({ $op: 'ref.plane', id: `pb${i}`, args: { origin: [v.d + fr.n[0] * v.c, v.e + fr.n[1] * v.c, v.f + fr.n[2] * v.c], normal: fr.n, x_dir: fr.x } });
+      features.push({ $op: 'ref.plane', id: `pb${i}`, args: { origin: [o[0] + fr.n[0] * v.c, o[1] + fr.n[1] * v.c, o[2] + fr.n[2] * v.c], normal: fr.n, x_dir: fr.x } });
       features.push({ $op: 'sketch.profile', id: `sb${i}`, sketched_on: `pb${i}`, args: { points: outlinePts(p, Math.round(v.b)) } });
       features.push({ $op: 'feature.loft', id, args: { sketches: [`sa${i}`, `sb${i}`] } });
     } else if (op === OPS.SWEEP) {
-      const path = pathPts(p, Math.round(v.b));
+      let path = pathPts(p, Math.round(v.b));
       if (path.length >= 2) {
+        const run = [path[1][0] - path[0][0], path[1][1] - path[0][1], path[1][2] - path[0][2]];
+        const k = run.findIndex((x) => Math.abs(x) > 1e-9 && run.every((y, j) => j === run.indexOf(x) || Math.abs(y) < 1e-9));
+        if (k >= 0) {
+          const s = onFace(p, i, path[0], k);
+          const dk = s[k] - path[0][k];
+          path = path.map((q) => [q[0], q[1], q[2]].map((x, j) => (j === k ? x + dk : x)) as [number, number, number]);
+        }
         const d0: [number, number, number] = [path[1][0] - path[0][0], path[1][1] - path[0][1], path[1][2] - path[0][2]];
         const l0 = Math.hypot(d0[0], d0[1], d0[2]) || 1;
         const n: [number, number, number] = [d0[0] / l0, d0[1] / l0, d0[2] / l0];
@@ -273,15 +327,15 @@ export function designSpec(p: Params): PartSpec {
         features.push({ $op: 'feature.sweep', id, args: path.length > 2 ? { sketch: `s${i}`, path, bend_radius: v.c } : { sketch: `s${i}`, path } });
       }
     } else if (op === OPS.RIB) {
-      // In the plane of the floor's up and the wall's normal; the triangle's legs sink 0.01 mm into both.
+      // In the plane of the floor's up and the wall's normal; its legs lie on the wall and the floor.
       const fr = FACE_FRAMES[Math.max(2, Math.min(5, Math.round(v.g)))];
       const x = fr.n;
       // leg x up: the sketch's y (normal x x_dir) then runs up the wall.
       const n: [number, number, number] = [-x[2], 0, x[0]];
       const t = v.a;
-      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: [v.d - n[0] * t / 2, v.e - n[1] * t / 2, v.f - n[2] * t / 2], normal: n, x_dir: x } });
-      const s = 0.01;
-      features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: [[-s, -s], [v.b * (1 + s / v.c), -s], [-s, v.c * (1 + s / v.b)]] } });
+      const c0 = onFace(p, i, onFace(p, i, [v.d, v.e, v.f], 1), axisOf(Math.round(v.g)));
+      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: [c0[0] - n[0] * t / 2, c0[1] - n[1] * t / 2, c0[2] - n[2] * t / 2], normal: n, x_dir: x } });
+      features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: [[0, 0], [v.b, 0], [0, v.c]] } });
       features.push({ $op: 'feature.extrude', id, args: { depth: t } });
     } else if (op === OPS.ROUND) {
       features.push({ $op: 'feature.round', id, args: Math.round(v.b) === 1 ? { radius: v.a, all: true } : Math.round(v.f) === 1 ? { radius: v.a, at: [v.c, v.d, v.e], kind: 'chamfer' } : { radius: v.a, at: [v.c, v.d, v.e] } });
@@ -293,10 +347,11 @@ export function designSpec(p: Params): PartSpec {
       features.push({ $op: 'feature.mirror', id, args: { plane: ['X', 'Y', 'Z'][Math.max(0, Math.min(2, Math.round(v.a)))], offset: v.b } });
     } else if (op === OPS.FACE || op === OPS.REVOLVE) {
       const fr = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(op === OPS.FACE ? v.b : v.g)))];
-      // A boss starts 0.01 mm inside the face it stands on, so it always fuses with it (the overlap is
+      // A boss starts exactly on the face it stands on (snapped onto it), so it fuses with it and the two touch
+      // without overlapping (the closed-form check adds their volumes). Formerly: a 0.01 mm sink (the overlap is
       // inside material that is already there, so the volume is unchanged).
-      const sink = op === OPS.FACE && Math.round(v.g) !== 1 ? 0.01 : 0;
-      const origin: [number, number, number] = [v.d - fr.n[0] * sink, v.e - fr.n[1] * sink, v.f - fr.n[2] * sink];
+      const sink = 0;
+      const origin: [number, number, number] = op === OPS.FACE ? onFace(p, i, [v.d, v.e, v.f], axisOf(Math.round(v.b))) : [v.d, v.e, v.f];
       features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin, normal: fr.n, x_dir: fr.x } });
       features.push(outlineSketch(p, Math.round(v.a), `s${i}`, `pl${i}`));
       if (op === OPS.REVOLVE) features.push({ $op: 'feature.revolve', id, args: { angle: Math.max(1, Math.min(360, v.b || 360)), axis: 'v' } });
@@ -902,12 +957,11 @@ function parseProduction(t: string, p: Params, here: [number, number, number] | 
     const DIRS: Record<string, [number, number, number]> = { right: [1, 0, 0], left: [-1, 0, 0], up: [0, 1, 0], down: [0, -1, 0], forward: [0, 0, 1], front: [0, 0, 1], back: [0, 0, -1], backward: [0, 0, -1] };
     const legs = [...legsText.matchAll(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(right|left|up|down|forward|front|backward|back)\b/gu)].map((m) => ({ l: parseFloat(m[1]), d: DIRS[m[2]] }));
     if (!legs.length) legs.push({ l: 30, d: here ? FACE_FRAMES[fc].n : [0, 1, 0] });
-    // Start 0.01 mm inside the face, so the sweep fuses with what it grows from.
-    const first = legs[0].d;
-    const path: [number, number, number][] = [[at[0] - first[0] * 0.01, at[1] - first[1] * 0.01, at[2] - first[2] * 0.01]];
-    legs.forEach((g, k) => {
+    // It starts on the face it grows from (snapped onto it when the part is built).
+    const path: [number, number, number][] = [[at[0], at[1], at[2]]];
+    legs.forEach((g) => {
       const q = path[path.length - 1];
-      const l = g.l + (k === 0 ? 0.01 : 0);
+      const l = g.l;
       path.push([q[0] + g.d[0] * l, q[1] + g.d[1] * l, q[2] + g.d[2] * l]);
     });
     const size = Math.max(...prof.map(([x, y]) => Math.hypot(x, y)));
@@ -947,7 +1001,7 @@ function parseProduction(t: string, p: Params, here: [number, number, number] | 
     const oa = addOutline(p, A);
     const ob = addOutline(oa.params, B);
     const h = over ? parseFloat(over[1] ?? over[2]) : 20;
-    return { params: addFeature(ob.params, OPS.LOFT, { a: oa.index, b: ob.index, c: h, d: at[0], e: at[1] - (fc === 0 ? 0.01 : 0), f: at[2], g: fc }), reply: `Lofted ${h} mm from one shape to the other on the ${face} face.` };
+    return { params: addFeature(ob.params, OPS.LOFT, { a: oa.index, b: ob.index, c: h, d: at[0], e: at[1], f: at[2], g: fc }), reply: `Lofted ${h} mm from one shape to the other on the ${face} face.` };
   }
   // Holes on any face, and counterbores.
   const cb = t.match(/\bcounter ?bore\s*(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:by\s*)?(\d+(?:\.\d+)?)?/u);

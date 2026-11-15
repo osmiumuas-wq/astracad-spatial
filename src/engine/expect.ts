@@ -98,6 +98,46 @@ function wallDistance(p: Vec2, polys: Vec2[][]): number {
   return d;
 }
 
+/** An axis-aligned box that holds a body (conservative: the body lies inside it). */
+interface Box {
+  min: Vec3;
+  max: Vec3;
+}
+
+function boxOf(pts: Vec3[], grow = 0): Box {
+  const min: Vec3 = [Infinity, Infinity, Infinity];
+  const max: Vec3 = [-Infinity, -Infinity, -Infinity];
+  for (const p of pts) {
+    for (let k = 0; k < 3; k++) {
+      min[k] = Math.min(min[k], p[k] - grow);
+      max[k] = Math.max(max[k], p[k] + grow);
+    }
+  }
+  return { min, max };
+}
+
+/** True when two boxes share volume (touching faces do not count). */
+function overlaps(a: Box, b: Box): boolean {
+  for (let k = 0; k < 3; k++) if (Math.min(a.max[k], b.max[k]) - Math.max(a.min[k], b.min[k]) <= 1e-7) return false;
+  return true;
+}
+
+/** A sketch point at height z along the frame, in model space. */
+function onFrame(fr: Frame, q: Vec2, z: number): Vec3 {
+  return [
+    fr.o[0] + q[0] * fr.x[0] + q[1] * fr.y[0] + z * fr.n[0],
+    fr.o[1] + q[0] * fr.x[1] + q[1] * fr.y[1] + z * fr.n[1],
+    fr.o[2] + q[0] * fr.x[2] + q[1] * fr.y[2] + z * fr.n[2],
+  ];
+}
+
+/** The box of a prism: its outline (facets bulge outwards, so this holds the exact one too) at both ends. */
+function prismBox(fr: Frame, polys: Vec2[][], z0: number, z1: number): Box {
+  const pts: Vec3[] = [];
+  for (const poly of polys) for (const q of poly) pts.push(onFrame(fr, q, z0), onFrame(fr, q, z1));
+  return boxOf(pts);
+}
+
 function unknown(reason: string, terms: string[]): Expectation {
   return { volume: null, reason, terms };
 }
@@ -128,6 +168,22 @@ export function expectVolume(spec: PartSpec): Expectation {
   let volume = 0;
   let prism: Prism | null = null;
   let revolved = false;
+  /** Boxes of the bodies so far: a new body whose box only touches theirs adds its volume exactly. */
+  const bodies: Box[] = [];
+  let mirrored = false;
+  /** A new body: refused when its box shares volume with an earlier body's (then the union has no closed form). */
+  const addBody = (box: Box | Box[], id: string): string | null => {
+    const list = Array.isArray(box) ? box : [box];
+    for (const b of bodies) for (const nb of list) if (overlaps(b, nb)) return `"${id}": this body may overlap an earlier one; their union has no closed form here`;
+    bodies.push(...list);
+    return null;
+  };
+  /** A removal (hole, cut) must stay in the first body: its box may not share volume with any later body. */
+  const clearOfOthers = (box: Box, id: string): string | null => {
+    if (mirrored) return `"${id}": a cut after a mirror is not derived here`;
+    for (let k = 1; k < bodies.length; k++) if (overlaps(bodies[k], box)) return `"${id}": the cut reaches a later body`;
+    return null;
+  };
   const removals: Removal[] = [];
   /** Volume removed by each hole feature, per instance, for patterns. */
   const holeSeeds = new Map<string, { circles: Removal[]; perInstance: number[] }>();
@@ -192,12 +248,12 @@ export function expectVolume(spec: PartSpec): Expectation {
       if (!sk) {
         return unknown('no sketch to extrude', terms);
       }
-      if (prism || revolved) {
-        return unknown(`"${f.id}": a second boss may overlap the first; its union has no closed form here`, terms);
-      }
+      const second = bodies.length > 0;
+      const before = volume;
       const depth = numArg(a.depth, 'depth');
       const [z0, z1] = range(a.direction, depth, 'normal');
       const mod = mods.get(f.id);
+      if (second && mod?.shell) return unknown(`"${f.id}": a shelled second body is not derived here`, terms);
       let loops = sk.loops;
       let inner: Seg[][] | null = null;
       let cavity: [number, number] | null = null;
@@ -234,7 +290,15 @@ export function expectVolume(spec: PartSpec): Expectation {
         revolved = true;
         continue;
       }
-      prism = { frame: sk.frame, polys: loops.map(tessellateLoop), z0, z1 };
+      const polysNow = loops.map(tessellateLoop);
+      const why = addBody(prismBox(sk.frame, polysNow, z0, z1), f.id);
+      if (why) return unknown(why, terms);
+      if (second) {
+        volume += before;
+        terms.push(`${f.id}: a separate body, touching the others: volumes add`);
+      } else {
+        prism = { frame: sk.frame, polys: polysNow, z0, z1 };
+      }
       continue;
     }
 
@@ -242,16 +306,31 @@ export function expectVolume(spec: PartSpec): Expectation {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
     }
     if (f.$op === 'feature.mirror') {
-      return unknown(`"${f.id}": a mirrored copy may overlap the original`, terms);
+      // The copy only touches the original (it lies wholly on the far side of the plane): the volume doubles.
+      const axis = String(a.plane ?? 'X').toUpperCase();
+      const k: number = axis === 'X' ? 0 : axis === 'Y' ? 1 : axis === 'Z' ? 2 : -1;
+      const off = a.offset === undefined ? 0 : Number(a.offset);
+      if (k < 0 || !bodies.length) return unknown(`"${f.id}": a mirrored copy may overlap the original`, terms);
+      const all = boxOf(bodies.flatMap((b) => [b.min, b.max]));
+      const flip = (b: Box): Box => {
+        const min: Vec3 = [...b.min] as Vec3;
+        const max: Vec3 = [...b.max] as Vec3;
+        min[k] = 2 * off - b.max[k];
+        max[k] = 2 * off - b.min[k];
+        return { min, max };
+      };
+      if (overlaps(all, flip(all))) return unknown(`"${f.id}": the mirror plane passes through the part, so the copy overlaps it`, terms);
+      bodies.push(...bodies.map(flip));
+      volume *= 2;
+      mirrored = true;
+      terms.push(`${f.id}: mirrored across ${axis} = ${fmt(off)}, touching the original: volume doubles to ${fmt(volume)}`);
+      continue;
     }
     if (f.$op === 'feature.fillet' || f.$op === 'feature.shell' || f.$op === 'feature.chamfer') {
       continue; // folded into the extrusion it names
     }
 
     if (f.$op === 'feature.loft') {
-      if (prism || revolved) {
-        return unknown(`"${f.id}": a second boss may overlap the first`, terms);
-      }
       const ids = Array.isArray(a.sketches) ? (a.sketches as string[]) : [];
       const sections = ids.map((k) => sketches.get(k));
       if (sections.length < 2 || sections.some((x) => !x)) {
@@ -267,7 +346,13 @@ export function expectVolume(spec: PartSpec): Expectation {
         return unknown(`"${f.id}": profiles of different kinds or corner counts are resampled; that loft has no closed form`, terms);
       }
       terms.push(...lv.terms.map((t) => `${f.id}: ${t}`));
-      volume = lv.volume;
+      {
+        const pts: Vec3[] = [];
+        for (const s of sections as { frame: Frame; loops: Seg[][] }[]) for (const poly of s.loops.map(tessellateLoop)) for (const q of poly) pts.push(onFrame(s.frame, q, 0));
+        const why = addBody(boxOf(pts), f.id);
+        if (why) return unknown(why, terms);
+      }
+      volume += lv.volume;
       revolved = true;
       continue;
     }
@@ -276,9 +361,6 @@ export function expectVolume(spec: PartSpec): Expectation {
       const sk = takeSketch(f);
       if (!sk) {
         return unknown('no sketch to sweep', terms);
-      }
-      if (prism || revolved) {
-        return unknown(`"${f.id}": a second boss may overlap the first`, terms);
       }
       let plan: ReturnType<typeof sweepPlan>;
       try {
@@ -289,14 +371,47 @@ export function expectVolume(spec: PartSpec): Expectation {
       const integ = sketchIntegrals(plan.loops);
       let straight = 0;
       for (const r of plan.runs) straight += r.length;
-      volume = integ.area * straight;
-      terms.push(`${f.id}: profile area ${fmt(integ.area)} x straight length ${fmt(straight)} = ${fmt(volume)}`);
+      let sv = integ.area * straight;
+      terms.push(`${f.id}: profile area ${fmt(integ.area)} x straight length ${fmt(straight)} = ${fmt(sv)}`);
       for (const b of plan.bends) {
         const moment = momentAboutLine(integ, b.p0, b.ax);
         const part = ((b.angle * Math.PI) / 180) * moment;
-        volume += part;
+        sv += part;
         terms.push(`${f.id}: bend, Pappus ${fmt((b.angle * Math.PI) / 180)} rad x first moment ${fmt(moment)} = ${fmt(part)}`);
       }
+      {
+        // The tube lies within the profile's reach of the path (bends cut inside the corners).
+        const path = a.path as Vec3[];
+        let reach = 0;
+        for (const poly of sk.loops.map(tessellateLoop)) for (const q of poly) {
+          const w = onFrame(sk.frame, q, 0);
+          reach = Math.max(reach, Math.hypot(w[0] - path[0][0], w[1] - path[0][1], w[2] - path[0][2]));
+        }
+        // One box per run: the profile's reach across it, and along it only past a bend (a free end is flat).
+        const boxes = path.slice(0, -1).map((p0, i) => {
+          const p1 = path[i + 1];
+          const b = boxOf([p0, p1], reach);
+          const d: Vec3 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+          const k = d.findIndex((x, j) => Math.abs(x) > 1e-9 && d.every((y, m) => m === j || Math.abs(y) < 1e-9));
+          if (k >= 0) {
+            const lo = Math.min(p0[k], p1[k]);
+            const hi = Math.max(p0[k], p1[k]);
+            const startLo = p0[k] <= p1[k];
+            if (i === 0) {
+              if (startLo) b.min[k] = lo;
+              else b.max[k] = hi;
+            }
+            if (i === path.length - 2) {
+              if (startLo) b.max[k] = hi;
+              else b.min[k] = lo;
+            }
+          }
+          return b;
+        });
+        const why = addBody(boxes, f.id);
+        if (why) return unknown(why, terms);
+      }
+      volume += sv;
       revolved = true;
       continue;
     }
@@ -396,6 +511,14 @@ export function expectVolume(spec: PartSpec): Expectation {
           }
         }
         const circle: Removal = { u: p[0], v: p[1], r: rMax, z0, z1 };
+        {
+          const zt = [p[2] + along * local[0], p[2] + along * local[1]].map((z) => Math.max(-1e6, Math.min(1e6, z)));
+          const pf = prism.frame;
+          const corners: Vec3[] = [];
+          for (const du of [-rMax, rMax]) for (const dv of [-rMax, rMax]) for (const z of zt) corners.push(onFrame(pf, [p[0] + du, p[1] + dv], z));
+          const clash = clearOfOthers(boxOf(corners), f.id);
+          if (clash) return unknown(clash, terms);
+        }
         const why = blocked(circle);
         if (why) {
           return unknown(`"${f.id}": ${why}`, terms);
@@ -444,6 +567,15 @@ export function expectVolume(spec: PartSpec): Expectation {
         return unknown(`"${f.id}": the cut meets or comes within 0.05 mm of a wall`, terms);
       }
       const zs = [zEntry + along * local[0], zEntry + along * local[1]].sort((x, y) => x - y);
+      {
+        const corners: Vec3[] = [];
+        for (const poly of polys) for (const q of poly) {
+          const m = mapPoint(sk.frame, q, prism.frame);
+          for (const z of zs) corners.push(onFrame(prism.frame, [m[0], m[1]], Math.max(-1e6, Math.min(1e6, z))));
+        }
+        const clash = clearOfOthers(boxOf(corners), f.id);
+        if (clash) return unknown(clash, terms);
+      }
       const z0 = Math.max(prism.z0, zs[0]);
       const z1 = Math.min(prism.z1, zs[1]);
       if (!(z1 > z0)) {
@@ -470,6 +602,7 @@ export function expectVolume(spec: PartSpec): Expectation {
     }
 
     if (f.$op === 'feature.pattern.circular' || f.$op === 'feature.pattern.linear') {
+      if (bodies.length > 1) return unknown(`"${f.id}": patterns in a part of several bodies are not derived here`, terms);
       if (!prism) {
         return unknown(`"${f.id}": patterns are derived only in a prismatic body`, terms);
       }
