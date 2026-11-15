@@ -19,7 +19,7 @@ import soundfile as sf
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from film import VID, VOICE, timeline  # noqa: E402
+from film import NAME, SUFFIX, VID, VOICE, timeline  # noqa: E402
 
 FFMPEG = os.environ.get('FFMPEG', r'C:/Users/solid/.local/bin/ffmpeg.exe')
 FONTS = r'C:/Windows/Fonts'
@@ -192,7 +192,8 @@ def callout_layer(clip, local, box_view):
 
 def footage(clip, local):
     sc = scene(clip['src'])
-    im = sc.image(clip.get('in', 0) + local)
+    # `speed` plays the take faster (a mild time-lapse, so a chapter shows all its steps).
+    im = sc.image(clip.get('in', 0) + local * clip.get('speed', 1.0))
     cx, cy, side = zoom_at(clip, local)
     side = min(SRC, side)
     cx = min(SRC - side / 2, max(side / 2, cx))
@@ -473,7 +474,7 @@ def load48(path):
 def sound(path):
     sr = 48000
     n = int(TOTAL * sr)
-    music, _ = sf.read(os.path.join(VID, 'audio', 'music2.wav'), dtype='float32', always_2d=True)
+    music, _ = sf.read(os.path.join(VID, 'audio', f'music{SUFFIX}.wav'), dtype='float32', always_2d=True)
     music = np.pad(music, ((0, max(0, n - len(music))), (0, 0)))[:n]
     voice = np.zeros(n, np.float32)
     active = np.zeros(n, np.float32)
@@ -490,7 +491,12 @@ def sound(path):
             voice[i:j] += s[:j - i]
             active[i:j] = 1
     k = int(0.4 * sr)
-    env = np.convolve(active, np.ones(k) / k, mode='same')
+    # The same centred moving average as np.convolve(active, ones(k) / k, 'same'), from a running sum: the
+    # direct convolution is O(n k) (minutes for a five-minute film), this is O(n).
+    c = np.concatenate([[0.0], np.cumsum(active, dtype=np.float64)])
+    lo = np.clip(np.arange(n) - k // 2, 0, n)
+    hi = np.clip(np.arange(n) - k // 2 + k, 0, n)
+    env = ((c[hi] - c[lo]) / k).astype(np.float32)
     gain = 1 - 0.72 * np.clip(env * 1.4, 0, 1)
     voice /= max(1e-6, np.max(np.abs(voice))) / 0.9
     mix = music * gain[:, None] * 0.6 + voice[:, None] * 0.95
@@ -499,9 +505,9 @@ def sound(path):
 
 
 def main():
-    audio = os.path.join(VID, 'audio', 'mix2.wav')
+    audio = os.path.join(VID, 'audio', f'mix{SUFFIX}.wav')
     sound(audio)
-    out = os.path.join(VID, 'astracad-spatial-film.mp4')
+    out = os.path.join(VID, f'astracad-spatial-{NAME}.mp4')
     cmd = [FFMPEG, '-hide_banner', '-loglevel', 'error', '-y',
            '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
            '-i', audio,

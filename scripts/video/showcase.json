@@ -1,0 +1,937 @@
+{
+ "comment": "The showcase film: every shot is the real app recorded in the XR emulator (artifacts/video/scenes/<src>, 1440 px). Fields as in film.json.",
+ "chapters": [
+  {
+   "id": "intro",
+   "title": "AstraCAD Spatial",
+   "narration": "AstraCAD Spatial is a complete CAD workstation inside Meta Quest. Sketch, model, assemble, test and make real parts, with your hands and your voice, and every part is checked before it leaves the bench.",
+   "bullets": [
+    [
+     "Sketch, model, assemble, test and manufacture",
+     "Sketch"
+    ],
+    [
+     "Hands and voice, in your own room",
+     "hands"
+    ],
+    [
+     "Every part checked by exact maths",
+     "checked"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "hero",
+     "in": 1.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       14,
+       720,
+       760,
+       1280
+      ]
+     ]
+    }
+   ],
+   "kind": "title",
+   "kicker": "CAD for Meta Quest"
+  },
+  {
+   "id": "bench",
+   "title": "The bench, in your room",
+   "narration": "It runs in the Quest browser, with nothing to install. The bench lands on your desk, anchors to the room, and a guide lights up each next step.",
+   "bullets": [
+    [
+     "WebXR in the Quest Browser: no install",
+     "browser"
+    ],
+    [
+     "Anchored to your room",
+     "anchors"
+    ],
+    [
+     "A guide for each next step",
+     "guide"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "arrive",
+     "in": 0.3
+    }
+   ]
+  },
+  {
+   "id": "shape",
+   "title": "Shape it with your hands",
+   "narration": "Pinch a handle and pull. The kernel rebuilds the solid as you move, and the truth gate checks it against an exact formula, to better than one part in a billion.",
+   "bullets": [
+    [
+     "Pinch and pull: the solid rebuilds live",
+     "rebuilds"
+    ],
+    [
+     "Truth gate: closed-form volume, size and holes",
+     "truth gate"
+    ],
+    [
+     "A part that fails is never shown as verified",
+     "billion"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "shape",
+     "in": 4.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       4.5,
+       720,
+       720,
+       1440
+      ],
+      [
+       6.5,
+       560,
+       560,
+       880
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "voice",
+   "title": "Or just say it",
+   "narration": "Or just say it. Speech is recognised on the headset, and every size comes from your words. Type it if you prefer: the same commands work either way.",
+   "bullets": [
+    [
+     "Speech recognised on the headset",
+     "recognised"
+    ],
+    [
+     "Sizes come only from your words",
+     "words"
+    ],
+    [
+     "Voice and typing share one command set",
+     "Type"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "voice",
+     "in": 0.5
+    }
+   ]
+  },
+  {
+   "id": "sketchbench",
+   "title": "A real sketcher",
+   "narration": "Point at any face and open a sketch. Lines chain and snap to points, centres and midpoints. A tangent arc, a circle, then Smart Dimension: say forty five, and the solver makes it so. Extrude, and the profile becomes a verified solid.",
+   "bullets": [
+    [
+     "Line, rectangle, circle, arc, slot, polygon",
+     "Lines"
+    ],
+    [
+     "Snaps and relations, solved by FreeCAD's planeGCS",
+     "snap"
+    ],
+    [
+     "Smart Dimension by voice; degrees of freedom shown",
+     "Smart Dimension"
+    ],
+    [
+     "Extrude, cut or revolve every closed region",
+     "Extrude"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "sketchbench",
+     "in": 1.5,
+     "zoom": [
+      [
+       0,
+       720,
+       640,
+       1200
+      ],
+      [
+       10,
+       720,
+       600,
+       900
+      ],
+      [
+       20,
+       720,
+       640,
+       1100
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sketchtools",
+   "title": "Every sketch tool",
+   "narration": "The sketch tools you expect: fillet a corner, offset an outline, mirror, trim and extend, draw splines and ellipses, and sketch on planes at any angle.",
+   "bullets": [
+    [
+     "Fillet, offset, mirror, trim, extend",
+     "fillet"
+    ],
+    [
+     "Splines, ellipses and sketch patterns",
+     "splines"
+    ],
+    [
+     "Offset and angled sketch planes",
+     "angle"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "sketchtools",
+     "in": 2.0,
+     "speed": 1.5,
+     "zoom": [
+      [
+       0,
+       720,
+       640,
+       1150
+      ],
+      [
+       14,
+       720,
+       620,
+       880
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "ribbon",
+   "title": "Every feature, one ribbon",
+   "narration": "Every feature lives in a ribbon of tabs: create, holes, modify, sheet metal and output. Add a boss, drill a hole where you point, pattern it round, and fillet the result.",
+   "bullets": [
+    [
+     "A ribbon of tabs, pressed by hand",
+     "ribbon"
+    ],
+    [
+     "Create, holes, modify, sheet metal, output",
+     "create"
+    ],
+    [
+     "Holes where you point, patterns, fillets",
+     "pattern"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "ribbon",
+     "in": 0.3,
+     "speed": 1.7,
+     "zoom": [
+      [
+       0,
+       600,
+       660,
+       1300
+      ],
+      [
+       5,
+       600,
+       660,
+       1300
+      ],
+      [
+       8,
+       760,
+       620,
+       1000
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "production",
+   "title": "Production features",
+   "narration": "Production features come from a sentence: an involute spur gear, a metric thread, a loft from a rectangle to a circle, and a pipe swept along a bent path.",
+   "bullets": [
+    [
+     "ISO involute gears and metric threads",
+     "involute"
+    ],
+    [
+     "Lofts between any two profiles",
+     "loft"
+    ],
+    [
+     "Sweeps along paths with round bends",
+     "swept"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "production",
+     "in": 1.0,
+     "speed": 1.45,
+     "zoom": [
+      [
+       0,
+       720,
+       660,
+       1200
+      ],
+      [
+       16,
+       720,
+       640,
+       950
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "edges",
+   "title": "Fillet and chamfer any edge",
+   "narration": "Point at any edge, straight or curved. A rolling ball follows tangent edges, chamfers follow any curve, and round all edges does the whole part at once.",
+   "bullets": [
+    [
+     "Rolling-ball fillets that follow tangent edges",
+     "rolling ball"
+    ],
+    [
+     "Chamfers on curved edges",
+     "chamfers"
+    ],
+    [
+     "Round every edge in one step",
+     "round all"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "edges",
+     "in": 1.0,
+     "speed": 1.5,
+     "zoom": [
+      [
+       0,
+       720,
+       660,
+       1150
+      ],
+      [
+       14,
+       720,
+       640,
+       900
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "surfaces",
+   "title": "Freeform and organic",
+   "narration": "For shapes that are not boxes, pull the control points of a B-spline surface by hand. Or push and pull a subdivision cage, mirrored left to right, into a smooth organic solid.",
+   "bullets": [
+    [
+     "B-spline surfaces shaped by their control points",
+     "B-spline"
+    ],
+    [
+     "Subdivision modelling with symmetry",
+     "subdivision"
+    ],
+    [
+     "Smooth, closed and measured",
+     "smooth"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "surfaces",
+     "in": 1.5,
+     "speed": 1.3,
+     "dur": 6.5,
+     "zoom": [
+      [
+       0,
+       720,
+       660,
+       1200
+      ],
+      [
+       7,
+       720,
+       640,
+       980
+      ]
+     ]
+    },
+    {
+     "src": "surfaces",
+     "in": 14.8,
+     "zoom": [
+      [
+       0,
+       720,
+       660,
+       1100
+      ],
+      [
+       8,
+       720,
+       640,
+       900
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mech",
+   "title": "Springs, knurls and finish",
+   "narration": "Mechanical details are real geometry: a closed-end compression spring, a diamond knurl with real teeth, and lettering engraved into the face. Then choose how it looks: anodised, brushed aluminium, or carbon fibre.",
+   "bullets": [
+    [
+     "Springs and coils on a helix",
+     "spring"
+    ],
+    [
+     "Real knurling and engraved lettering",
+     "knurl"
+    ],
+    [
+     "Appearances: metals, colours, carbon, wood",
+     "anodised"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "mech",
+     "in": 0.5,
+     "speed": 1.35,
+     "zoom": [
+      [
+       0,
+       720,
+       660,
+       1150
+      ],
+      [
+       14,
+       720,
+       640,
+       900
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "prop",
+   "title": "Blades and propellers",
+   "narration": "Fans and propellers are built from NACA airfoil sections, tapered and twisted along the span, and joined to their hub.",
+   "bullets": [
+    [
+     "NACA four-digit airfoils",
+     "NACA"
+    ],
+    [
+     "Taper and twist from root to tip",
+     "twisted"
+    ],
+    [
+     "Any number of blades round a hub",
+     "hub"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "prop",
+     "in": 0.5,
+     "zoom": [
+      [
+       0,
+       720,
+       660,
+       1100
+      ],
+      [
+       10,
+       720,
+       640,
+       880
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "sheet",
+   "title": "Sheet metal",
+   "narration": "Sheet metal works like it does at the bench: a base flange, edge flanges at any angle, a hem, a flange on a flange. Then save the flat pattern as DXF, with every bend allowance worked out.",
+   "bullets": [
+    [
+     "Flanges, hems, jogs and mitre flanges",
+     "edge flanges"
+    ],
+    [
+     "Exact bends, verified in closed form",
+     "hem"
+    ],
+    [
+     "Flat pattern DXF with bend allowance",
+     "flat pattern"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "sheet",
+     "in": 0.5,
+     "speed": 1.3,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       16,
+       720,
+       690,
+       1320
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "weld",
+   "title": "Weldments",
+   "narration": "Sketch a frame as lines, and turn it into structural members: square tube here. The cut list gives every length and its mass.",
+   "bullets": [
+    [
+     "From any frame sketch",
+     "frame"
+    ],
+    [
+     "Tube, angle and flat-bar members",
+     "structural members"
+    ],
+    [
+     "A cut list with lengths and mass",
+     "cut list"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "weld",
+     "in": 1.0,
+     "speed": 1.6,
+     "zoom": [
+      [
+       0,
+       740,
+       680,
+       1360
+      ],
+      [
+       10,
+       740,
+       660,
+       1180
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mould",
+   "title": "Moulds and castings",
+   "narration": "Ready to mould it? Draft analysis colours every face: green and blue release, amber needs draft. Then find the parting line, and split a mould block into core and cavity.",
+   "bullets": [
+    [
+     "Draft analysis on every face",
+     "Draft analysis"
+    ],
+    [
+     "The parting line, found and drawn",
+     "parting line"
+    ],
+    [
+     "Core and cavity, with shrinkage",
+     "core and cavity"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "mould",
+     "in": 0.5,
+     "speed": 1.25,
+     "zoom": [
+      [
+       0,
+       720,
+       660,
+       1100
+      ],
+      [
+       12,
+       720,
+       640,
+       860
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "config",
+   "title": "Equations and configurations",
+   "narration": "Design intent stays editable. A variable drives the flange through an equation. Save configurations, and switch the whole part between them.",
+   "bullets": [
+    [
+     "Global variables and equations",
+     "variable"
+    ],
+    [
+     "Configurations of the whole part",
+     "configurations"
+    ],
+    [
+     "A design table for every size",
+     "switch"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "config",
+     "in": 0.5,
+     "speed": 1.6,
+     "zoom": [
+      [
+       0,
+       770,
+       680,
+       1320
+      ],
+      [
+       12,
+       770,
+       660,
+       1160
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "test",
+   "title": "Test it with your hand",
+   "narration": "Now test it. Push with your open palm, and the stress solver runs live, cross-checked against CalculiX. Three engineering agents read every result and suggest the fix.",
+   "bullets": [
+    [
+     "A live load from your open palm",
+     "palm"
+    ],
+    [
+     "Stress solver, checked against CalculiX",
+     "CalculiX"
+    ],
+    [
+     "Agents for strength, printing and cost",
+     "agents"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "test",
+     "in": 19.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       2.0,
+       640,
+       700,
+       960
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "lighter",
+   "title": "Lighter, and steady",
+   "narration": "Grow bone strips away the material the load does not need, and vibration finds each natural frequency and its mode shape.",
+   "bullets": [
+    [
+     "Topology optimisation on the headset",
+     "Grow bone"
+    ],
+    [
+     "Natural frequencies and mode shapes",
+     "vibration"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "grow",
+     "in": 1.0,
+     "dur": 8.0
+    },
+    {
+     "src": "modes",
+     "in": 1.0
+    }
+   ]
+  },
+  {
+   "id": "assembly",
+   "title": "Assemblies in motion",
+   "narration": "Assemble parts with mates: coincident, concentric, hinges, sliders, gears, screws and rack and pinion. Turn the hinge, and a four-bar linkage runs through its full revolution.",
+   "bullets": [
+    [
+     "Mates, including gears, screws, racks and limits",
+     "mates"
+    ],
+    [
+     "Hinges you turn by hand, with limits",
+     "hinge"
+    ],
+    [
+     "Closed loops solved, like a four-bar linkage",
+     "linkage"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "assembly2",
+     "in": 2.0,
+     "speed": 1.3,
+     "dur": 6.5,
+     "zoom": [
+      [
+       0,
+       720,
+       700,
+       1440
+      ],
+      [
+       6.5,
+       720,
+       680,
+       1250
+      ]
+     ]
+    },
+    {
+     "src": "assembly2",
+     "in": 19.5,
+     "zoom": [
+      [
+       0,
+       720,
+       680,
+       1250
+      ],
+      [
+       8,
+       720,
+       660,
+       1100
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "drawings",
+   "title": "Drawings and STEP",
+   "narration": "Every part has its drawing: three views, hidden edges dashed, and geometric tolerances to ISO. And it exports as STEP, with true cylinders, straight into SOLIDWORKS, CATIA or Creo.",
+   "bullets": [
+    [
+     "Hidden-line views and assembly drawings",
+     "hidden edges"
+    ],
+    [
+     "GD&T: datums and feature control frames",
+     "tolerances"
+    ],
+    [
+     "STEP export with true cylinders",
+     "STEP"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "drawings",
+     "in": 1.0,
+     "zoom": [
+      [
+       0,
+       720,
+       720,
+       1440
+      ],
+      [
+       4.5,
+       720,
+       720,
+       1440
+      ],
+      [
+       7.5,
+       790,
+       760,
+       1000
+      ],
+      [
+       11,
+       780,
+       700,
+       1050
+      ],
+      [
+       15.7,
+       760,
+       620,
+       950
+      ]
+     ]
+    }
+   ]
+  },
+  {
+   "id": "share",
+   "title": "Take it with you",
+   "narration": "When it is right, take it with you: STL or 3MF for your slicer, G-code sliced on the headset, a share code for your phone, or a co-design room another headset can join.",
+   "bullets": [
+    [
+     "STL, 3MF and G-code",
+     "G-code"
+    ],
+    [
+     "A share code: no server",
+     "share code"
+    ],
+    [
+     "Co-design with another headset",
+     "co-design"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "share",
+     "in": 0.5,
+     "dur": 9.0
+    },
+    {
+     "src": "codesign",
+     "in": 1.0
+    }
+   ]
+  },
+  {
+   "id": "access",
+   "title": "Made for everyone",
+   "narration": "Captions, dwell to select, large text and one-handed use are built in, and on Meta's glasses the layout fits the narrower view.",
+   "bullets": [
+    [
+     "Captions, dwell and large text",
+     "Captions"
+    ],
+    [
+     "One-handed use",
+     "one-handed"
+    ],
+    [
+     "Fits Meta's glasses",
+     "glasses"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "access",
+     "in": 0.5,
+     "dur": 8.0
+    },
+    {
+     "src": "glasses",
+     "in": 0.5
+    }
+   ]
+  },
+  {
+   "id": "outro",
+   "title": "AstraCAD Spatial",
+   "narration": "Two hundred and forty engine tests. No install, no account, no server. AstraCAD Spatial: design anything, right where you are.",
+   "bullets": [
+    [
+     "240 engine tests, all passing",
+     "tests"
+    ],
+    [
+     "Works offline: no account, no server",
+     "server"
+    ],
+    [
+     "osmiumuas-wq.github.io/astracad-spatial",
+     "AstraCAD Spatial"
+    ]
+   ],
+   "clips": [
+    {
+     "src": "hero",
+     "in": 6.0,
+     "zoom": [
+      [
+       0,
+       720,
+       760,
+       1300
+      ],
+      [
+       14,
+       720,
+       720,
+       1440
+      ]
+     ]
+    }
+   ],
+   "kind": "title",
+   "kicker": "Design anything, right where you are.",
+   "tail": 4.0
+  }
+ ]
+}

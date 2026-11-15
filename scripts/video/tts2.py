@@ -17,7 +17,8 @@ from film import FILM, VID, VOICE  # noqa: E402
 SPEED = 0.89
 # How some words are said (the captions keep the written form).
 SAY = [('AstraCAD', 'Astra CAD'), ('3MF', 'three M F'), ('STL', 'S T L'), ('CalculiX', 'Calculix'),
-       ('re-tested', 'retested'), ("agent's", "agent's")]
+       ('re-tested', 'retested'), ("agent's", "agent's"), ('NACA', 'Nacka'), ('DXF', 'D X F'), ('GD&T', 'G D and T'),
+       ('SOLIDWORKS', 'Solid Works'), ('CATIA', 'Catia'), ('G-code', 'G code'), ('ISO', 'I S O'), ('STEP', 'step')]
 
 
 def spoken(text):

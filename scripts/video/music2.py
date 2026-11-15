@@ -9,7 +9,7 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from film import VID, timeline  # noqa: E402
+from film import SUFFIX, VID, timeline  # noqa: E402
 from music import BAR, BEAT, CHORDS, FINAL, SR, pad_layer, pluck, reverb, riser, sub  # noqa: E402
 
 
@@ -78,7 +78,7 @@ def main():
     out[:int(0.8 * SR)] *= np.linspace(0, 1, int(0.8 * SR))[:, None]
     out /= np.max(np.abs(out)) / 0.89
     os.makedirs(os.path.join(VID, 'audio'), exist_ok=True)
-    sf.write(os.path.join(VID, 'audio', 'music2.wav'), out.astype(np.float32), SR)
+    sf.write(os.path.join(VID, 'audio', f'music{SUFFIX}.wav'), out.astype(np.float32), SR)
     print('music2', round(len(out) / SR, 2), 's')
 
 

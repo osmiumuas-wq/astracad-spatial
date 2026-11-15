@@ -7,8 +7,11 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VID = os.path.join(ROOT, 'artifacts', 'video')
-FILM = json.load(open(os.path.join(ROOT, 'scripts', 'video', 'film.json'), encoding='utf-8'))
-VOICE = os.path.join(VID, 'voice2')
+# Which film: FILM=showcase uses scripts/video/showcase.json, its own narration, score, mix and output.
+NAME = os.environ.get('FILM', 'film')
+FILM = json.load(open(os.path.join(ROOT, 'scripts', 'video', f'{NAME}.json'), encoding='utf-8'))
+VOICE = os.path.join(VID, 'voice2' if NAME == 'film' else f'voice_{NAME}')
+SUFFIX = '2' if NAME == 'film' else f'_{NAME}'
 
 LEAD = 0.9
 TAIL = 1.5
