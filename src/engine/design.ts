@@ -114,7 +114,7 @@ export function removeLast(p: Params): Params {
   return out;
 }
 
-export function addOutline(p: Params, pts: [number, number][], sweeps?: number[]): { params: Params; index: number } {
+export function addOutline(p: Params, pts: [number, number][], sweeps?: number[], starts?: number[]): { params: Params; index: number } {
   let k = 0;
   while (`q${k}n` in p) k++;
   const out: Params = { ...p, [`q${k}n`]: pts.length };
@@ -124,7 +124,57 @@ export function addOutline(p: Params, pts: [number, number][], sweeps?: number[]
     // An exact arc from this point to the next: its signed sweep in degrees (+ turns left, anticlockwise).
     if (sweeps?.[j]) out[`q${k}b${j}`] = sweeps[j];
   });
+  // Further loops (holes): the index of each one's first point.
+  for (const j of starts ?? []) if (j > 0) out[`q${k}L${j}`] = 1;
   return { params: out, index: k };
+}
+
+/**
+ * Features from a finished sketch (src/engine/sketch2d.ts profiles): each closed region (an outer loop and its
+ * holes) extruded out of the face, cut into it, or revolved about the sketch's vertical axis.
+ */
+export function sketchFeatures(
+  p: Params,
+  regions: { loops: { pts: [number, number][]; sweeps: number[] }[] }[],
+  origin: [number, number, number],
+  code: number,
+  op: 'extrude' | 'cut' | 'revolve',
+  size: number,
+): Params {
+  let out = p;
+  for (const r of regions) {
+    const pts = r.loops.flatMap((l) => l.pts);
+    const sweeps = r.loops.flatMap((l) => l.sweeps);
+    const starts: number[] = [];
+    let n = 0;
+    for (const l of r.loops) {
+      starts.push(n);
+      n += l.pts.length;
+    }
+    if (op === 'revolve') {
+      const o = addOutline(out, pts, sweeps, starts);
+      out = addFeature(o.params, OPS.REVOLVE, { a: o.index, b: size || 360, d: origin[0], e: origin[1], f: origin[2], g: code });
+    } else {
+      out = addFaceSketch(out, pts, origin, code, sweeps, starts);
+      const k = featureCount(out) - 1;
+      out = { ...out, [`c${k}`]: size, [`g${k}`]: op === 'cut' ? 1 : 0 };
+    }
+  }
+  return out;
+}
+
+/** The outline's loops as ranges of point indices [first, end). */
+function outlineLoops(p: Params, k: number): [number, number][] {
+  const m = Math.round(p[`q${k}n`] ?? 0);
+  const out: [number, number][] = [];
+  let s = 0;
+  for (let j = 1; j <= m; j++) {
+    if (j === m || p[`q${k}L${j}`]) {
+      out.push([s, j]);
+      s = j;
+    }
+  }
+  return out;
 }
 
 /** The arc from a to b turning `deg` degrees (+ anticlockwise) as a sketch arc segment. */
@@ -140,33 +190,38 @@ export function arcSeg(a: [number, number], b: [number, number], deg: number): [
   return ['A', cx, cy, a[0], a[1], b[0], b[1], deg > 0 ? 1 : -1];
 }
 
-/** The outline's segments when it holds an arc (else null: a plain polygon). */
-function outlineSegs(p: Params, k: number): unknown[] | null {
-  const m = Math.round(p[`q${k}n`] ?? 0);
-  let arcs = false;
-  const segs: unknown[] = [];
-  for (let j = 0; j < m; j++) {
-    const a: [number, number] = [p[`q${k}x${j}`], p[`q${k}y${j}`]];
-    const b: [number, number] = [p[`q${k}x${(j + 1) % m}`], p[`q${k}y${(j + 1) % m}`]];
-    const sw = p[`q${k}b${j}`] ?? 0;
-    if (sw) {
-      arcs = true;
-      segs.push(arcSeg(a, b, sw));
-    } else segs.push(['L', a[0], a[1], b[0], b[1]]);
-  }
-  return arcs ? segs : null;
+/** The outline's loops of segments when it holds an arc or a hole (else null: one plain polygon). */
+function outlineSegs(p: Params, k: number): unknown[][] | null {
+  const ranges = outlineLoops(p, k);
+  let special = ranges.length > 1;
+  const loops = ranges.map(([s, e]) => {
+    const segs: unknown[] = [];
+    for (let j = s; j < e; j++) {
+      const n = j + 1 < e ? j + 1 : s;
+      const a: [number, number] = [p[`q${k}x${j}`], p[`q${k}y${j}`]];
+      const b: [number, number] = [p[`q${k}x${n}`], p[`q${k}y${n}`]];
+      const sw = p[`q${k}b${j}`] ?? 0;
+      if (sw) {
+        special = true;
+        segs.push(arcSeg(a, b, sw));
+      } else segs.push(['L', a[0], a[1], b[0], b[1]]);
+    }
+    return segs;
+  });
+  return special ? loops : null;
 }
 
-/** The sketch feature for an outline: exact arcs and lines when it has arcs, else a polygon. */
+/** The sketch feature for an outline: exact arcs, lines and holes when it has them, else a polygon. */
 function outlineSketch(p: Params, k: number, id: string, on: string): Feature {
-  const segs = outlineSegs(p, k);
-  return segs ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops: [segs] } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
+  const loops = outlineSegs(p, k);
+  return loops ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
 }
 
 const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE;
 
 function outlinePts(p: Params, k: number): [number, number][] {
-  const m = Math.round(p[`q${k}n`] ?? 0);
+  // The first loop (lofts, sweeps and the like take one profile).
+  const m = (outlineLoops(p, k)[0] ?? [0, 0])[1];
   const pts: [number, number][] = [];
   for (let j = 0; j < m; j++) {
     pts.push([p[`q${k}x${j}`], p[`q${k}y${j}`]]);
@@ -738,8 +793,8 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
 }
 
 /** A sketch drawn on a flat face: a boss 10 mm out of it, ready to be pulled or turned into a cut. */
-export function addFaceSketch(p: Params, pts: [number, number][], origin: [number, number, number], code: number, sweeps?: number[]): Params {
-  const o = addOutline(p, pts, sweeps);
+export function addFaceSketch(p: Params, pts: [number, number][], origin: [number, number, number], code: number, sweeps?: number[], starts?: number[]): Params {
+  const o = addOutline(p, pts, sweeps, starts);
   // The picked point, snapped to a thousandth of a millimetre: the face it was picked on.
   const r = (x: number): number => Math.round(x * 1000) / 1000;
   return addFeature(o.params, OPS.FACE, { a: o.index, b: code, c: 10, d: r(origin[0]), e: r(origin[1]), f: r(origin[2]), g: 0 });
