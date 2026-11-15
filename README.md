@@ -35,7 +35,8 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (225 tests: the sketch workbench (tools, relations, dimensions, regions, fillet, trim, extend, offset,
+Engine tests (240 tests: springs, SubD shapes, blades and propellers, knurls, lettering, moulds, hems, jogs and
+mitre flanges, batched builds, the sketch workbench (tools, relations, dimensions, regions, fillet, trim, extend, offset,
 mirror, patterns, splines, ellipses, angled planes, revolve axes, sweeps, lofts), freeform surfaces, sheet metal,
 weldments, GD&T, equations, kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
 CalculiX and its convergence study, modal, flow, STEP import and export (true cylinders, imported bodies made
@@ -206,6 +207,30 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   and the general tolerance class (ISO 2768) in the title block. Each tolerance is set by voice ("position
   tolerance 0.05", "tolerance class fine"); "no GD&T" removes them. The scheme is fixed (no annotations placed by
   hand, no material-condition modifiers, no tolerance stack-up).
+- Organic and Class-A-style shapes: "subd box 60 by 30 by 30 symmetric" makes a subdivision (SubD) shape, a cage of
+  points smoothed by Catmull-Clark (curvature-continuous except at the cage's corners, where it is tangent-
+  continuous), with a handle on every cage point and mirror symmetry, for grips, shells and body panels. It is
+  measured and verified. Not yet: editing the cage's topology (extruding faces, adding edge loops), creases, or true
+  NURBS output; STEP writes it as small flat faces.
+- Blades, fans and propellers: NACA 4-digit sections tapered and twisted along the span ("blade naca 2412 span 80
+  chord 30 to 15 twist 40 to 10"), singly (verified) or several round a hub ("propeller 3 blades hub 10 by 12"). Not
+  yet: swept or leaned blades, other airfoil families, shaped hubs.
+- Springs and coils: a round or rectangular wire swept square to a helix, with closed ends ("spring 20 diameter wire
+  2 pitch 6 8 turns closed ends"), verified. Not yet: conical springs, extension hooks, torsion legs.
+- Cosmetic finish: knurls are real teeth (straight: verified; diamond: two twisted serrations intersected),
+  lettering in a stroke font is engraved or embossed as geometry ("engrave ACME 7 here 8 high 0.5 deep"), and
+  appearances (brushed and anodised aluminium, chrome, steel, brass, copper, carbon fibre, wood, rubber, glass,
+  matte and gloss colours) are procedural textures box-projected onto the part. Not yet: image decals, knurling an
+  existing cylinder's surface in place, lower-case or other fonts.
+- Moulds and castings: "draft analysis 2" colours each face by its draft to the pull (green and blue release, amber
+  needs draft), "parting line" draws where faces turn against the pull, and "make mould" saves the core and cavity
+  (a block round the part, grown for shrinkage, less the part, split at the parting level) as STL. Not yet: stepped
+  or curved parting surfaces, slides and lifters, runners, gates and cooling.
+- Sheet metal also has closed and open hems, jogs, mitre flanges (their sheared ends meet on the corner bisector,
+  volume exact) and flanges on flanges, all unrolled in the flat pattern. Not yet: louvers, lances and forming tools.
+- Large designs: consecutive cuts are subtracted as one union (a plate with 300 holes builds in 0.5 s), a design
+  takes up to 1000 features, and identical parts in an assembly are built once and share their geometry. Every
+  change still rebuilds the design in order; frame rate on a headset with a very large assembly is not measured.
 - Equations and configurations: "variable width 60", "feature 2 height equals width divided by 3" (expressions with
   + - * / ^, brackets, sqrt, sin, cos, tan in degrees, min, max), "width equals 80" updates everything driven by it.
   "Save configuration long", "configuration short" switch whole sets of sizes and variables; "design table" saves

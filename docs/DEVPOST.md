@@ -75,6 +75,9 @@ hands, and every number on screen backed by a check you can see.
 - **Beyond parts: surfaces, sheet metal, weldments.** Pull the control points of a freeform B-spline surface by
   hand. Make a sheet-metal bracket, flange its edges up or down at any angle, and save the flat pattern as DXF for
   the laser, with bend lines and bend allowance. Sketch a frame and turn it into square-tube members with a cut list.
+- **Shapes that are not boxes.** Push and pull a SubD cage into a grip or a shell, symmetric if you like. Make a
+  propeller from NACA sections with taper and twist, a closed-end compression spring, a diamond-knurled knob with
+  real teeth, and engrave a part number into it. Check draft, see the parting line, and save the core and cavity.
 - **Engineering intent.** Drawings carry datums and feature control frames (position, flatness, perpendicularity)
   to ISO 1101, with ISO 2768 general tolerances. Variables and equations drive dimensions ("height equals width
   divided by 3"); configurations switch whole sets of sizes, and a design table lists them.
