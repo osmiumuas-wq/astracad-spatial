@@ -1108,6 +1108,15 @@ export class App {
           return e instanceof Error ? e.message : String(e);
         }
       }
+      // Angled planes: "tilt plane 30", "turn plane 45".
+      const tp = s.match(/\b(tilt|turn|rotate)\b.*?\bplane\b\D*?(-?\d+(?:\.\d+)?)|\bplane\b.*?\b(tilt|turn|rotate|at)\b\D*?(-?\d+(?:\.\d+)?)/u);
+      if (tp) {
+        const verb = tp[1] ?? tp[3];
+        const deg = parseFloat(tp[2] ?? tp[4]);
+        const reply = verb === 'turn' || verb === 'rotate' ? bench.turnPlane(deg) : bench.tiltPlane(deg);
+        this.say(reply, 'info');
+        return reply;
+      }
       // Offset reference plane: "plane 10" (out of the face), "plane in 5".
       const pl = s.match(/\b(?:offset |reference )?plane\b\D*?(-?\d+(?:\.\d+)?)/u);
       if (pl) {

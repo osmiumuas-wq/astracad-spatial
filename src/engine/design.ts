@@ -78,7 +78,7 @@ export function normalCode(n: [number, number, number]): number {
   return best;
 }
 const SLOTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
-export const MAX_FEATURES = 24;
+export const MAX_FEATURES = 64;
 
 export interface DesignFeature {
   op: number;
@@ -95,6 +95,9 @@ export function readFeature(p: Params, i: number): DesignFeature {
   return { op: Math.round(p[`o${i}`] ?? 0), v };
 }
 
+/** Extra per-feature values beyond a..h: a sketch plane's in-plane rotation (r) and tilt (w), degrees. */
+const EXTRA = ['r', 'w'] as const;
+
 /** The parameters with one more feature at the end. */
 export function addFeature(p: Params, op: number, v: Partial<DesignFeature['v']>): Params {
   const i = featureCount(p);
@@ -102,7 +105,24 @@ export function addFeature(p: Params, op: number, v: Partial<DesignFeature['v']>
   // A new feature is the one being edited.
   delete out.sel;
   for (const s of SLOTS) out[`${s}${i}`] = v[s] ?? 0;
+  for (const s of EXTRA) delete out[`${s}${i}`];
   return out;
+}
+
+/**
+ * A face frame turned in its plane by `rot` degrees, then tilted by `tilt` degrees about its (turned) x axis:
+ * a sketch plane at any angle through the face's point.
+ */
+export function turnedFrame(code: number, rot: number, tilt: number): { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] } {
+  const f = FACE_FRAMES[Math.max(0, Math.min(5, code))];
+  const r = (rot * Math.PI) / 180;
+  const w = (tilt * Math.PI) / 180;
+  const add = (a: number[], b: number[], ka: number, kb: number): [number, number, number] => [a[0] * ka + b[0] * kb, a[1] * ka + b[1] * kb, a[2] * ka + b[2] * kb];
+  const x1 = add(f.x, f.y, Math.cos(r), Math.sin(r));
+  const y1 = add(f.x, f.y, -Math.sin(r), Math.cos(r));
+  const y2 = add(y1, f.n, Math.cos(w), Math.sin(w));
+  const n2 = add(y1, f.n, -Math.sin(w), Math.cos(w));
+  return { n: n2, x: x1, y: y2 };
 }
 
 /** The parameters without the last feature (and any feature that referred to it). */
@@ -110,7 +130,7 @@ export function removeLast(p: Params): Params {
   const n = featureCount(p);
   if (!n) return p;
   const out: Params = { ...p, nf: n - 1 };
-  for (const k of ['o', ...SLOTS]) delete out[`${k}${n - 1}`];
+  for (const k of ['o', ...SLOTS, ...EXTRA]) delete out[`${k}${n - 1}`];
   return out;
 }
 
@@ -140,8 +160,14 @@ export function sketchFeatures(
   code: number,
   op: 'extrude' | 'cut' | 'revolve',
   size: number,
+  turn?: { rot: number; tilt: number },
 ): Params {
   let out = p;
+  const mark = (q: Params): Params => {
+    if (!turn || (!turn.rot && !turn.tilt)) return q;
+    const k = featureCount(q) - 1;
+    return { ...q, [`r${k}`]: turn.rot, [`w${k}`]: turn.tilt };
+  };
   for (const r of regions) {
     const pts = r.loops.flatMap((l) => l.pts);
     const sweeps = r.loops.flatMap((l) => l.sweeps);
@@ -153,11 +179,11 @@ export function sketchFeatures(
     }
     if (op === 'revolve') {
       const o = addOutline(out, pts, sweeps, starts);
-      out = addFeature(o.params, OPS.REVOLVE, { a: o.index, b: size || 360, d: origin[0], e: origin[1], f: origin[2], g: code });
+      out = mark(addFeature(o.params, OPS.REVOLVE, { a: o.index, b: size || 360, d: origin[0], e: origin[1], f: origin[2], g: code }));
     } else {
       out = addFaceSketch(out, pts, origin, code, sweeps, starts);
       const k = featureCount(out) - 1;
-      out = { ...out, [`c${k}`]: size, [`g${k}`]: op === 'cut' ? 1 : 0 };
+      out = mark({ ...out, [`c${k}`]: size, [`g${k}`]: op === 'cut' ? 1 : 0 });
     }
   }
   return out;
@@ -412,9 +438,18 @@ export function designSpec(p: Params): PartSpec {
       const k = axisOf(Math.round(v.b));
       const snapped: [number, number, number] = op === OPS.FACE ? onFace(p, i, [v.d, v.e, v.f], k) : [v.d, v.e, v.f];
       // Off the design's own planes (on an imported body's face): sink 0.01 mm in, so it still fuses.
-      const sink = op === OPS.FACE && Math.round(v.g) !== 1 && snapped[k] === [v.d, v.e, v.f][k] && !facePlanes(p, i, k).includes(snapped[k]) ? 0.01 : 0;
+      const angled = !!(p[`r${i}`] || p[`w${i}`]);
+      // Only an imported body has faces the design does not know.
+      const onImported = Array.from({ length: i }, (_, j) => readFeature(p, j).op).includes(OPS.BASE);
+      const sink = onImported && !angled && op === OPS.FACE && Math.round(v.g) !== 1 && snapped[k] === [v.d, v.e, v.f][k] && !facePlanes(p, i, k).includes(snapped[k]) ? 0.01 : 0;
       const origin: [number, number, number] = [snapped[0] - fr.n[0] * sink, snapped[1] - fr.n[1] * sink, snapped[2] - fr.n[2] * sink];
-      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin, normal: fr.n, x_dir: fr.x } });
+      // A plane turned or tilted from the face (an angled reference plane): its own frame, no snapping.
+      const rot = p[`r${i}`] ?? 0;
+      const tilt = p[`w${i}`] ?? 0;
+      if (rot || tilt) {
+        const tf = turnedFrame(Math.round(op === OPS.FACE ? v.b : v.g), rot, tilt);
+        features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: [v.d, v.e, v.f], normal: tf.n, x_dir: tf.x } });
+      } else features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin, normal: fr.n, x_dir: fr.x } });
       features.push(outlineSketch(p, Math.round(v.a), `s${i}`, `pl${i}`));
       if (op === OPS.REVOLVE) features.push({ $op: 'feature.revolve', id, args: { angle: Math.max(1, Math.min(360, v.b || 360)), axis: 'v' } });
       else features.push(Math.round(v.g) === 1 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'reverse' } } : { $op: 'feature.extrude', id, args: v.h > 0 ? { depth: v.c + sink, draft: v.h } : { depth: v.c + sink } });

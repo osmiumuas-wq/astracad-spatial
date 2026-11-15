@@ -27,7 +27,9 @@ export type SkEntity =
   /** Anticlockwise from a to b about c. */
   | { id: string; kind: 'arc'; c: string; a: string; b: string; construction?: boolean }
   /** A smooth curve through its points (Catmull-Rom), from a (pts[0]) to b (the last). */
-  | { id: string; kind: 'spline'; a: string; b: string; pts: string[]; construction?: boolean };
+  | { id: string; kind: 'spline'; a: string; b: string; pts: string[]; construction?: boolean }
+  /** An ellipse: centre c, the end of its major half-axis at point m, minor half-axis rb (mm). */
+  | { id: string; kind: 'ellipse'; c: string; m: string; rb: number; construction?: boolean };
 
 export type SkConstraint =
   | { id: string; kind: 'horizontal' | 'vertical'; e: string }
@@ -89,6 +91,23 @@ export function splinePts(q: [number, number][], per = 8): [number, number][] {
   return out;
 }
 
+/** An ellipse as 96 points, anticlockwise, area-compensated (as the kernel's circles): the polygon's area is pi a b. */
+export function ellipsePts(sk: Sketch2D, e: Extract<SkEntity, { kind: 'ellipse' }>): [number, number][] {
+  const c = sk.points.find((q) => q.id === e.c)!;
+  const m = sk.points.find((q) => q.id === e.m)!;
+  const step = (2 * Math.PI) / 96;
+  const k = Math.sqrt(step / Math.sin(step));
+  const ra = Math.hypot(m.x - c.x, m.y - c.y) * k;
+  const rbk = e.rb * k;
+  const rot = Math.atan2(m.y - c.y, m.x - c.x);
+  return Array.from({ length: 96 }, (_, k) => {
+    const t = (2 * Math.PI * k) / 96;
+    const x = ra * Math.cos(t);
+    const y = rbk * Math.sin(t);
+    return [c.x + x * Math.cos(rot) - y * Math.sin(rot), c.y + x * Math.sin(rot) + y * Math.cos(rot)] as [number, number];
+  });
+}
+
 export interface Snap {
   x: number;
   y: number;
@@ -111,7 +130,7 @@ export function snap(sk: Sketch2D, x: number, y: number, reach = 3, grid = 1): S
     }
   };
   for (const e of sk.ents) {
-    if (e.kind === 'circle' || e.kind === 'arc') {
+    if (e.kind === 'circle' || e.kind === 'arc' || e.kind === 'ellipse') {
       const c = pt(sk, e.c);
       consider({ x: c.x, y: c.y, point: c.id, kind: 'centre' });
     }
@@ -311,6 +330,7 @@ export function removeEntity(sk: Sketch2D, id: string): void {
     if (e.kind === 'line') used.add(e.a).add(e.b);
     else if (e.kind === 'circle') used.add(e.c);
     else if (e.kind === 'spline') for (const q of e.pts) used.add(q);
+    else if (e.kind === 'ellipse') used.add(e.c).add(e.m);
     else used.add(e.c).add(e.a).add(e.b);
   }
   sk.points = sk.points.filter((p) => used.has(p.id));
@@ -337,8 +357,8 @@ export function pickEntity(sk: Sketch2D, x: number, y: number, reach = 3): strin
     } else if (e.kind === 'circle') {
       const c = pt(sk, e.c);
       d = Math.abs(Math.hypot(x - c.x, y - c.y) - e.r);
-    } else if (e.kind === 'spline') {
-      const poly = splinePts(e.pts.map((id) => [pt(sk, id).x, pt(sk, id).y] as [number, number]));
+    } else if (e.kind === 'spline' || e.kind === 'ellipse') {
+      const poly = e.kind === 'ellipse' ? ellipsePts(sk, e) : splinePts(e.pts.map((id) => [pt(sk, id).x, pt(sk, id).y] as [number, number]));
       for (let i = 0; i + 1 < poly.length; i++) {
         const [ax, ay] = poly[i];
         const dx = poly[i + 1][0] - ax;
@@ -371,7 +391,7 @@ export function measure(sk: Sketch2D, id: string): { kind: 'length' | 'radius'; 
     return { kind: 'length', value: Math.hypot(b.x - a.x, b.y - a.y) };
   }
   if (e.kind === 'circle') return { kind: 'radius', value: e.r };
-  if (e.kind === 'spline') return null;
+  if (e.kind === 'spline' || e.kind === 'ellipse') return null;
   const c = pt(sk, e.c);
   const a = pt(sk, e.a);
   return { kind: 'radius', value: Math.hypot(a.x - c.x, a.y - c.y) };
@@ -407,7 +427,7 @@ export function solve(gcs: GcsWrapper, sk: Sketch2D): SolveResult {
   for (const e of sk.ents) {
     if (e.kind === 'line') prims.push({ id: e.id, type: 'line', p1_id: e.a, p2_id: e.b } as SketchPrimitive);
     else if (e.kind === 'circle') prims.push({ id: e.id, type: 'circle', c_id: e.c, radius: e.r } as SketchPrimitive);
-    else if (e.kind === 'spline') continue;
+    else if (e.kind === 'spline' || e.kind === 'ellipse') continue;
     else {
       const c = P(e.c);
       const a = P(e.a);
@@ -450,7 +470,7 @@ export function solve(gcs: GcsWrapper, sk: Sketch2D): SolveResult {
         // arcs' centres in line with the shared point. "Tangent anywhere" on top of a shared end is redundant.
         const E1 = ent(sk, c.e1);
         const E2 = ent(sk, c.e2);
-        const endsOf = (e: SkEntity | undefined): string[] => (!e || e.kind === 'circle' ? [] : [e.a, e.b]);
+        const endsOf = (e: SkEntity | undefined): string[] => (!e || e.kind === 'circle' || e.kind === 'ellipse' ? [] : [e.a, e.b]);
         const shared = endsOf(E1).find((q) => endsOf(E2).includes(q));
         if (shared && E1 && E2) {
           const line = E1.kind === 'line' ? E1 : E2.kind === 'line' ? E2 : null;
@@ -580,6 +600,14 @@ export function profiles(sk: Sketch2D): Region[] {
     return s / 2;
   };
   for (const e of solid) {
+    if (e.kind !== 'ellipse') continue;
+    // An ellipse: 96 straight pieces (the solid is exact to that outline).
+    const poly = ellipsePts(sk, e);
+    let area = 0;
+    for (let i = 0; i < poly.length; i++) area += (poly[i][0] * poly[(i + 1) % poly.length][1] - poly[(i + 1) % poly.length][0] * poly[i][1]) / 2;
+    loops.push({ pts: poly, sweeps: poly.map(() => 0), area: Math.abs(area), poly });
+  }
+  for (const e of solid) {
     if (e.kind !== 'circle') continue;
     const c = P(e.c);
     // Two half circles: exact arcs in the outline.
@@ -588,7 +616,7 @@ export function profiles(sk: Sketch2D): Region[] {
     loops.push({ pts, sweeps: [180, 180], area: Math.PI * e.r * e.r, poly });
   }
   // Lines and arcs: a graph on their end points.
-  const edges = solid.filter((e) => e.kind !== 'circle') as Exclude<SkEntity, { kind: 'circle' }>[];
+  const edges = solid.filter((e) => e.kind !== 'circle' && e.kind !== 'ellipse') as Exclude<SkEntity, { kind: 'circle' } | { kind: 'ellipse' }>[];
   const at = new Map<string, number[]>();
   edges.forEach((e, i) => {
     for (const p of [e.a, e.b]) at.set(p, [...(at.get(p) ?? []), i]);
@@ -930,7 +958,7 @@ export function offsetEntity(sk: Sketch2D, id: string, d: number, side: { x: num
     sk.ents.push({ id: na, kind: 'arc', c: e.c, a: pa, b: pb });
     return [na];
   }
-  if (e.kind !== 'line') throw new Error('splines are not offset yet');
+  if (e.kind !== 'line') throw new Error('splines and ellipses are not offset yet');
   // A closed loop of lines through this one: offset the whole outline.
   const loop: Extract<SkEntity, { kind: 'line' }>[] = [];
   let cur = e;
@@ -1044,6 +1072,7 @@ export function mirrorEntities(sk: Sketch2D, ids: string[], axis: string): strin
     else if (e.kind === 'circle') sk.ents.push({ id: nidE, kind: 'circle', c: image(e.c), r: e.r, construction: e.construction });
     // A mirror turns anticlockwise into clockwise: the image runs from b's image to a's.
     else if (e.kind === 'arc') sk.ents.push({ id: nidE, kind: 'arc', c: image(e.c), a: image(e.b), b: image(e.a), construction: e.construction });
+    else if (e.kind === 'ellipse') sk.ents.push({ id: nidE, kind: 'ellipse', c: image(e.c), m: image(e.m), rb: e.rb, construction: e.construction });
     else {
       const pts = e.pts.map(image);
       sk.ents.push({ id: nidE, kind: 'spline', a: pts[0], b: pts[pts.length - 1], pts, construction: e.construction });
@@ -1073,6 +1102,117 @@ export function openChains(sk: Sketch2D): [number, number][][] {
       at = next.a === at ? next.b : next.a;
     }
     if (chain.length >= 2 && !out.some((c) => c[0][0] === chain[chain.length - 1][0] && c[0][1] === chain[chain.length - 1][1])) out.push(chain);
+  }
+  return out;
+}
+
+/** An ellipse from its centre, the end of its major axis, and a point that sets its minor half-axis. */
+export function addEllipse(sk: Sketch2D, centre: Snap, major: Snap, minor: Snap): string {
+  const ra = Math.hypot(major.x - centre.x, major.y - centre.y);
+  if (ra < 1e-6) throw new Error('an ellipse needs a size');
+  const ux = (major.x - centre.x) / ra;
+  const uy = (major.y - centre.y) / ra;
+  const rb = Math.abs(-(minor.x - centre.x) * uy + (minor.y - centre.y) * ux);
+  if (rb < 1e-6) throw new Error('pick the minor axis away from the major axis');
+  const c = pointFor(sk, centre);
+  const m = pointFor(sk, major);
+  const id = nid(sk, 'e');
+  sk.ents.push({ id, kind: 'ellipse', c, m, rb });
+  return id;
+}
+
+/** Extend a line from its end nearer the pick to the first thing it meets. */
+export function extendAt(sk: Sketch2D, x: number, y: number): string {
+  const id = pickEntity(sk, x, y, 3);
+  const e = id ? ent(sk, id) : undefined;
+  if (!e || e.kind !== 'line') throw new Error('pick a line near the end to extend');
+  const A = pt(sk, e.a);
+  const B = pt(sk, e.b);
+  const fromB = Math.hypot(x - B.x, y - B.y) < Math.hypot(x - A.x, y - A.y);
+  const P0 = fromB ? A : B;
+  const P1 = fromB ? B : A;
+  const dx = P1.x - P0.x;
+  const dy = P1.y - P0.y;
+  // Along the line past its end: parameter t > 1, the nearest crossing.
+  let best = Infinity;
+  for (const o of sk.ents) {
+    if (o.id === id) continue;
+    if (o.kind === 'line') {
+      const p = pt(sk, o.a);
+      const q = pt(sk, o.b);
+      const ex = q.x - p.x;
+      const ey = q.y - p.y;
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((p.x - P0.x) * ey - (p.y - P0.y) * ex) / den;
+      const s = ((p.x - P0.x) * dy - (p.y - P0.y) * dx) / den;
+      if (t > 1 + 1e-9 && s >= -1e-9 && s <= 1 + 1e-9) best = Math.min(best, t);
+    } else if (o.kind === 'circle' || o.kind === 'arc') {
+      const c = pt(sk, o.c);
+      const r = o.kind === 'circle' ? o.r : Math.hypot(pt(sk, o.a).x - c.x, pt(sk, o.a).y - c.y);
+      const fx = P0.x - c.x;
+      const fy = P0.y - c.y;
+      const a2 = dx * dx + dy * dy;
+      const b2 = 2 * (fx * dx + fy * dy);
+      const c2 = fx * fx + fy * fy - r * r;
+      const disc = b2 * b2 - 4 * a2 * c2;
+      if (disc < 0) continue;
+      for (const t of [(-b2 - Math.sqrt(disc)) / (2 * a2), (-b2 + Math.sqrt(disc)) / (2 * a2)]) if (t > 1 + 1e-9) best = Math.min(best, t);
+    }
+  }
+  if (!Number.isFinite(best)) throw new Error('nothing lies ahead of that end to extend to');
+  const np = pointFor(sk, { x: P0.x + dx * best, y: P0.y + dy * best, kind: 'free' });
+  if (fromB) e.b = np;
+  else e.a = np;
+  return `Extended ${((best - 1) * Math.hypot(dx, dy)).toFixed(1)} mm to the next edge.`;
+}
+
+/** Copies of entities moved by a transform of their points. */
+function copyEntities(sk: Sketch2D, ids: string[], move: (x: number, y: number) => [number, number]): string[] {
+  const map = new Map<string, string>();
+  const image = (id: string): string => {
+    const got = map.get(id);
+    if (got) return got;
+    const q = pt(sk, id);
+    const [x, y] = move(q.x, q.y);
+    const n = pointFor(sk, { x, y, kind: 'free' });
+    map.set(id, n);
+    return n;
+  };
+  const out: string[] = [];
+  for (const id of ids) {
+    const e = ent(sk, id);
+    if (!e) continue;
+    const k = nid(sk, e.kind[0]);
+    if (e.kind === 'line') sk.ents.push({ ...e, id: k, a: image(e.a), b: image(e.b) });
+    else if (e.kind === 'circle') sk.ents.push({ ...e, id: k, c: image(e.c) });
+    else if (e.kind === 'arc') sk.ents.push({ ...e, id: k, c: image(e.c), a: image(e.a), b: image(e.b) });
+    else if (e.kind === 'ellipse') sk.ents.push({ ...e, id: k, c: image(e.c), m: image(e.m) });
+    else {
+      const pts = e.pts.map(image);
+      sk.ents.push({ ...e, id: k, pts, a: pts[0], b: pts[pts.length - 1] });
+    }
+    out.push(k);
+  }
+  return out;
+}
+
+/** A linear sketch pattern: `count` in a row (the originals first), `dx`, `dy` apart. */
+export function linearPattern(sk: Sketch2D, ids: string[], count: number, dx: number, dy: number): string[] {
+  const out: string[] = [];
+  for (let k = 1; k < Math.max(2, Math.round(count)); k++) out.push(...copyEntities(sk, ids, (x, y) => [x + dx * k, y + dy * k]));
+  return out;
+}
+
+/** A circular sketch pattern: `count` round (cx, cy) over `total` degrees. */
+export function circularPattern(sk: Sketch2D, ids: string[], count: number, cx: number, cy: number, total = 360): string[] {
+  const n = Math.max(2, Math.round(count));
+  const step = ((Math.abs(total) >= 360 ? 360 / n : total / (n - 1)) * Math.PI) / 180;
+  const out: string[] = [];
+  for (let k = 1; k < n; k++) {
+    const c = Math.cos(step * k);
+    const s = Math.sin(step * k);
+    out.push(...copyEntities(sk, ids, (x, y) => [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c]));
   }
   return out;
 }

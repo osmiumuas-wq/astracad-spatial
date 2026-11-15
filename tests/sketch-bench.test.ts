@@ -137,4 +137,61 @@ describe('the sketch workbench, driven like a user', () => {
     expect(b.command('trim')).toMatch(/Trim/);
     expect(b.click(50, 25)).toMatch(/Deleted|Trimmed/);
   });
+
+  it('ellipse, extend and sketch patterns', () => {
+    const b = new SketchBench([0, 0, 0], 0, gcs);
+    b.setTool('ellipse');
+    b.click(0, 0);
+    b.click(20, 0);
+    expect(b.click(0, 10)).toMatch(/Ellipse/);
+    const { params } = b.finish({ nf: 0 }, 'extrude', 5);
+    // 96 straight pieces: within 0.1 % of pi a b.
+    expect(Math.abs(build(params).volume / (Math.PI * 200 * 5) - 1)).toBeLessThan(1e-3);
+    const c = new SketchBench([0, 0, 0], 0, gcs);
+    c.setTool('line');
+    c.click(0, 0);
+    c.click(10, 0);
+    c.setTool('line');
+    c.click(30, -10);
+    c.click(30, 10);
+    expect(c.command('extend')).toMatch(/Extend/);
+    expect(c.click(9, 0)).toMatch(/Extended 20\.0 mm/);
+    const d = new SketchBench([0, 0, 0], 0, gcs);
+    d.setTool('circle');
+    d.click(20, 0);
+    d.click(23, 0);
+    d.setTool('select');
+    d.click(23, 0);
+    expect(d.command('circular pattern 6')).toMatch(/6 in a circle/);
+    expect(d.sk.ents.filter((e) => e.kind === 'circle')).toHaveLength(6);
+    d.setTool('select');
+    d.click(23, 0);
+    expect(d.command('pattern 3 10')).toMatch(/3 in a row/);
+  });
+
+  it('a sketch on a tilted plane, and a revolve about a slanted construction line', () => {
+    const b = new SketchBench([0, 30, 0], 0, gcs);
+    expect(b.tiltPlane(30)).toMatch(/30 degrees/);
+    b.setTool('rect');
+    b.click(-10, -10);
+    b.click(10, 10);
+    const { params } = b.finish({ nf: 0 }, 'extrude', 5);
+    const g = build(params);
+    expect(g.volume).toBeCloseTo(400 * 5, 3);
+    // The pad's normal leans 30 degrees from vertical: its top corners are not level.
+    const r = new SketchBench([0, 0, 0], 4, gcs);
+    r.setTool('line');
+    r.click(0, 0);
+    r.click(30, 30);
+    r.setTool('select');
+    r.click(15, 15);
+    r.command('construction');
+    r.setTool('circle');
+    r.click(20, 0);
+    r.click(24, 0);
+    const rev = r.finish({ nf: 0 }, 'revolve', 360);
+    // Pappus: a circle of radius 4 whose centre is 20 / sqrt(2) from the 45-degree axis.
+    const want = Math.PI * 16 * 2 * Math.PI * (20 / Math.SQRT2);
+    expect(Math.abs(build(rev.params).volume / want - 1)).toBeLessThan(2e-3);
+  });
 });

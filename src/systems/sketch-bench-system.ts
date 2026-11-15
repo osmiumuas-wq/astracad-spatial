@@ -14,7 +14,7 @@ import { CSS } from '../app/palette.js';
 import { SketchTool, TOOL_NAMES } from '../app/sketch-bench.js';
 import { makeButton, setButton } from '../app/ui3d.js';
 import { FACE_FRAMES } from '../engine/design.js';
-import { measure, splinePts } from '../engine/sketch2d.js';
+import { ellipsePts, measure, splinePts } from '../engine/sketch2d.js';
 
 const MAX_QUADS = 6000;
 
@@ -62,6 +62,7 @@ export class SketchBenchSystem extends createSystem({}) {
       ['sk:slot', 'Slot', tool('slot'), 'Draw'],
       ['sk:poly', 'Polygon', tool('polygon'), 'Draw'],
       ['sk:spline', 'Spline', tool('spline'), 'Draw'],
+      ['sk:ellipse', 'Ellipse', tool('ellipse'), 'Draw'],
       ['sk:constr', 'Construction', run(() => b().toggleConstruction()), 'Draw'],
       ['sk:select', 'Select', tool('select'), 'Modify'],
       ['sk:dim', 'Smart dim', tool('dimension'), 'Modify'],
@@ -69,6 +70,9 @@ export class SketchBenchSystem extends createSystem({}) {
       ['sk:plus', 'Size +1', run(() => this.nudge(1)), 'Modify'],
       ['sk:fillet', 'Fillet R3', run(() => b().command('fillet 3') ?? undefined), 'Modify'],
       ['sk:trim', 'Trim', tool('trim'), 'Modify'],
+      ['sk:extend', 'Extend', tool('extend'), 'Modify'],
+      ['sk:pattern', 'Pattern x3', say('pattern 3 15'), 'Modify'],
+      ['sk:cpattern', 'Circ pattern 6', say('circular pattern 6'), 'Modify'],
       ['sk:offset', 'Offset 5', run(() => b().command('offset 5') ?? undefined), 'Modify'],
       ['sk:mirror', 'Mirror', tool('mirror'), 'Modify'],
       ['sk:del', 'Delete', tool('delete'), 'Modify'],
@@ -87,6 +91,7 @@ export class SketchBenchSystem extends createSystem({}) {
       ['sk:loftend', 'Finish loft', say('finish loft'), 'Finish'],
       ['sk:planeup', 'Plane +10', say('plane 10'), 'Finish'],
       ['sk:planedn', 'Plane -10', say('plane in 10'), 'Finish'],
+      ['sk:tilt', 'Tilt plane 15\u00b0', say('tilt plane 15'), 'Finish'],
       ['sk:exit', 'Exit sketch', run(() => {
         app.closeSketchBench();
         return 'Sketch closed without a feature.';
@@ -177,7 +182,7 @@ export class SketchBenchSystem extends createSystem({}) {
   /** (u, v) on the face to part millimetres, lifted a little off it. */
   private toMm(u: number, v: number, out: Vector3): Vector3 {
     const b = ctx.app.sketchBench!;
-    const f = FACE_FRAMES[b.code];
+    const f = b.frame();
     const lift = 0.25;
     return out.set(
       b.origin[0] + f.x[0] * u + f.y[0] * v + f.n[0] * lift,
@@ -260,6 +265,9 @@ export class SketchBenchSystem extends createSystem({}) {
         const c = P(e.c);
         arc(c, [c[0] + e.r, c[1]], 2 * Math.PI, colr);
         if (!e.construction) label(c[0], c[1] + e.r, `${driven.has(e.id) ? '' : '~'}⌀${(2 * e.r).toFixed(1)}`);
+      } else if (e.kind === 'ellipse') {
+        const s = ellipsePts(b.sk, e);
+        for (let i = 0; i < s.length; i++) this.segment(s[i][0], s[i][1], s[(i + 1) % s.length][0], s[(i + 1) % s.length][1], e.construction ? w * 0.5 : w, colr);
       } else if (e.kind === 'spline') {
         const s = splinePts(e.pts.map(P));
         for (let i = 0; i + 1 < s.length; i++) this.segment(s[i][0], s[i][1], s[i + 1][0], s[i + 1][1], e.construction ? w * 0.5 : w, colr);
@@ -308,7 +316,7 @@ export class SketchBenchSystem extends createSystem({}) {
   /** A hand's pinch point on the face, as (u, v) mm, when it is within 6 cm of it. */
   private faceUv(p: Vector3): [number, number] | null {
     const b = ctx.app.sketchBench!;
-    const f = FACE_FRAMES[b.code];
+    const f = b.frame();
     this.local.copy(p);
     ctx.bench.turntable.worldToLocal(this.local);
     ctx.bench.part.toPart(this.local, this.mm);

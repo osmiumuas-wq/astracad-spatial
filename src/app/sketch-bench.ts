@@ -7,12 +7,16 @@
  */
 
 import type { GcsWrapper } from '@salusoft89/planegcs';
-import { addFeature, addOutline, addPath, FACE_FRAMES, OPS, sketchFeatures } from '../engine/design.js';
+import { addFeature, addOutline, addPath, OPS, sketchFeatures, turnedFrame } from '../engine/design.js';
 import type { Params } from '../engine/jobs.js';
 import {
   addArc3,
   addCircle,
   addConstraint,
+  addEllipse,
+  circularPattern,
+  extendAt,
+  linearPattern,
   addLine,
   addPolygon,
   addRectangle,
@@ -36,7 +40,7 @@ import {
   solve,
 } from '../engine/sketch2d.js';
 
-export type SketchTool = 'line' | 'rect' | 'circle' | 'arc' | 'tangentArc' | 'slot' | 'polygon' | 'spline' | 'select' | 'dimension' | 'delete' | 'fillet' | 'trim' | 'offset' | 'mirror';
+export type SketchTool = 'line' | 'rect' | 'circle' | 'arc' | 'tangentArc' | 'slot' | 'polygon' | 'spline' | 'ellipse' | 'select' | 'dimension' | 'delete' | 'fillet' | 'trim' | 'extend' | 'offset' | 'mirror';
 
 export const TOOL_NAMES: Record<SketchTool, string> = {
   line: 'Line',
@@ -47,11 +51,13 @@ export const TOOL_NAMES: Record<SketchTool, string> = {
   slot: 'Slot',
   polygon: 'Polygon',
   spline: 'Spline',
+  ellipse: 'Ellipse',
   select: 'Select',
   dimension: 'Smart dimension',
   delete: 'Delete',
   fillet: 'Sketch fillet',
   trim: 'Trim',
+  extend: 'Extend',
   offset: 'Offset',
   mirror: 'Mirror',
 };
@@ -66,11 +72,13 @@ const STEPS: Record<SketchTool, string[]> = {
   slot: ['Pick one end centre', 'Pick the other end centre', 'Pick the width'],
   polygon: ['Pick the centre', 'Pick a corner'],
   spline: ['Pick points along the curve; pick the last one again (or an existing point) to finish'],
+  ellipse: ['Pick the centre', 'Pick the end of the long axis', 'Pick how wide it is'],
   select: ['Pick a line, arc or circle (up to two)'],
   dimension: ['Pick a line, arc or circle, then say its size or turn the dial'],
   delete: ['Pick what to delete'],
   fillet: ['Pick a corner where two lines meet ("fillet 5" sets the radius)'],
   trim: ['Pick the piece to cut away'],
+  extend: ['Pick a line near the end to extend'],
   offset: ['Pick a line, arc, circle or outline', 'Pick the side to offset to ("offset 5" sets the distance)'],
   mirror: ['Select what to mirror first, then pick the mirror line'],
 };
@@ -81,6 +89,9 @@ export class SketchBench {
   pending: Snap[] = [];
   selected: string[] = [];
   polygonSides = 6;
+  /** The sketch plane turned in the face (degrees) and tilted out of it (degrees): an angled plane. */
+  rot = 0;
+  tilt = 0;
   filletR = 3;
   offsetD = 5;
   /** A loft's first profile (its outer loop) and how far the second sketch is from it, once started. */
@@ -173,6 +184,10 @@ export class SketchBench {
         filletCorner(this.sk, u, v, this.filletR);
         return this.settle(`Fillet R${this.filletR}.`);
       }
+      if (t === 'extend') {
+        this.remember();
+        return this.settle(extendAt(this.sk, u, v));
+      }
       if (t === 'trim') {
         this.remember();
         const what = trimAt(this.sk, u, v);
@@ -234,7 +249,7 @@ export class SketchBench {
         this.lastLine = id;
         const len = measure(this.sk, id)!.value;
         // Closed when the end lands on a point that already had an edge (the chain's start, or any outline).
-        const joined = this.sk.ents.some((e) => e.id !== id && e.kind !== 'circle' && (e.a === line.b || e.b === line.b));
+        const joined = this.sk.ents.some((e) => e.id !== id && e.kind !== 'circle' && e.kind !== 'ellipse' && (e.a === line.b || e.b === line.b));
         if (line.b === this.chainStart || joined) {
           this.pending = [];
           this.chainStart = null;
@@ -275,6 +290,9 @@ export class SketchBench {
         const half = Math.abs(((p[2].x - p[0].x) * -ay + (p[2].y - p[0].y) * ax) / L);
         addSlot(this.sk, p[0], p[1], Math.max(0.5, 2 * half));
         what = `Slot ${L.toFixed(1)} mm between centres, ${(2 * half).toFixed(1)} mm wide.`;
+      } else if (t === 'ellipse') {
+        addEllipse(this.sk, p[0], p[1], p[2]);
+        what = 'Ellipse.';
       } else if (t === 'polygon') {
         addPolygon(this.sk, p[0], p[1], this.polygonSides);
         what = `${this.polygonSides}-sided polygon.`;
@@ -333,31 +351,70 @@ export class SketchBench {
     let regions = profiles(this.sk);
     let origin = this.origin;
     let about = '';
+    let rot = this.rot;
     if (op === 'revolve') {
-      const axis = this.sk.ents.find((e) => {
-        if (e.kind !== 'line' || !e.construction) return false;
-        const a = this.sk.points.find((q) => q.id === e.a)!;
-        const b = this.sk.points.find((q) => q.id === e.b)!;
-        return Math.abs(a.x - b.x) < 1e-6;
-      });
+      // About a construction line at any angle: the sketch axes are turned so that line is the vertical through
+      // the new origin (revolve turns about the sketch's vertical).
+      const axis = this.sk.ents.find((e) => e.kind === 'line' && e.construction);
       if (axis && axis.kind === 'line') {
-        const c = this.sk.points.find((q) => q.id === axis.a)!.x;
-        const f = FACE_FRAMES[this.code];
-        origin = [origin[0] + f.x[0] * c, origin[1] + f.x[1] * c, origin[2] + f.x[2] * c];
-        regions = regions.map((r) => ({ ...r, loops: r.loops.map((l) => ({ ...l, pts: l.pts.map(([x, y]) => [x - c, y] as [number, number]) })) }));
+        const A = this.sk.points.find((q) => q.id === axis.a)!;
+        const Bp = this.sk.points.find((q) => q.id === axis.b)!;
+        const phi = Math.atan2(Bp.y - A.y, Bp.x - A.x);
+        const d = phi - Math.PI / 2;
+        const c = Math.cos(d);
+        const s = Math.sin(d);
+        // New coordinates: turned by d about the old origin, then shifted so the line is u = 0.
+        const turn = (x: number, y: number): [number, number] => [x * c + y * s, -x * s + y * c];
+        const shift = turn(A.x, A.y)[0];
+        const f = this.frame();
+        const xNew = [f.x[0] * c + f.y[0] * s, f.x[1] * c + f.y[1] * s, f.x[2] * c + f.y[2] * s];
+        origin = [origin[0] + xNew[0] * shift, origin[1] + xNew[1] * shift, origin[2] + xNew[2] * shift];
+        regions = regions.map((r) => ({ ...r, loops: r.loops.map((l) => ({ ...l, pts: l.pts.map(([x, y]) => {
+          const [u, v] = turn(x, y);
+          return [u - shift, v] as [number, number];
+        }) })) }));
+        rot = this.rot + (d * 180) / Math.PI;
         about = ' about the construction line';
       }
     }
-    const out = sketchFeatures(params, regions, origin, this.code, op, size);
+    const out = sketchFeatures(params, regions, origin, this.code, op, size, { rot, tilt: this.tilt });
     const area = regions.reduce((s, r) => s + r.area, 0);
     const n = regions.length;
     const what = op === 'revolve' ? `Revolved ${size} degrees${about}` : op === 'cut' ? `Cut ${size} mm deep` : `Extruded ${size} mm`;
     return { params: out, reply: `${what}: ${n} region${n === 1 ? '' : 's'}, ${area.toFixed(1)} mm2 of profile.` };
   }
 
+  /** The sketch plane's axes: the face's, turned and tilted. */
+  frame(): { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] } {
+    return turnedFrame(this.code, this.rot, this.tilt);
+  }
+
+  /** Tilt the sketch plane about its horizontal (u) axis through the origin: an angled reference plane. */
+  tiltPlane(deg: number): string {
+    this.tilt += deg;
+    this.version++;
+    return (this.status = `Sketch plane tilted to ${this.tilt} degrees from the face.`);
+  }
+
+  /** Turn the sketch plane's axes in the plane (so sketch "horizontal" runs at that angle). */
+  turnPlane(deg: number): string {
+    this.rot += deg;
+    this.version++;
+    return (this.status = `Sketch axes turned to ${this.rot} degrees.`);
+  }
+
+  /** A pattern of the selection: in a row (`dx`, `dy` apart) or round the sketch origin. */
+  pattern(count: number, dx: number, dy: number, round: boolean): string {
+    if (!this.selected.length) return (this.status = 'Select what to pattern first (Select tool).');
+    this.remember();
+    const made = round ? circularPattern(this.sk, this.selected, count, 0, 0) : linearPattern(this.sk, this.selected, count, dx, dy);
+    this.selected = [];
+    return this.settle(`${count} in a ${round ? 'circle round the origin' : 'row'}: ${made.length} copies.`);
+  }
+
   /** Move the sketch plane along its normal (an offset reference plane), with what is drawn on it. */
   offsetPlane(d: number): string {
-    const f = FACE_FRAMES[this.code];
+    const f = this.frame();
     this.origin = [this.origin[0] + f.n[0] * d, this.origin[1] + f.n[1] * d, this.origin[2] + f.n[2] * d];
     this.version++;
     return (this.status = `Sketch plane moved ${d > 0 ? 'out' : 'in'} ${Math.abs(d)} mm (an offset plane).`);
@@ -366,7 +423,7 @@ export class SketchBench {
   /** Start a loft: this sketch's profile is the first; a new sketch opens `distance` mm out for the second. */
   startLoft(distance: number): string {
     const [r] = profiles(this.sk);
-    const f = FACE_FRAMES[this.code];
+    const f = this.frame();
     this.loftFrom = { pts: r.loops[0].pts, sweeps: r.loops[0].sweeps, distance, origin: [...this.origin] as [number, number, number] };
     this.remember();
     this.sk = newSketch();
@@ -398,7 +455,7 @@ export class SketchBench {
     if (!chains.length) throw new Error('draw the path as an open chain of lines (its ends free), then sweep');
     const len = (c: [number, number][]): number => c.reduce((s, q, i) => (i ? s + Math.hypot(q[0] - c[i - 1][0], q[1] - c[i - 1][1]) : 0), 0);
     const path2 = chains.sort((x, y) => len(y) - len(x))[0];
-    const f = FACE_FRAMES[this.code];
+    const f = this.frame();
     // Sunk a fifth of its thickness into the face, so it fuses (a rod only touching the face would not).
     const lift = 0.8 * (rect ? rect[1] / 2 : dia / 2);
     const o = this.origin;
@@ -430,7 +487,17 @@ export class SketchBench {
       this.offsetD = parseFloat(od[1]);
       return this.setTool('offset');
     }
+    const pat = T.match(/\b(circular |polar |round )?pattern\s*(\d+)(?:\D+?(-?\d+(?:\.\d+)?))?(?:\D+?(-?\d+(?:\.\d+)?))?/u);
+    if (pat) {
+      const n = parseInt(pat[2], 10);
+      const round = !!pat[1] || /\baround|round the\b/u.test(T);
+      const d1 = pat[3] ? parseFloat(pat[3]) : 15;
+      const up = /\b(up|vertical|down)\b/u.test(T);
+      return this.pattern(n, up ? 0 : d1, up ? (/\bdown\b/u.test(T) ? -d1 : d1) : pat[4] ? parseFloat(pat[4]) : 0, round);
+    }
     const tools: [RegExp, SketchTool][] = [
+      [/\bellipse\b|\boval\b/u, 'ellipse'],
+      [/\bextend\b/u, 'extend'],
       [/\bspline\b|\bcurve\b/u, 'spline'],
       [/\b(sketch )?fillet\b/u, 'fillet'],
       [/\btrim\b/u, 'trim'],
