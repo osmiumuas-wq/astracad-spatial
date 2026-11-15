@@ -336,16 +336,27 @@ export class Kernel {
         return hit.volume() <= 1e-6 * slab.volume();
       };
 
+      // Cuts in a row (a hundred holes) are queued and subtracted as one union: one boolean instead of many.
+      let cutQueue: Manifold[] = [];
+      const flush = (): void => {
+        if (!cutQueue.length || !body) return;
+        const all = cutQueue.length === 1 ? cutQueue[0] : keep(this.m.Manifold.union(cutQueue));
+        body = keep(body.subtract(all));
+        cutQueue = [];
+      };
       const apply = (tool: Tool, id: string): void => {
         if (tool.op === 'add') {
+          flush();
           body = body ? keep(body.add(tool.solid)) : tool.solid;
         } else {
           if (!body) {
             throw new SpecError('nothing to cut: no solid exists yet', id);
           }
-          body = keep(body.subtract(tool.solid));
+          cutQueue.push(tool.solid);
         }
       };
+      /** Operations that only add cuts (or nothing to the body) and may leave the queue waiting. */
+      const queueSafe = (op: string): boolean => op === 'doc.note' || op === 'ref.plane' || isSketchOp(op) || op === 'feature.cut' || op === 'feature.hole';
 
       /** Long enough to pass through anything built so far. */
       const reach = (): number => {
@@ -363,6 +374,7 @@ export class Kernel {
       for (let i = 0; i < count; i++) {
         const f = spec.features[i];
         const a = f.args ?? {};
+        if (!queueSafe(f.$op)) flush();
         try {
           if (f.$op === 'doc.note') {
             // carries text only
@@ -884,6 +896,7 @@ export class Kernel {
         applied.push(f.id);
       }
 
+      flush();
       if (count === spec.features.length) {
         for (const [id, sk] of sketches) {
           if (!sk.used) {

@@ -175,10 +175,25 @@ export class AssemblySystem extends createSystem({}) {
 
   // ----- instances -----------------------------------------------------------------------------
 
-  private async build(job: string, params: Params): Promise<MeshData> {
-    const res = await ctx.app.engine.run<'built'>({ type: 'build', job, params });
-    if (res.gate.verdict === 'refused') throw new Error(`That part is refused by the truth gate: ${res.gate.reason ?? ''}`);
-    return res.mesh;
+  /** Built meshes by part and sizes: identical instances (a hundred bolts) are built once. */
+  private builtCache = new Map<string, Promise<MeshData>>();
+  /** Their GPU geometry, shared by every identical instance. */
+  private geometryCache = new Map<MeshData, BufferGeometry>();
+
+  private build(job: string, params: Params): Promise<MeshData> {
+    const key = `${job}|${JSON.stringify(params)}`;
+    let got = this.builtCache.get(key);
+    if (!got) {
+      got = ctx.app.engine.run<'built'>({ type: 'build', job, params }).then((res) => {
+        if (res.gate.verdict === 'refused') throw new Error(`That part is refused by the truth gate: ${res.gate.reason ?? ''}`);
+        return res.mesh;
+      });
+      got.catch(() => this.builtCache.delete(key));
+      this.builtCache.set(key, got);
+      // Keep the cache to the parts in use (and a few more).
+      if (this.builtCache.size > 64) this.builtCache.delete(this.builtCache.keys().next().value as string);
+    }
+    return got;
   }
 
   private async addInstance(job: string, params: Params, material: string, pose?: Pose, name?: string): Promise<Instance> {
@@ -208,11 +223,15 @@ export class AssemblySystem extends createSystem({}) {
   }
 
   private makeView(inst: Instance, data: MeshData): void {
-    const g = new BufferGeometry();
-    g.setAttribute('position', new BufferAttribute(data.positions.slice(), 3));
-    g.setAttribute('normal', new BufferAttribute(data.normals.slice(), 3));
-    g.setIndex(new BufferAttribute(data.indices.slice(), 1));
-    g.computeBoundingBox();
+    let g = this.geometryCache.get(data);
+    if (!g) {
+      g = new BufferGeometry();
+      g.setAttribute('position', new BufferAttribute(data.positions.slice(), 3));
+      g.setAttribute('normal', new BufferAttribute(data.normals.slice(), 3));
+      g.setIndex(new BufferAttribute(data.indices.slice(), 1));
+      g.computeBoundingBox();
+      this.geometryCache.set(data, g);
+    }
     const b = g.boundingBox!;
     const color = PALETTE[(this.views.size) % PALETTE.length];
     const mesh = new Mesh(g, new MeshStandardMaterial({ color, roughness: 0.4, metalness: 0.12 }));

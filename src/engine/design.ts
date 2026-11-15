@@ -97,7 +97,8 @@ export function normalCode(n: [number, number, number]): number {
   return best;
 }
 const SLOTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
-export const MAX_FEATURES = 64;
+/** Features in one design: practical, not a hard modelling limit (each is rebuilt in order on a change). */
+export const MAX_FEATURES = 1000;
 
 export interface DesignFeature {
   op: number;
