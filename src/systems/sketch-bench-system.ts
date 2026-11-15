@@ -92,6 +92,8 @@ export class SketchBenchSystem extends createSystem({}) {
       ['sk:planeup', 'Plane +10', say('plane 10'), 'Finish'],
       ['sk:planedn', 'Plane -10', say('plane in 10'), 'Finish'],
       ['sk:tilt', 'Tilt plane 15\u00b0', say('tilt plane 15'), 'Finish'],
+      ['sk:weld', 'Weldment 20x2', say('weldment square tube 20 by 2'), 'Finish'],
+      ['sk:sheet', 'Sheet metal 2', say('sheet metal 2'), 'Finish'],
       ['sk:exit', 'Exit sketch', run(() => {
         app.closeSketchBench();
         return 'Sketch closed without a feature.';

@@ -7,7 +7,8 @@
  */
 
 import type { GcsWrapper } from '@salusoft89/planegcs';
-import { addFeature, addOutline, addPath, OPS, sketchFeatures, turnedFrame } from '../engine/design.js';
+import { addFeature, addMember, addOutline, addPath, OPS, sketchFeatures, turnedFrame } from '../engine/design.js';
+import { MemberProfile, profileName } from '../engine/weldment.js';
 import type { Params } from '../engine/jobs.js';
 import {
   addArc3,
@@ -410,6 +411,31 @@ export class SketchBench {
     const made = round ? circularPattern(this.sk, this.selected, count, 0, 0) : linearPattern(this.sk, this.selected, count, dx, dy);
     this.selected = [];
     return this.settle(`${count} in a ${round ? 'circle round the origin' : 'row'}: ${made.length} copies.`);
+  }
+
+  /**
+   * A weldment: a structural member of the profile along every solid line of the sketch, sitting on the face
+   * (lifted half its height), joined where they meet.
+   */
+  finishWeldment(params: Params, profile: MemberProfile): { params: Params; reply: string } {
+    const lines = this.sk.ents.filter((e) => e.kind === 'line' && !e.construction) as { a: string; b: string }[];
+    if (!lines.length) throw new Error('draw the frame as lines first, then make it a weldment');
+    const f = this.frame();
+    const o = this.origin;
+    const lift = (profile.kind === 'flat' ? profile.t : profile.kind === 'round' || profile.kind === 'square' ? profile.w : profile.h) / 2;
+    const at = (id: string): [number, number, number] => {
+      const q = this.sk.points.find((x) => x.id === id)!;
+      return [0, 1, 2].map((k) => o[k] + f.x[k] * q.x + f.y[k] * q.y + f.n[k] * lift) as [number, number, number];
+    };
+    let out = params;
+    let total = 0;
+    for (const l of lines) {
+      const a = at(l.a);
+      const b = at(l.b);
+      total += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      out = addMember(out, profile, a, b);
+    }
+    return { params: out, reply: `Weldment: ${lines.length} member${lines.length === 1 ? '' : 's'} of ${profileName(profile)}, ${total.toFixed(0)} mm in all. Say "cut list" for the lengths.` };
   }
 
   /** A sheet-metal base flange from this sketch's outline (on a top face): thickness t, bends of inside radius R. */

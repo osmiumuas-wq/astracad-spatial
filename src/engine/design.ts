@@ -45,6 +45,8 @@
  *  25 SHEET   a outline, b thickness, c bend radius (inside), f base height, g K-factor: a sheet-metal base flange
  *  26 FLANGE  a the sheet's feature index, b edge (outline point b to b + 1), c length, d angle (deg), e 1 = down:
  *             an edge flange, bent round the sheet's bend radius (src/engine/sheetmetal.ts)
+ *  27 MEMBER  a section outline, b c d start, e f g end, h roll (deg); profile in pk pw ph pt: a weldment
+ *             structural member, its section along its line (src/engine/weldment.ts)
  * Bosses (BOX, CYL, OUTLINE, FACE, FCIRC) take h = draft angle in degrees.
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
@@ -55,10 +57,11 @@
 import type { Feature, PartSpec } from './types.js';
 import { gearOutline, polygonOutline, rectOutline, slotOutline } from './profiles.js';
 import { flangeSection, flatPattern, sheetEdges } from './sheetmetal.js';
+import { MemberProfile, PROFILE_CODES, profileLoops } from './weldment.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23, SURF: 24, SHEET: 25, FLANGE: 26 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported', 24: 'Freeform', 25: 'Sheet metal', 26: 'Flange' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23, SURF: 24, SHEET: 25, FLANGE: 26, MEMBER: 27 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported', 24: 'Freeform', 25: 'Sheet metal', 26: 'Flange', 27: 'Member' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -102,7 +105,7 @@ export function readFeature(p: Params, i: number): DesignFeature {
 }
 
 /** Extra per-feature values beyond a..h: a sketch plane's in-plane rotation (r) and tilt (w), degrees. */
-const EXTRA = ['r', 'w'] as const;
+const EXTRA = ['r', 'w', 'pk', 'pw', 'ph', 'pt'] as const;
 
 /** The parameters with one more feature at the end. */
 export function addFeature(p: Params, op: number, v: Partial<DesignFeature['v']>): Params {
@@ -248,6 +251,35 @@ export function flangeGeometry(p: Params, i: number): { origin: [number, number,
   };
 }
 
+/** The weldment members in the design: each one's profile and centre-line length. */
+export function designMembers(p: Params): { profile: MemberProfile; length: number }[] {
+  const out: { profile: MemberProfile; length: number }[] = [];
+  for (let i = 0; i < featureCount(p); i++) {
+    const { op, v } = readFeature(p, i);
+    if (op !== OPS.MEMBER) continue;
+    const kind = PROFILE_CODES[Math.round(p[`pk${i}`] ?? 0)] ?? 'square';
+    out.push({ profile: { kind, w: p[`pw${i}`] ?? 20, h: p[`ph${i}`] ?? 20, t: p[`pt${i}`] ?? 2 }, length: Math.hypot(v.e - v.b, v.f - v.c, v.g - v.d) });
+  }
+  return out;
+}
+
+/** A member along a line (model mm): its section from the profile, centred on the line. */
+export function addMember(p: Params, profile: MemberProfile, a: [number, number, number], b: [number, number, number]): Params {
+  const loops = profileLoops(profile);
+  const pts = loops.flatMap((l) => l.pts);
+  const sweeps = loops.flatMap((l) => l.sweeps);
+  const starts: number[] = [];
+  let n = 0;
+  for (const l of loops) {
+    starts.push(n);
+    n += l.pts.length;
+  }
+  const o = addOutline(p, pts, sweeps, starts);
+  const q = addFeature(o.params, OPS.MEMBER, { a: o.index, b: a[0], c: a[1], d: a[2], e: b[0], f: b[1], g: b[2] });
+  const i = featureCount(q) - 1;
+  return { ...q, [`pk${i}`]: PROFILE_CODES.indexOf(profile.kind), [`pw${i}`]: profile.w, [`ph${i}`]: profile.h, [`pt${i}`]: profile.t };
+}
+
 /** The flat pattern of the last sheet-metal part in the design, or null when there is none. */
 export function designFlatPattern(p: Params): ReturnType<typeof flatPattern> | null {
   let s = -1;
@@ -313,7 +345,7 @@ function outlineSketch(p: Params, k: number, id: string, on: string): Feature {
   return loops ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
 }
 
-const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE || op === OPS.SURF || op === OPS.SHEET || op === OPS.FLANGE;
+const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE || op === OPS.SURF || op === OPS.SHEET || op === OPS.FLANGE || op === OPS.MEMBER;
 
 function outlinePts(p: Params, k: number): [number, number][] {
   // The first loop (lofts, sweeps and the like take one profile).
@@ -478,6 +510,25 @@ export function designSpec(p: Params): PartSpec {
         features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: path[0], normal: n, x_dir: squareTo(n) } });
         features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
         features.push({ $op: 'feature.sweep', id, args: path.length > 2 ? { sketch: `s${i}`, path, bend_radius: v.c } : { sketch: `s${i}`, path } });
+      }
+    } else if (op === OPS.MEMBER) {
+      const s0: [number, number, number] = [v.b, v.c, v.d];
+      const d0 = [v.e - v.b, v.f - v.c, v.g - v.d];
+      const L = Math.hypot(d0[0], d0[1], d0[2]);
+      if (L > 1e-6) {
+        const n: [number, number, number] = [d0[0] / L, d0[1] / L, d0[2] / L];
+        // The section's x across the member, level (square to the vertical) unless the member is vertical.
+        let x: number[] = Math.abs(n[1]) < 0.99 ? [n[2], 0, -n[0]] : [1, 0, 0];
+        const xl = Math.hypot(x[0], x[1], x[2]);
+        x = [x[0] / xl, x[1] / xl, x[2] / xl];
+        if (v.h) {
+          const y = [n[1] * x[2] - n[2] * x[1], n[2] * x[0] - n[0] * x[2], n[0] * x[1] - n[1] * x[0]];
+          const r = (v.h * Math.PI) / 180;
+          x = [x[0] * Math.cos(r) + y[0] * Math.sin(r), x[1] * Math.cos(r) + y[1] * Math.sin(r), x[2] * Math.cos(r) + y[2] * Math.sin(r)];
+        }
+        features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: s0, normal: n, x_dir: x } });
+        features.push(outlineSketch(p, Math.round(v.a), `s${i}`, `pl${i}`));
+        features.push({ $op: 'feature.extrude', id, args: { depth: L } });
       }
     } else if (op === OPS.SHEET) {
       features.push(plane(`pl${i}`, v.f));
@@ -787,6 +838,7 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.SWEEP) s = `${Math.max(0, Math.round(p[`q${Math.round(v.b)}n`] ?? 0) - 1)} runs, bends r ${f(v.c)}`;
     else if (op === OPS.RIB) s = `${f(v.a)} thick, ${f(v.b)} x ${f(v.c)}`;
     else if (op === OPS.BASE) s = `${f(v.c - v.b)} x ${f(v.e - v.d)} x ${f(v.g - v.f)} from STEP`;
+    else if (op === OPS.MEMBER) s = `${f(Math.hypot(v.e - v.b, v.f - v.c, v.g - v.d))} long`;
     else if (op === OPS.SHEET) s = `${f(v.b)} thick, bends R${f(v.c)}, K ${f(v.g || 0.44)}`;
     else if (op === OPS.FLANGE) s = `edge ${Math.round(v.b) + 1}, ${f(v.c)} long at ${f(v.d || 90)}\u00b0${Math.round(v.e) === 1 ? ' down' : ''}`;
     else if (op === OPS.SURF) s = `${f(v.a)} x ${f(v.b)}, ${Math.round(v.g)}x${Math.round(v.g)} points, ${v.c > 0 ? `${f(v.c)} sheet` : 'filled'}`;

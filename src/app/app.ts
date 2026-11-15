@@ -44,7 +44,8 @@ import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
-import { addFeature, designFlatPattern, edgeNear, normalCode, OPS, parseDesign } from '../engine/design.js';
+import { addFeature, designFlatPattern, designMembers, edgeNear, normalCode, OPS, parseDesign } from '../engine/design.js';
+import { cutListCsv, parseProfile } from '../engine/weldment.js';
 import { flatPatternDxf, flatPatternSvg } from '../engine/sheetmetal.js';
 import { probe } from './context.js';
 import { Understander } from './understand.js';
@@ -1093,6 +1094,13 @@ export class App {
         this.say(reply, 'info');
         return reply;
       }
+      // Weldment from the sketch's lines: "weldment square tube 20 by 2", "frame of angle 30 by 3".
+      if (/\b(weldment|structural member|members|frame of)\b/u.test(s)) {
+        const prof = parseProfile(s) ?? { kind: 'square' as const, w: 20, h: 20, t: 2 };
+        const reply = this.benchApply((b, p) => b.finishWeldment(p, prof));
+        this.say(reply, 'info');
+        return reply;
+      }
       // Sheet metal from the sketch: "sheet metal 2" (thickness), "bend 3".
       if (/\bsheet ?metal\b/u.test(s)) {
         const th = s.match(/\bthick(?:ness)?\s*(\d+(?:\.\d+)?)/u) ?? s.match(/(\d+(?:\.\d+)?)/u);
@@ -1165,6 +1173,14 @@ export class App {
       if (!s) return 'Nothing to export yet.';
       this.download(s.step, `${s.name}.step`, 'model/step');
       return `Saved ${s.name}.step: a solid with ${s.faces} faces, ready for SOLIDWORKS, CATIA or Creo.`;
+    }
+    // A weldment's cut list: members grouped by profile and length.
+    if (/\bcut ?list\b/u.test(sentence.toLowerCase()) && this.jobId.peek() === 'design') {
+      const members = designMembers(this.params.peek());
+      if (!members.length) return 'There are no weldment members.';
+      const cl = cutListCsv(members, this.materialData.density);
+      this.download(cl.csv, 'cut-list.csv', 'text/csv');
+      return `Cut list saved: ${cl.count} members, ${cl.total.toFixed(0)} mm of stock in all.`;
     }
     // Sheet metal's flat pattern: DXF for the laser or punch, and an SVG to look at.
     if (/\b(flat pattern|unfold|flatten)\b/u.test(sentence.toLowerCase()) && this.jobId.peek() === 'design') {
