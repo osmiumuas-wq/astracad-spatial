@@ -85,3 +85,57 @@ describe('design by voice', () => {
     expect(gate(p).verdict).not.toBe('refused');
   });
 });
+
+describe('pro part tools', () => {
+  it('chamfers exactly: area loses d^2/2 per right-angle corner', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 40, b: 30, c: 10 });
+    p = parseDesign('chamfer 3', p)!.params;
+    const g = gate(p);
+    expect(g.verdict).toBe('verified');
+    expect(g.volume).toBeCloseTo((40 * 30 - 4 * (3 * 3) / 2) * 10, 6);
+  });
+
+  it('mirrors across X and joins the copy (kernel-checked)', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 20, b: 10, c: 10, d: 10 });
+    p = parseDesign('mirror across x 0', p)!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    expect(g.volume).toBeCloseTo(4000, 3);
+  });
+
+  it('sketches on a side face, pulls a boss out, then cuts into it instead', async () => {
+    const { parseDesign, addFaceSketch } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 40, b: 30, c: 20 });
+    // A 10 x 8 rectangle on the +X face (x = 20), centred at y = 10, z = 0.
+    p = addFaceSketch(p, [[-5, 6], [5, 6], [5, 14], [-5, 14]], [20, 0, 0], 2);
+    p = parseDesign('extrude 15', p)!.params;
+    expect(gate(p).volume).toBeCloseTo(40 * 30 * 20 + 10 * 8 * 15, 3);
+    p = parseDesign('cut 5', p)!.params;
+    expect(gate(p).volume).toBeCloseTo(40 * 30 * 20 - 10 * 8 * 5, 3);
+  });
+
+  it('revolves a face sketch into a turned part (Pappus)', async () => {
+    const { parseDesign, addFaceSketch } = await import('../src/engine/design.js');
+    // A 10 x 20 rectangle on the front face, revolved about its left edge: a cylinder r 10, h 20 (polygonal).
+    let p = addFeature(start, OPS.BOX, { a: 4, b: 4, c: 4 });
+    // On the block's front face (z = 2), u from 0 to 10: the revolved cylinder swallows the block, one solid.
+    p = addFaceSketch(p, [[0, 0], [10, 0], [10, 20], [0, 20]], [0, 0, 2], 4);
+    p = parseDesign('revolve it', p)!.params;
+    const g = gate(p);
+    expect(g.reason).toBeUndefined();
+    const cyl = Math.PI * 100 * 20;
+    expect(g.volume).toBeGreaterThan(cyl * 0.98);
+    expect(g.volume).toBeLessThan(cyl * 1.001);
+  });
+
+  it('edits an earlier feature', async () => {
+    const { parseDesign, designJob: job } = await import('../src/engine/design.js');
+    let p = addFeature(start, OPS.BOX, { a: 40, b: 30, c: 20 });
+    p = addFeature(p, OPS.CYL, { a: 10, c: 10, f: 20 });
+    p = parseDesign('edit feature 1', p)!.params;
+    job.clamp(p);
+    expect(job.params.map((d) => d.id)).toContain('a0');
+  });
+});

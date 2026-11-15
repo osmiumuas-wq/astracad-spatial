@@ -27,7 +27,7 @@ import {
   sketchLoops,
   tessellateLoop,
 } from './sketch.js';
-import { extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
+import { chamferLoops, extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
   BuildOutput,
   Feature,
@@ -76,6 +76,8 @@ const ARG_SETS: Record<string, readonly string[]> = {
   ],
   'feature.pattern.circular': ['feature', 'features', 'count', 'angle', 'axis', 'center'],
   'feature.fillet': ['radius', 'feature', 'edges'],
+  'feature.chamfer': ['distance', 'feature', 'edges'],
+  'feature.mirror': ['plane', 'offset'],
   'feature.shell': ['thickness', 'feature', 'open'],
   'feature.loft': ['sketches'],
   'feature.sweep': ['sketch', 'path', 'bend_radius'],
@@ -85,8 +87,6 @@ const ARG_SETS: Record<string, readonly string[]> = {
 /** Operations that exist in the language but need the desktop B-rep kernels. */
 const DESKTOP_ONLY = new Set([
   'feature.cut_revolve',
-  'feature.chamfer',
-  'feature.mirror',
   'body.boolean',
   'feature.parameter',
 ]);
@@ -348,7 +348,7 @@ export class Kernel {
               }
             }
             const mod = isCut ? undefined : mods.get(f.id);
-            const loops = mod?.fillet ? filletLoops(sk.loops, mod.fillet) : sk.loops;
+            const loops = mod?.fillet ? filletLoops(sk.loops, mod.fillet) : mod?.chamfer ? chamferLoops(sk.loops, mod.chamfer) : sk.loops;
             const cs = section(loops);
             let z = zRange(a.direction, depth, isCut ? 'both' : 'normal', f.id);
             if (isCut) {
@@ -369,7 +369,21 @@ export class Kernel {
             };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
-          } else if (f.$op === 'feature.fillet' || f.$op === 'feature.shell') {
+          } else if (f.$op === 'feature.mirror') {
+            // Mirror everything built so far across a plane x, y or z = offset, and join the copy.
+            if (!body) throw new SpecError('nothing to mirror yet', f.id);
+            const axis = String(a.plane ?? 'X').toUpperCase();
+            if (axis !== 'X' && axis !== 'Y' && axis !== 'Z') throw new SpecError('mirror plane must be X, Y or Z (the plane normal to that axis)', f.id);
+            const k: 0 | 1 | 2 = axis === 'X' ? 0 : axis === 'Y' ? 1 : 2;
+            const off = numArg(a.offset, 'offset', 0);
+            const n: Vec3 = [0, 0, 0];
+            n[k] = 1;
+            const shift: Vec3 = [0, 0, 0];
+            shift[k] = off;
+            const copy = keep(keep(keep(body.translate([-shift[0], -shift[1], -shift[2]])).mirror(n)).translate(shift));
+            body = keep(body.add(copy));
+            tools.set(f.id, []);
+          } else if (f.$op === 'feature.fillet' || f.$op === 'feature.shell' || f.$op === 'feature.chamfer') {
             // Applied to the named extrusion when it was built (see extrudeModifiers).
           } else if (f.$op === 'feature.loft') {
             const ids = a.sketches;

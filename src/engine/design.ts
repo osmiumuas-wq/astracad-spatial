@@ -19,13 +19,45 @@
  *   8 CIRCPAT a count, b feature index, d centre x, e centre z
  *   9 OUTLINE a outline index, c h, f y, g 0 add / 1 cut
  *  10 BORE    a diameter, c depth, d x, e z, f y  (a cylinder removed, upwards from f)
+ *  11 CHAMFER a distance, b feature index (its upright edges)
+ *  12 MIRROR  a plane (0 x, 1 y, 2 z), b offset: everything so far, mirrored and joined
+ *  13 REVOLVE a outline index, b angle (deg), d x, e y, f z origin, g normal code: the outline turned about
+ *             its plane's upright axis through the origin (a turned part: a knob, a bottle, a wheel)
+ *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
+ *             a sketch on any flat face, pulled out of it or cut into it
+ *
+ * Normal codes: 0 +Y, 1 -Y, 2 +X, 3 -X, 4 +Z, 5 -Z.
  */
 
 import type { Feature, PartSpec } from './types.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch' };
+
+/** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
+export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
+  { n: [0, 1, 0], x: [1, 0, 0], y: [0, 0, -1] },
+  { n: [0, -1, 0], x: [1, 0, 0], y: [0, 0, 1] },
+  { n: [1, 0, 0], x: [0, 0, -1], y: [0, 1, 0] },
+  { n: [-1, 0, 0], x: [0, 0, 1], y: [0, 1, 0] },
+  { n: [0, 0, 1], x: [1, 0, 0], y: [0, 1, 0] },
+  { n: [0, 0, -1], x: [-1, 0, 0], y: [0, 1, 0] },
+];
+
+/** The normal code nearest a direction, or -1 when it is more than 10 degrees from every axis. */
+export function normalCode(n: [number, number, number]): number {
+  let best = -1;
+  let bestDot = Math.cos((10 * Math.PI) / 180);
+  FACE_FRAMES.forEach((f, i) => {
+    const d = f.n[0] * n[0] + f.n[1] * n[1] + f.n[2] * n[2];
+    if (d > bestDot) {
+      bestDot = d;
+      best = i;
+    }
+  });
+  return best;
+}
 const SLOTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'] as const;
 export const MAX_FEATURES = 24;
 
@@ -48,6 +80,8 @@ export function readFeature(p: Params, i: number): DesignFeature {
 export function addFeature(p: Params, op: number, v: Partial<DesignFeature['v']>): Params {
   const i = featureCount(p);
   const out: Params = { ...p, nf: i + 1, [`o${i}`]: op };
+  // A new feature is the one being edited.
+  delete out.sel;
   for (const s of SLOTS) out[`${s}${i}`] = v[s] ?? 0;
   return out;
 }
@@ -72,7 +106,14 @@ export function addOutline(p: Params, pts: [number, number][]): { params: Params
   return { params: out, index: k };
 }
 
-const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE;
+const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE;
+
+function outlinePts(p: Params, k: number): [number, number][] {
+  const m = Math.round(p[`q${k}n`] ?? 0);
+  const pts: [number, number][] = [];
+  for (let j = 0; j < m; j++) pts.push([p[`q${k}x${j}`], p[`q${k}y${j}`]]);
+  return pts;
+}
 
 /** The feature list as Part Language v2. */
 export function designSpec(p: Params): PartSpec {
@@ -103,6 +144,20 @@ export function designSpec(p: Params): PartSpec {
       features.push({ $op: 'feature.pattern.linear', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), spacing: v.c, direction: Math.round(v.d) === 1 ? 'Z' : 'X' } });
     } else if (op === OPS.CIRCPAT) {
       features.push({ $op: 'feature.pattern.circular', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), axis: { origin: [v.d, 0, v.e], direction: [0, 1, 0] } } });
+    } else if (op === OPS.CHAMFER) {
+      features.push({ $op: 'feature.chamfer', id, args: { distance: v.a, feature: `f${Math.round(v.b)}`, edges: 'profile' } });
+    } else if (op === OPS.MIRROR) {
+      features.push({ $op: 'feature.mirror', id, args: { plane: ['X', 'Y', 'Z'][Math.max(0, Math.min(2, Math.round(v.a)))], offset: v.b } });
+    } else if (op === OPS.FACE || op === OPS.REVOLVE) {
+      const fr = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(op === OPS.FACE ? v.b : v.g)))];
+      // A boss starts 0.01 mm inside the face it stands on, so it always fuses with it (the overlap is
+      // inside material that is already there, so the volume is unchanged).
+      const sink = op === OPS.FACE && Math.round(v.g) !== 1 ? 0.01 : 0;
+      const origin: [number, number, number] = [v.d - fr.n[0] * sink, v.e - fr.n[1] * sink, v.f - fr.n[2] * sink];
+      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin, normal: fr.n, x_dir: fr.x } });
+      features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
+      if (op === OPS.REVOLVE) features.push({ $op: 'feature.revolve', id, args: { angle: Math.max(1, Math.min(360, v.b || 360)), axis: 'v' } });
+      else features.push(Math.round(v.g) === 1 ? { $op: 'feature.cut', id, args: { depth: v.c, direction: 'reverse' } } : { $op: 'feature.extrude', id, args: { depth: v.c + sink } });
     } else if (op === OPS.OUTLINE) {
       const k = Math.round(v.a);
       const m = Math.round(p[`q${k}n`] ?? 0);
@@ -116,15 +171,31 @@ export function designSpec(p: Params): PartSpec {
   return { language: 2, name: 'design', units: 'mm', features, notes: { hand_check: 'closed form where the checker can derive one; otherwise kernel-checked' } };
 }
 
+/** Index of the last feature that adds an extruded body (what a fillet or chamfer rounds: a box, a cylinder, a boss), or -1. */
+export function lastBoss(p: Params): number {
+  for (let i = featureCount(p) - 1; i >= 0; i--) {
+    const { op, v } = readFeature(p, i);
+    if (op === OPS.BOX || op === OPS.CYL || ((op === OPS.FACE || op === OPS.OUTLINE) && Math.round(v.g) !== 1)) return i;
+  }
+  return -1;
+}
+
 /** Index of the last feature that is a body (a box, cylinder, cut, sketch), or -1. */
 export function lastBody(p: Params): number {
   for (let i = featureCount(p) - 1; i >= 0; i--) if (isBody(readFeature(p, i).op)) return i;
   return -1;
 }
 
-/** Editable sizes: those of the last feature, so "make it 10 taller" and the handles act on it. */
+/** The feature being edited: the one picked with "edit feature N", else the last. */
+export function editing(p: Params): number {
+  const n = featureCount(p);
+  const s = Math.round(p.sel ?? -1);
+  return s >= 0 && s < n ? s : n - 1;
+}
+
+/** Editable sizes: those of the feature being edited, so "make it 10 taller" and the handles act on it. */
 function liveDefs(p: Params): ParamDef[] {
-  const i = featureCount(p) - 1;
+  const i = editing(p);
   if (i < 0) return [];
   const { op } = readFeature(p, i);
   const d = (s: string, label: string, min: number, max: number, step = 1): ParamDef => ({ id: `${s}${i}`, label, unit: 'mm', min, max, step, fine: 0.05, value: p[`${s}${i}`] ?? min });
@@ -147,6 +218,14 @@ function liveDefs(p: Params): ParamDef[] {
       return [{ ...d('a', 'Count', 2, 72), unit: '' }];
     case OPS.OUTLINE:
       return [d('c', 'Height', 0.5, 300), d('f', 'Base height', -50, 300)];
+    case OPS.FACE:
+      return [d('c', 'Depth', 0.2, 300)];
+    case OPS.CHAMFER:
+      return [d('a', 'Chamfer', 0.2, 60, 0.5)];
+    case OPS.MIRROR:
+      return [d('b', 'Mirror offset', -150, 150)];
+    case OPS.REVOLVE:
+      return [{ ...d('b', 'Revolve angle', 1, 360), unit: 'deg' }];
     default:
       return [];
   }
@@ -154,7 +233,7 @@ function liveDefs(p: Params): ParamDef[] {
 
 /** Handles on the last feature: width, depth, height for a box; diameter and height for a cylinder. */
 function liveHandles(p: Params): HandleDef[] {
-  const i = featureCount(p) - 1;
+  const i = editing(p);
   if (i < 0) return [];
   const { op, v } = readFeature(p, i);
   if (op === OPS.BOX || op === OPS.CUTBOX) {
@@ -273,6 +352,10 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.LINPAT) s = `${Math.round(v.a)} x ${f(v.c)} of ${Math.round(v.b) + 1}`;
     else if (op === OPS.CIRCPAT) s = `${Math.round(v.a)} round of ${Math.round(v.b) + 1}`;
     else if (op === OPS.OUTLINE) s = `${Math.round(v.g) === 1 ? 'cut' : 'extruded'} ${f(v.c)}`;
+    else if (op === OPS.FACE) s = `${Math.round(v.g) === 1 ? 'cut' : 'boss'} ${f(v.c)} on ${['top', 'bottom', 'right', 'left', 'front', 'back'][Math.round(v.b)] ?? '?'}`;
+    else if (op === OPS.CHAMFER) s = `${f(v.a)} on ${Math.round(v.b) + 1}`;
+    else if (op === OPS.MIRROR) s = `across ${['X', 'Y', 'Z'][Math.round(v.a)] ?? '?'} = ${f(v.b)}`;
+    else if (op === OPS.REVOLVE) s = `${f(v.b || 360)} deg`;
     out.push(`${i + 1} ${name} ${s}`);
   }
   return out;
@@ -297,6 +380,39 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
   const nums = [...t.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
   const top = topOf(p);
   const at = here ?? [0, top, 0];
+  const edit = t.match(/\b(edit|select|change) feature (\d+)\b/u);
+  if (edit) {
+    const k = parseInt(edit[2], 10) - 1;
+    if (k < 0 || k >= featureCount(p)) return { params: p, reply: `There are ${featureCount(p)} features.` };
+    return { params: { ...p, sel: k }, reply: `Editing feature ${k + 1}, ${OP_NAMES[readFeature(p, k).op] ?? ''}: pull its handles or say its new size.` };
+  }
+  const last = featureCount(p) - 1;
+  const lastF = last >= 0 ? readFeature(p, last) : null;
+  if (lastF?.op === OPS.FACE && /\b(extrude|pull|boss|cut|deep|depth)\b/u.test(t) && nums.length && !/\b(box|cylinder|hole)\b/u.test(t)) {
+    const cut = /\bcut\b/u.test(t);
+    return { params: { ...p, [`c${last}`]: nums[0], [`g${last}`]: cut ? 1 : 0 }, reply: `${cut ? 'Cut' : 'Pulled'} the sketch ${nums[0]} mm ${cut ? 'into' : 'out of'} the face.` };
+  }
+  if (lastF?.op === OPS.FACE && /\b(revolve|lathe)\b|\bturn it\b/u.test(t)) {
+    const k = Math.round(lastF.v.a);
+    const pts = outlinePts(p, k);
+    const minU = Math.min(...pts.map((q) => q[0]));
+    const fr = FACE_FRAMES[Math.round(lastF.v.b)];
+    const out: Params = { ...p, [`o${last}`]: OPS.REVOLVE, [`b${last}`]: nums[0] ?? 360, [`g${last}`]: Math.round(lastF.v.b), [`d${last}`]: lastF.v.d + fr.x[0] * minU, [`e${last}`]: lastF.v.e + fr.x[1] * minU, [`f${last}`]: lastF.v.f + fr.x[2] * minU };
+    pts.forEach(([u], j) => (out[`q${k}x${j}`] = u - minU));
+    return { params: out, reply: `Revolved the sketch ${nums[0] ?? 360} degrees about its left edge.` };
+  }
+  if (/\bchamfer\b/u.test(t)) {
+    const body = lastBoss(p);
+    if (body < 0) return null;
+    const d = nums[0] ?? 1;
+    return { params: addFeature(p, OPS.CHAMFER, { a: d, b: body }), reply: `Chamfered the upright edges of feature ${body + 1} by ${d} mm.` };
+  }
+  if (/\bmirror\b/u.test(t)) {
+    const axis = /\b(across|in|about|on) (the )?y\b/u.test(t) ? 1 : /\b(across|in|about|on) (the )?z\b|\bfront to back\b/u.test(t) ? 2 : 0;
+    const b = addedBox(p);
+    const off = nums.length ? nums[0] : axis === 1 ? b.min[1] : b.max[axis];
+    return { params: addFeature(p, OPS.MIRROR, { a: axis, b: off }), reply: `Mirrored across ${['X', 'Y', 'Z'][axis]} = ${+off.toFixed(2)} and joined.` };
+  }
   if (/\b(remove|delete|undo) (the )?last (feature|step)\b/u.test(t)) {
     if (featureCount(p) <= 1) return { params: p, reply: 'The first feature stays; change its sizes instead.' };
     return { params: removeLast(p), reply: 'Removed the last feature.' };
@@ -319,7 +435,7 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
     return { params: addFeature(p, cut ? OPS.CUTBOX : OPS.BOX, { a: w, b: d, c: h, d: here ? at[0] : 0, e: here ? at[2] : 0, f: base }), reply: `${cut ? 'Cut' : 'Added'} a ${w} x ${d} x ${h} mm box${cut ? ' pocket' : ''}${here ? ' where you pointed' : ' on top'}.` };
   }
   if (/\b(fillet|round (the )?(corners|edges))\b/u.test(t)) {
-    const body = lastBody(p);
+    const body = lastBoss(p);
     if (body < 0) return null;
     const r = nums[0] ?? 3;
     return { params: addFeature(p, OPS.FILLET, { a: r, b: body }), reply: `Rounded the upright edges of feature ${body + 1} to ${r} mm.` };
@@ -346,4 +462,12 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
     return { params: addFeature(p, OPS.LINPAT, { a: n, b: seed, c: gap, d: axis }), reply: `${n} in a row, ${gap} mm apart, of feature ${seed + 1}.` };
   }
   return null;
+}
+
+/** A sketch drawn on a flat face: a boss 10 mm out of it, ready to be pulled or turned into a cut. */
+export function addFaceSketch(p: Params, pts: [number, number][], origin: [number, number, number], code: number): Params {
+  const o = addOutline(p, pts);
+  // The picked point, snapped to a thousandth of a millimetre: the face it was picked on.
+  const r = (x: number): number => Math.round(x * 1000) / 1000;
+  return addFeature(o.params, OPS.FACE, { a: o.index, b: code, c: 10, d: r(origin[0]), e: r(origin[1]), f: r(origin[2]), g: 0 });
 }

@@ -42,7 +42,7 @@ import { drawingSvg } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
-import { parseDesign } from '../engine/design.js';
+import { normalCode, parseDesign } from '../engine/design.js';
 import { probe } from './context.js';
 import { Understander } from './understand.js';
 
@@ -884,7 +884,10 @@ export class App {
    * spoken when the user talked).
    */
   /** Point and say: the parameter under the hand ray, and when it was last pointed at (ms). */
-  pointed: { param: string; at: number; mm?: [number, number, number] } | null = null;
+  pointed: { param: string; at: number; mm?: [number, number, number]; normal?: [number, number, number] } | null = null;
+
+  /** Free design: the flat face an air sketch is drawn on (part mm origin, normal code), set by "sketch here". */
+  sketchFace: { origin: [number, number, number]; code: number } | null = null;
 
   /** Assembly voice commands (src/systems/assembly-system.ts); returns a reply, or null when not about the assembly. */
   assemblyCommand: ((text: string) => string | null) | null = null;
@@ -952,6 +955,17 @@ export class App {
     if (/\b(free design|new design|design (a|my own|something)|start designing)\b/u.test(sentence.toLowerCase())) {
       this.selectJob('design');
       return 'Free design: a 60 by 40 by 20 block to start. Add boxes, cylinders, holes, fillets, shells and patterns by voice or from the design strip.';
+    }
+    if (this.jobId.peek() === 'design' && /\b(sketch|draw) (here|on (this|that|the) face)\b/u.test(sentence.toLowerCase())) {
+      const pt = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed : null;
+      if (!pt?.mm || !pt.normal) return 'Point at a flat face of the part, then say "sketch here".';
+      const code = normalCode(pt.normal);
+      if (code < 0) return 'That face is not flat along a main direction; point at a flat face.';
+      this.sketchFace = { origin: pt.mm, code };
+      this.mode.value = 'sketch';
+      const reply = `Sketch on the ${['top', 'bottom', 'right', 'left', 'front', 'back'][code]} face: pinch near it and draw a closed outline, then let go.`;
+      this.say(reply, 'info');
+      return reply;
     }
     if (this.jobId.peek() === 'design') {
       const here = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.mm : undefined;

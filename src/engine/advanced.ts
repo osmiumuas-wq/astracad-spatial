@@ -106,6 +106,59 @@ export function filletLoops(loops: Seg[][], r: number): Seg[][] {
   });
 }
 
+/**
+ * Chamfer every corner between two straight edges of each outline: the corner
+ * is cut by a straight line `d` mm back along both edges (an equal-distance
+ * chamfer). Exact, like the fillet: the area changes by d^2 sin(turn) / 2 per corner.
+ */
+export function chamferLoops(loops: Seg[][], d: number): Seg[][] {
+  if (!(d > 0)) throw new SpecError('chamfer distance must be positive');
+  return loops.map((loop, li) => {
+    if (loop.length === 1 && loop[0][0] === 'C') return loop;
+    const n = loop.length;
+    const cut = new Array<boolean>(n).fill(false);
+    for (let i = 0; i < n; i++) {
+      const a = loop[i];
+      const b = loop[(i + 1) % n];
+      if (a[0] !== 'L' || b[0] !== 'L') continue;
+      const d1 = unit2(sub2(segEnd(a), segStart(a)));
+      const d2 = unit2(sub2(segEnd(b), segStart(b)));
+      const z = d1[0] * d2[1] - d1[1] * d2[0];
+      const c = d1[0] * d2[0] + d1[1] * d2[1];
+      if (Math.abs(z) < 1e-9 && c > 0) continue;
+      cut[i] = true;
+    }
+    const out: Seg[] = [];
+    for (let i = 0; i < n; i++) {
+      const s = loop[i];
+      if (s[0] === 'L') {
+        const a = segStart(s);
+        const b = segEnd(s);
+        const l = len2(sub2(b, a));
+        const t0 = cut[(i - 1 + n) % n] ? d : 0;
+        const t1 = cut[i] ? d : 0;
+        if (t0 + t1 > l + 1e-9) {
+          throw new SpecError(`chamfer ${d} mm is too large: edge ${i} of outline ${li} is ${l.toFixed(3)} mm`);
+        }
+        const u = unit2(sub2(b, a));
+        const s0: Vec2 = [a[0] + u[0] * t0, a[1] + u[1] * t0];
+        const s1: Vec2 = [b[0] - u[0] * t1, b[1] - u[1] * t1];
+        if (len2(sub2(s1, s0)) > 1e-9) out.push(['L', s0[0], s0[1], s1[0], s1[1]]);
+        if (cut[i]) {
+          const nb = loop[(i + 1) % n];
+          const nd = unit2(sub2(segEnd(nb), segStart(nb)));
+          const q: Vec2 = [b[0] + nd[0] * d, b[1] + nd[1] * d];
+          out.push(['L', s1[0], s1[1], q[0], q[1]]);
+        }
+      } else {
+        out.push(s);
+      }
+    }
+    for (let i = 0; i < out.length; i++) snapStart(out[(i + 1) % out.length], segEnd(out[i]));
+    return out;
+  });
+}
+
 function snapStart(s: Seg, p: Vec2): void {
   if (s[0] === 'L') {
     s[1] = p[0];
@@ -650,6 +703,7 @@ export function momentAboutLine(integ: { area: number; mu: number; mv: number },
 
 export interface ExtrudeMods {
   fillet?: number;
+  chamfer?: number;
   shell?: { t: number; open: 'far' | 'near' | 'none' };
 }
 
@@ -662,7 +716,7 @@ export function extrudeModifiers(features: Feature[], upTo: number): Map<string,
   const index = new Map(features.map((f, i) => [f.id, i]));
   for (let i = 0; i < Math.min(upTo, features.length); i++) {
     const f = features[i];
-    if (f.$op !== 'feature.fillet' && f.$op !== 'feature.shell') continue;
+    if (f.$op !== 'feature.fillet' && f.$op !== 'feature.shell' && f.$op !== 'feature.chamfer') continue;
     const a = f.args ?? {};
     const target = a.feature;
     const ti = typeof target === 'string' ? index.get(target) : undefined;
@@ -670,11 +724,19 @@ export function extrudeModifiers(features: Feature[], upTo: number): Map<string,
       throw new SpecError(`"feature" must name an earlier feature.extrude`, f.id);
     }
     const m = mods.get(target as string) ?? {};
-    if (f.$op === 'feature.fillet') {
+    if (f.$op === 'feature.chamfer') {
+      if (a.edges !== undefined && a.edges !== 'profile') {
+        throw new SpecError('the headset kernel chamfers "profile" edges (the edges along the extrusion) only', f.id);
+      }
+      if (m.fillet !== undefined || m.chamfer !== undefined) throw new SpecError(`"${String(target)}" already has rounded or chamfered corners`, f.id);
+      const d = Number(a.distance);
+      if (!(d > 0)) throw new SpecError('chamfer distance must be positive', f.id);
+      m.chamfer = d;
+    } else if (f.$op === 'feature.fillet') {
       if (a.edges !== undefined && a.edges !== 'profile') {
         throw new SpecError('the headset kernel rounds "profile" edges (the edges along the extrusion) only', f.id);
       }
-      if (m.fillet !== undefined) throw new SpecError(`"${String(target)}" is already filleted`, f.id);
+      if (m.fillet !== undefined || m.chamfer !== undefined) throw new SpecError(`"${String(target)}" is already filleted or chamfered`, f.id);
       const r = Number(a.radius);
       if (!(r > 0)) throw new SpecError('fillet radius must be positive', f.id);
       m.fillet = r;

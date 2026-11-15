@@ -77,8 +77,15 @@ export class PointSystem extends createSystem({}) {
         best = h.param;
       }
     }
-    if (!best) return;
-    app.pointed = { param: best, at: performance.now(), mm: [this.local.x, this.local.y, this.local.z] };
+    // The spot and its face are always kept (for "sketch here" and "drill a hole here"); the size label needs a handle.
+    const fn = hit.normal;
+    app.pointed = { param: best, at: performance.now(), mm: [this.local.x, this.local.y, this.local.z], normal: fn ? [fn.x, fn.y, fn.z] : undefined };
+    if (!best) {
+      this.ring.position.copy(ringAt);
+      this.ring.visible = true;
+      this.label.visible = false;
+      return;
+    }
     probe.pointed = best;
     const def = paramDef(app.job, best);
     if (best !== this.lastParam) {

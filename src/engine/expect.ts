@@ -24,6 +24,7 @@ import {
   extrudeModifiers,
   ExtrudeMods,
   filletLoops,
+  chamferLoops,
   loftPlan,
   loftVolume,
   momentAboutLine,
@@ -201,6 +202,7 @@ export function expectVolume(spec: PartSpec): Expectation {
       let cavity: [number, number] | null = null;
       try {
         if (mod?.fillet) loops = filletLoops(sk.loops, mod.fillet);
+        else if (mod?.chamfer) loops = chamferLoops(sk.loops, mod.chamfer);
         if (mod?.shell) {
           inner = offsetLoops(loops, mod.shell.t);
           cavity = shellRange([z0, z1], a.direction, mod.shell.t, mod.shell.open, 0).solid;
@@ -226,7 +228,10 @@ export function expectVolume(spec: PartSpec): Expectation {
       continue;
     }
 
-    if (f.$op === 'feature.fillet' || f.$op === 'feature.shell') {
+    if (f.$op === 'feature.mirror') {
+      return unknown(`"${f.id}": a mirrored copy may overlap the original`, terms);
+    }
+    if (f.$op === 'feature.fillet' || f.$op === 'feature.shell' || f.$op === 'feature.chamfer') {
       continue; // folded into the extrusion it names
     }
 
