@@ -25,6 +25,8 @@
  *             its plane's upright axis through the origin (a turned part: a knob, a bottle, a wheel)
  *  15 EDGE    a radius or distance, b 0 fillet / 1 chamfer, c d e one end, f g h the other end:
  *             a fillet or chamfer of any straight edge between two flat faces
+ *  16 ROUND   a radius, b 1 = every edge, c d e a point on the edge: a rolling-ball fillet of any edge,
+ *             straight or curved, following tangent edges; rounds in a row with one radius blend their corners
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
  *
@@ -34,8 +36,8 @@
 import type { Feature, PartSpec } from './types.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -146,6 +148,8 @@ export function designSpec(p: Params): PartSpec {
       features.push({ $op: 'feature.pattern.linear', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), spacing: v.c, direction: Math.round(v.d) === 1 ? 'Z' : 'X' } });
     } else if (op === OPS.CIRCPAT) {
       features.push({ $op: 'feature.pattern.circular', id, args: { feature: `f${Math.round(v.b)}`, count: Math.round(v.a), axis: { origin: [v.d, 0, v.e], direction: [0, 1, 0] } } });
+    } else if (op === OPS.ROUND) {
+      features.push({ $op: 'feature.round', id, args: Math.round(v.b) === 1 ? { radius: v.a, all: true } : { radius: v.a, at: [v.c, v.d, v.e] } });
     } else if (op === OPS.EDGE) {
       features.push({ $op: 'feature.edge_fillet', id, args: { from: [v.c, v.d, v.e], to: [v.f, v.g, v.h], radius: v.a, kind: Math.round(v.b) === 1 ? 'chamfer' : 'fillet' } });
     } else if (op === OPS.CHAMFER) {
@@ -228,6 +232,8 @@ function liveDefs(p: Params): ParamDef[] {
       return [d('a', 'Chamfer', 0.2, 60, 0.5)];
     case OPS.EDGE:
       return [d('a', 'Edge radius', 0.2, 60, 0.5)];
+    case OPS.ROUND:
+      return [d('a', 'Fillet radius', 0.2, 60, 0.5)];
     case OPS.MIRROR:
       return [d('b', 'Mirror offset', -150, 150)];
     case OPS.REVOLVE:
@@ -360,6 +366,7 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.OUTLINE) s = `${Math.round(v.g) === 1 ? 'cut' : 'extruded'} ${f(v.c)}`;
     else if (op === OPS.FACE) s = `${Math.round(v.g) === 1 ? 'cut' : 'boss'} ${f(v.c)} on ${['top', 'bottom', 'right', 'left', 'front', 'back'][Math.round(v.b)] ?? '?'}`;
     else if (op === OPS.CHAMFER) s = `${f(v.a)} on ${Math.round(v.b) + 1}`;
+    else if (op === OPS.ROUND) s = Math.round(v.b) === 1 ? `r ${f(v.a)}, every edge` : `r ${f(v.a)} on an edge`;
     else if (op === OPS.EDGE) s = `${Math.round(v.b) === 1 ? 'chamfer' : 'fillet'} ${f(v.a)}, ${f(Math.hypot(v.f - v.c, v.g - v.d, v.h - v.e))} long`;
     else if (op === OPS.MIRROR) s = `across ${['X', 'Y', 'Z'][Math.round(v.a)] ?? '?'} = ${f(v.b)}`;
     else if (op === OPS.REVOLVE) s = `${f(v.b || 360)} deg`;
@@ -408,8 +415,20 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
     pts.forEach(([u], j) => (out[`q${k}x${j}`] = u - minU));
     return { params: out, reply: `Revolved the sketch ${nums[0] ?? 360} degrees about its left edge.` };
   }
-  // "fillet this edge 3", "chamfer that edge 2": the edge nearest the pointed spot.
-  if (/\b(fillet|round|chamfer|bevel)\b/u.test(t) && /\b(this|that) edge\b|\bedge here\b/u.test(t)) {
+  // "round all edges 2": a rolling ball over the whole part.
+  if (/\b(fillet|round)\b/u.test(t) && /\b(all|every) (the )?edges\b/u.test(t)) {
+    const r = nums[0] ?? 2;
+    return { params: addFeature(p, OPS.ROUND, { a: r, b: 1 }), reply: `Rounded every edge to ${r} mm, corners blended.` };
+  }
+  // "fillet this edge 3": a rolling-ball fillet of the edge at the pointed spot (straight or curved).
+  if (/\b(fillet|round)\b/u.test(t) && /\b(this|that) edge\b|\bedge here\b/u.test(t)) {
+    if (!here) return { params: p, reply: 'Point at an edge of the part, then say "fillet this edge 3".' };
+    const r = nums[0] ?? 2;
+    const r3 = (x: number): number => Math.round(x * 1e4) / 1e4;
+    return { params: addFeature(p, OPS.ROUND, { a: r, c: r3(here[0]), d: r3(here[1]), e: r3(here[2]) }), reply: `Filleted that edge to ${r} mm, following its tangent edges. Fillet the edges next to it with the same radius and the corner blends.` };
+  }
+  // "chamfer this edge 2": the straight edge nearest the pointed spot.
+  if (/\b(chamfer|bevel)\b/u.test(t) && /\b(this|that) edge\b|\bedge here\b/u.test(t)) {
     if (!here || !edgeAt) return { params: p, reply: 'Point at an edge of the part, then say "fillet this edge 3".' };
     const e = edgeAt(here);
     if (!e) return { params: p, reply: 'No sharp straight edge there. Point closer to an edge.' };

@@ -35,10 +35,10 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (161 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+Engine tests (164 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
 CalculiX, modal, flow, STEP, hinge, drawing, describe, spoken commands, voice, co-design, calibration, stability,
 explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free design, pro part tools,
-assemblies, mates and loops, edge fillets):
+assemblies, mates and loops, edge fillets, rolling-ball fillets and corner blends):
 
 ```bash
 npx vitest run
@@ -139,8 +139,12 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   whose corners are bends of one radius. Chamfers cut an extrusion's outline corners (exact, closed-form checked);
   mirrors join the body with its copy across a plane (kernel-checked). Any other straight edge between two flat faces
   can be filleted or chamfered by pointing at it (convex edges cut, concave edges filled; the area is checked against
-  r^2 (cot(phi/2) - (pi - phi)/2) and d^2 sin(phi)/2 in the tests). Fillets of curved edges and general booleans of
-  unrelated bodies are refused by name.
+  r^2 (cot(phi/2) - (pi - phi)/2) and d^2 sin(phi)/2 in the tests). Fillets of any edge, straight or curved, are
+  rolling-ball fillets: the ball rolls along the edge and every tangent edge after it; fillets picked one after
+  another with the same radius form a set, and where their edges meet the corner blends into a sphere patch. "Round
+  all edges" rolls the ball over the whole part (a rounded block matches Steiner's formula). Circular rims take an
+  exact revolved section (Pappus); other curved edges use a 32-segment ball, within about 1 % of the true blend.
+  Chamfers of curved edges and general booleans of unrelated bodies are refused by name.
 - Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step.
 - The agents are rule-based expert systems, not language models.
 - Capture makes a parametric extrusion of an object's traced footprint and height, not a 3D scan: overhangs,

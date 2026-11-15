@@ -53,8 +53,9 @@ hands, and every number on screen backed by a check you can see.
   corners and equal sides hold, and "this side 40" sets a side.
 - **Professional CAD in your hands.** Point at any flat face and say "sketch here": draw on that face and pull it out
   as a boss, cut it in, or revolve it. Chamfer, fillet, shell, mirror, pattern, holes where you point, and "edit
-  feature 3" to change any earlier step, with the feature tree beside the part. Point at any straight edge and say
-  "fillet this edge 3" or "chamfer this edge 2".
+  feature 3" to change any earlier step, with the feature tree beside the part. Point at any edge, straight or curved,
+  and say "fillet this edge 3": a rolling-ball fillet that follows tangent edges, and edges filleted one after another
+  blend their corner into a sphere. "Round all edges 2" rounds the whole part; "chamfer this edge 2" bevels one.
 - **Assemblies and motion.** Insert parts and mate them with the hand ray: pinch a face or a pin on one part, then
   where it goes on another, and it glides into place (coincident, concentric, hinge, slider, gear). An exact clash
   check shows interference in red, an exploded view lifts the parts apart, and a motion study plays keyframes:

@@ -28,6 +28,24 @@ import {
   tessellateLoop,
 } from './sketch.js';
 import { crossSection as edgeSection, edgeFaces } from './edges.js';
+import { circleOf, edgeChain, segmentsOf } from './round.js';
+
+const dot3k = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+/** Keep only the solid pieces worth keeping: films under 0.01 mm^3 left by a cutting tool are dropped. */
+function dropSlivers(body: Manifold, keep: <T extends Disposable>(o: T) => T): Manifold {
+  const parts = body.decompose();
+  if (parts.length <= 1) {
+    for (const p of parts) p.delete();
+    return body;
+  }
+  let out: Manifold | null = null;
+  for (const p of parts) {
+    keep(p);
+    if (p.volume() > 0.01 || p.volume() < -0.01) out = out ? keep(out.add(p)) : p;
+  }
+  return out ?? body;
+}
 import { chamferLoops, extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
   BuildOutput,
@@ -80,6 +98,7 @@ const ARG_SETS: Record<string, readonly string[]> = {
   'feature.chamfer': ['distance', 'feature', 'edges'],
   'feature.mirror': ['plane', 'offset'],
   'feature.edge_fillet': ['from', 'to', 'radius', 'kind'],
+  'feature.round': ['at', 'radius', 'all'],
   'feature.shell': ['thickness', 'feature', 'open'],
   'feature.loft': ['sketches'],
   'feature.sweep': ['sketch', 'path', 'bend_radius'],
@@ -230,6 +249,8 @@ export class Kernel {
     {
       const { CrossSection: CS } = this.m;
       const frames = new Map<string, Frame>(Object.entries(NAMED_FRAMES));
+      /** Rounds already built as part of a fillet set. */
+      const roundDone = new Set<string>();
       const sketches = new Map<string, { frame: Frame; loops: Seg[][]; used: boolean }>();
       const tools = new Map<string, Tool[]>();
       let pending: string | null = null;
@@ -371,6 +392,112 @@ export class Kernel {
             };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
+          } else if (f.$op === 'feature.round') {
+            // Rolling-ball fillets (src/engine/round.ts). Consecutive rounds of one radius form a fillet set: their
+            // edge chains are all found on the body as it was before the set, and rounded together, so corners
+            // where they meet blend into sphere patches. A lone straight edge or circle takes its exact cutter.
+            if (roundDone.has(f.id)) {
+              // already built as part of a set
+            } else {
+              if (!body) throw new SpecError('nothing to round yet', f.id);
+              const r = numArg(a.radius, 'radius');
+              if (!(r > 0)) throw new SpecError('radius must be positive', f.id);
+              const { Manifold: M } = this.m;
+              const ball = keep(M.sphere(r, 32));
+              const open = (s: Manifold): Manifold => keep(keep(s.minkowskiDifference(ball)).minkowskiSum(ball));
+              const close = (s: Manifold): Manifold => keep(keep(s.minkowskiSum(ball)).minkowskiDifference(ball));
+              if (a.all === true) {
+                const o = open(body);
+                if (o.isEmpty()) throw new SpecError(`a ${r} mm round is bigger than the part`, f.id);
+                body = o;
+              } else {
+                // The set: this round and the ones straight after it with the same radius.
+                const set: Feature[] = [f];
+                for (let k = i + 1; k < count; k++) {
+                  const g = spec.features[k];
+                  if (g.$op !== 'feature.round' || g.args?.all === true || Number(g.args?.radius) !== r) break;
+                  set.push(g);
+                }
+                const mesh = this.extract(body, keep).mesh;
+                const segs = segmentsOf(mesh.edges);
+                const chains = set.map((g) => {
+                  const at = g.args?.at as Vec3;
+                  if (!Array.isArray(at) || at.length !== 3) throw new SpecError('"at" must be a point [x, y, z] on the edge', g.id);
+                  const ch = edgeChain(segs, at, Math.max(6, 2 * r));
+                  if (!ch) throw new SpecError('there is no sharp edge near that point', g.id);
+                  return ch;
+                });
+                for (const g of set) roundDone.add(g.id);
+                const one = chains.length === 1 ? chains[0] : null;
+                const circ = one ? circleOf(one) : null;
+                const straight = one
+                  ? one.every(([p, q]) => {
+                      const u0 = norm([one[0][1][0] - one[0][0][0], one[0][1][1] - one[0][0][1], one[0][1][2] - one[0][0][2]]);
+                      const u = norm([q[0] - p[0], q[1] - p[1], q[2] - p[2]]);
+                      return Math.abs(dot3k(u, u0)) > 1 - 1e-6;
+                    })
+                  : false;
+                const [c0, c1] = (one ?? chains[0])[0];
+                const efc = edgeFaces(mesh.positions, mesh.indices, c0, c1, 2e-3);
+                if (one && circ && efc) {
+                  // A circular edge (a hole's or a boss's rim): the exact fillet section revolved round the axis.
+                  const flatIs1 = Math.abs(dot3k(efc.n1, circ.n)) > Math.abs(dot3k(efc.n2, circ.n));
+                  const nFlat = flatIs1 ? efc.n1 : efc.n2;
+                  const tFlat = flatIs1 ? efc.t1 : efc.t2;
+                  const tWall = flatIs1 ? efc.t2 : efc.t1;
+                  const axis = dot3k(nFlat, circ.n) > 0 ? circ.n : ([-circ.n[0], -circ.n[1], -circ.n[2]] as Vec3);
+                  const mid: Vec3 = [(c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2, (c0[2] + c1[2]) / 2];
+                  const radial = norm([mid[0] - circ.c[0], mid[1] - circ.c[1], mid[2] - circ.c[2]]);
+                  const sRho = dot3k(tFlat, radial) > 0 ? 1 : -1;
+                  const sH = dot3k(tWall, axis) > 0 ? 1 : -1;
+                  const sec = edgeSection({ ...efc, t1: tFlat, t2: tWall, phi: Math.PI / 2 }, r, 'fillet');
+                  const poly: Vec2[] = sec.map(([x, y]) => [circ.r + sRho * x, sH * y]);
+                  if (poly.some(([rho]) => rho < 0)) throw new SpecError(`a ${r} mm round does not fit inside that ${(2 * circ.r).toFixed(1)} mm circle`, f.id);
+                  const ring = keep(keep(new this.m.CrossSection([poly], 'EvenOdd')).revolve(96));
+                  const zx: Vec3 = Math.abs(axis[0]) < 0.9 ? norm(cross(axis, [1, 0, 0])) : norm(cross(axis, [0, 1, 0]));
+                  const zy = cross(axis, zx);
+                  const tool = keep(ring.transform([zx[0], zx[1], zx[2], 0, zy[0], zy[1], zy[2], 0, axis[0], axis[1], axis[2], 0, circ.c[0], circ.c[1], circ.c[2], 1] as Mat4));
+                  body = keep(efc.convex ? body.subtract(tool) : body.add(tool));
+                } else if (one && straight && efc && efc.phi < Math.PI - 1e-3) {
+                  // A lone straight edge: the exact prism cutter.
+                  const ends: Vec3[] = [one[0][0], one[one.length - 1][1]];
+                  const poly = edgeSection(efc, r, 'fillet');
+                  const L = Math.hypot(ends[1][0] - ends[0][0], ends[1][1] - ends[0][1], ends[1][2] - ends[0][2]);
+                  const u = norm([ends[1][0] - ends[0][0], ends[1][1] - ends[0][1], ends[1][2] - ends[0][2]]);
+                  const x = efc.t1;
+                  const y = norm([efc.t2[0] - x[0] * Math.cos(efc.phi), efc.t2[1] - x[1] * Math.cos(efc.phi), efc.t2[2] - x[2] * Math.cos(efc.phi)]);
+                  const zc = cross(x, y);
+                  const along: Vec3 = dot3k(zc, u) > 0 ? u : [-u[0], -u[1], -u[2]];
+                  const start: Vec3 = along === u ? ends[0] : ends[1];
+                  const prism = keep(keep(keep(new this.m.CrossSection([poly], 'EvenOdd')).extrude(L + 0.04)).translate(0, 0, -0.02));
+                  const tool = keep(prism.transform([x[0], x[1], x[2], 0, y[0], y[1], y[2], 0, along[0], along[1], along[2], 0, start[0], start[1], start[2], 1] as Mat4));
+                  body = keep(efc.convex ? body.subtract(tool) : body.add(tool));
+                } else {
+                  // The rolling ball on the part near every chain of the set, kept within tubes round them.
+                  const R = r * 2.5;
+                  let tube: Manifold | null = null;
+                  for (const ch of chains) {
+                    for (const [p, q] of ch) {
+                      const cap = keep(M.hull([keep(M.sphere(R, 16).translate(p)), keep(M.sphere(R, 16).translate(q))]));
+                      tube = tube ? keep(tube.add(cap)) : cap;
+                    }
+                  }
+                  const tb = tube!.boundingBox();
+                  const m = 2 * r;
+                  const clip = keep(M.cube([tb.max[0] - tb.min[0] + 2 * m, tb.max[1] - tb.min[1] + 2 * m, tb.max[2] - tb.min[2] + 2 * m]).translate([tb.min[0] - m, tb.min[1] - m, tb.min[2] - m]));
+                  const piece = keep(body.intersect(clip));
+                  const removed = keep(keep(piece.subtract(open(piece))).intersect(tube!));
+                  body = keep(body.subtract(removed));
+                  if (efc && !efc.convex) {
+                    const added = keep(keep(close(piece).subtract(piece)).intersect(tube!));
+                    body = keep(body.add(added));
+                  }
+                }
+                // Hair-thin films left where a polyhedral tool grazes a face are dropped.
+                body = dropSlivers(body, keep);
+              }
+            }
+            tools.set(f.id, []);
           } else if (f.$op === 'feature.edge_fillet') {
             // A fillet or chamfer of any straight edge between two flat faces of the body so far.
             if (!body) throw new SpecError('nothing to round yet', f.id);

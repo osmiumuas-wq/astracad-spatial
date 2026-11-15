@@ -228,7 +228,7 @@ export function expectVolume(spec: PartSpec): Expectation {
       continue;
     }
 
-    if (f.$op === 'feature.edge_fillet') {
+    if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round') {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
     }
     if (f.$op === 'feature.mirror') {
