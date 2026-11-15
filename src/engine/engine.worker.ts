@@ -154,6 +154,16 @@ async function handle(req: Request): Promise<void> {
     return;
   }
 
+  if (req.type === 'interfere') {
+    const specs = req.parts.map((pt) => {
+      const j = jobById(pt.job);
+      return j.spec(j.clamp(pt.params).params);
+    });
+    const clashes = kernel.interference(specs, req.parts.map((pt) => pt.matrix as never));
+    scope.postMessage({ id: req.id, type: 'interfered', clashes }, clashes.flatMap((c) => meshBuffers(c.mesh)));
+    return;
+  }
+
   if (req.type === 'gcode') {
     const mat = materialById(req.material);
     if (mat.process !== 'fdm') {

@@ -39,6 +39,7 @@ import type { Action } from '../engine/commands.js';
 /** The Lab strip: newer tools, each an app action registered by its system. */
 const LAB: [string, string, Action][] = [
   ['lab:design', 'Free design', 'design'],
+  ['lab:assembly', 'Assembly', 'assembly'],
   ['lab:tip', 'Tip test', 'tip'],
   ['lab:explore', 'Explore', 'explore'],
   ['lab:lattice', 'Lattice core', 'lattice'],

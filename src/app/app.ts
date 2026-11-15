@@ -886,6 +886,9 @@ export class App {
   /** Point and say: the parameter under the hand ray, and when it was last pointed at (ms). */
   pointed: { param: string; at: number; mm?: [number, number, number] } | null = null;
 
+  /** Assembly voice commands (src/systems/assembly-system.ts); returns a reply, or null when not about the assembly. */
+  assemblyCommand: ((text: string) => string | null) | null = null;
+
   private gcs: Promise<import('@salusoft89/planegcs').GcsWrapper> | null = null;
 
   /**
@@ -938,6 +941,13 @@ export class App {
   runCommand(sentence: string): string {
     const job = this.job;
     const before = { ...this.params.peek() };
+    // Assembly: "assembly demo", "turn the hinge to 90", "play", "clash check"...
+    const asm = this.assemblyCommand?.(sentence) ?? null;
+    if (asm) return asm;
+    if (/^\s*(assembly|assemble|open (the )?assembly)\s*$/u.test(sentence.toLowerCase())) {
+      this.actions.assembly?.();
+      return 'Assembly.';
+    }
     // Free design: "add a box 40 by 30 by 10", "drill a 5 mm hole here", "fillet 3"...
     if (/\b(free design|new design|design (a|my own|something)|start designing)\b/u.test(sentence.toLowerCase())) {
       this.selectJob('design');

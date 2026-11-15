@@ -19,7 +19,7 @@ import { JOB_WORDS, MATERIAL_WORDS, RULES } from './describe.js';
 export type Action =
   | 'undo' | 'redo' | 'test' | 'stronger' | 'grow' | 'solid' | 'flow' | 'vibration' | 'drawing'
   | 'print' | 'save' | 'share' | 'measure' | 'laser' | 'capture' | 'sketch' | 'shape' | 'next' | 'swing' | 'help'
-  | 'editable' | 'explode' | 'tip' | 'explore' | 'lattice' | 'template' | 'gcode' | 'scan' | 'design';
+  | 'editable' | 'explode' | 'tip' | 'explore' | 'lattice' | 'template' | 'gcode' | 'scan' | 'design' | 'assembly';
 
 export type Command =
   | { kind: 'action'; action: Action; text: string }

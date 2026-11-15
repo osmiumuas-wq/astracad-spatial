@@ -42,6 +42,7 @@ export type Request =
   | { id: number; type: 'grow'; job: string; params: Params; material: string; keep: number; load?: LoadSpec }
   | { id: number; type: 'lattice'; job: string; params: Params }
   | { id: number; type: 'template'; job: string; params: Params }
+  | { id: number; type: 'interfere'; job: string; params: Params; parts: { job: string; params: Params; matrix: number[] }[] }
   | { id: number; type: 'gcode'; job: string; params: Params; material: string; grown?: boolean }
   | {
       id: number;
@@ -113,6 +114,7 @@ export type Response =
       colors: Float32Array;
       starts: Uint32Array;
     }
+  | { id: number; type: 'interfered'; clashes: { i: number; j: number; volume: number; mesh: MeshData }[] }
   | { id: number; type: 'templated'; loops: Vec2[][]; holes: { c: Vec2; d: number }[]; outline: Vec2[]; normal: Vec3; label: string }
   | { id: number; type: 'latticed'; mesh: MeshData; props: KernelProps; before: number; cell: number; wall: number; skin: number; ms: number }
   | { id: number; type: 'sliced'; segments: Float32Array; starts: Uint32Array; height: number; printLayers: number; layerHeight: number; up: Vec3; upLabel: string; minutes: number }

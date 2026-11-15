@@ -962,6 +962,34 @@ export class Kernel {
   }
 
   /**
+   * Where placed parts run into each other: every pair's common volume (mm^3)
+   * and its mesh, from the exact solids. `poses` are column-major 4 x 4
+   * matrices from part to assembly space.
+   */
+  interference(specs: PartSpec[], poses: Mat4[]): { i: number; j: number; volume: number; mesh: MeshData }[] {
+    const arena: Disposable[] = [];
+    const keep = <T extends Disposable>(x: T): T => {
+      arena.push(x);
+      return x;
+    };
+    try {
+      const solids = specs.map((s, k) => keep(this.construct(s, s.features.length, keep).solid.transform(poses[k])));
+      const out: { i: number; j: number; volume: number; mesh: MeshData }[] = [];
+      for (let i = 0; i < solids.length; i++) {
+        for (let j = i + 1; j < solids.length; j++) {
+          const both = keep(solids[i].intersect(solids[j]));
+          const volume = both.isEmpty() ? 0 : both.volume();
+          // Under 0.05 mm3 is faces touching (tessellation), not a clash.
+          if (volume > 0.05) out.push({ i, j, volume, mesh: this.extract(both, keep).mesh });
+        }
+      }
+      return out;
+    } finally {
+      release(arena);
+    }
+  }
+
+  /**
    * Toolpath regions for FDM printing with `up` as the build direction: per
    * layer, the perimeter loops (the section offset inward by half a line, then
    * a line at a time) and the inside split into solid skin (where the layers
