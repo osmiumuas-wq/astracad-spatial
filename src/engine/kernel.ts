@@ -93,6 +93,7 @@ const ARG_SETS: Record<string, readonly string[]> = {
   'feature.surface': ['origin', 'sx', 'sz', 'n', 'heights', 'thickness'],
   'feature.generated': ['kind', 'spec'],
   'feature.knurl': ['origin', 'axis', 'diameter', 'length', 'pitch', 'diamond'],
+  'feature.strip': ['origin', 'm', 'y', 'dir', 'poly', 'width', 'ss', 'se'],
   'feature.text': ['origin', 'normal', 'x_dir', 'text', 'height', 'depth', 'cut'],
   'ref.plane': ['origin', 'normal', 'x_dir', 'base', 'offset'],
   'sketch.rectangle': ['width', 'height', 'x', 'y'],
@@ -658,6 +659,30 @@ export class Kernel {
             }
             const plan = loftPlan((ids as string[]).map((k) => takeNamed(k, f)));
             const tool: Tool = { solid: this.loftSolid(plan, keep), op: 'add' };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.strip') {
+            // A sheet-metal section (in m, y) along an edge: z from -m ss to width + m se (mitred ends shear it).
+            const poly = a.poly as [number, number][];
+            const W = numArg(a.width, 'width');
+            let ss = Number(a.ss ?? 0);
+            let se = Number(a.se ?? 0);
+            const M = a.m as Vec3;
+            const Y = a.y as Vec3;
+            let Dd = a.dir as Vec3;
+            let o = a.origin as Vec3;
+            // Keep the frame right-handed: run the other way from the far end if needed.
+            if (dot3k(cross(M, Y), Dd) < 0) {
+              o = [o[0] + Dd[0] * W, o[1] + Dd[1] * W, o[2] + Dd[2] * W];
+              Dd = [-Dd[0], -Dd[1], -Dd[2]];
+              [ss, se] = [se, ss];
+            }
+            const cs = keep(new this.m.CrossSection([poly], 'EvenOdd'));
+            const raw = keep(cs.extrude(1));
+            const warped = keep(raw.warp((v: Vec3) => {
+              v[2] = v[2] < 0.5 ? -v[0] * ss : W + v[0] * se;
+            }));
+            const tool: Tool = { solid: keep(warped.transform([M[0], M[1], M[2], 0, Y[0], Y[1], Y[2], 0, Dd[0], Dd[1], Dd[2], 0, o[0], o[1], o[2], 1] as Mat4)), op: 'add' };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
           } else if (f.$op === 'feature.knurl') {

@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { designFlatPattern, designJob, designSpec, parseDesign, readFeature } from '../src/engine/design.js';
+import { designFlatPattern, designJob, designSpec, flangeGeometry, parseDesign, readFeature } from '../src/engine/design.js';
 import { expectVolume } from '../src/engine/expect.js';
 import { initKernel, Kernel } from '../src/engine/kernel.js';
-import { bendAllowance, flangeArea, flatPatternDxf, sheetEdges } from '../src/engine/sheetmetal.js';
+import { bendAllowance, flangeArea, flatPatternDxf, polyMoments, sheetEdges } from '../src/engine/sheetmetal.js';
 import { runGate } from '../src/engine/truth.js';
 import type { Params } from '../src/engine/jobs.js';
 
@@ -54,5 +54,62 @@ describe('sheet metal', () => {
     const want = 80 * 50 * 1.5 + flangeArea(1.5, 1, 90, 20) * (80 - relief) + flangeArea(1.5, 1, 60, 15) * (50 - relief);
     expect(g.volume).toBeCloseTo(want, 2);
     expect(g.verdict).toBe('verified');
+  });
+
+  it('a closed hem folds back flat; an open hem keeps its radius', () => {
+    let p = parseDesign('sheet metal 80 by 50 thick 1 bend 1', { nf: 0 }, [0, 0, 0], undefined, 0)!.params;
+    p = parseDesign('hem edge 1 10', p)!.params;
+    const g = build(p);
+    // The hem lies back on the sheet (their boxes overlap), so the kernel measures it; checked here by formula.
+    expect(g.components).toBe(1);
+    // Closed hem: inside radius t / 2; a half-turn bend and 10 mm folded back over the sheet.
+    const t = 1;
+    const R = 0.5;
+    expect(g.volume).toBeCloseTo(80 * 50 * t + 80 * ((Math.PI / 2) * ((R + t) ** 2 - R ** 2) + 10 * t), 2);
+    expect(g.box[0]).toBeCloseTo(2 * t + 2 * R, 1);
+  });
+
+  it('a jog steps out and back to parallel', () => {
+    let p = parseDesign('sheet metal 80 by 50 thick 2 bend 2', { nf: 0 }, [0, 0, 0], undefined, 0)!.params;
+    p = parseDesign('jog edge 1 15 offset 8', p)!.params;
+    const g = build(p);
+    expect(g.verdict).toBe('verified');
+    expect(g.components).toBe(1);
+    // Two quarter bends, 8 up between them, 15 straight on.
+    const bend = (Math.PI / 4) * ((2 + 2) ** 2 - 2 ** 2);
+    expect(g.volume).toBeCloseTo(80 * 50 * 2 + 80 * (2 * bend + 8 * 2 + 15 * 2), 1);
+  });
+
+  it('mitre flanges on every edge meet at their corners: one solid, exact, a mitred flat pattern', () => {
+    let p = parseDesign('sheet metal 100 by 60 thick 2 bend 2', { nf: 0 }, [0, 0, 0], undefined, 0)!.params;
+    p = parseDesign('mitre flange 20', p)!.params;
+    const g = build(p);
+    expect(g.components).toBe(1);
+    // Mitred strips meet on the bisector without overlapping: the sheet plus each sheared strip, exactly.
+    let want = 100 * 60 * 2;
+    for (let i = 0; i < 6; i++) {
+      if (readFeature(p, i).op !== 26) continue;
+      const fg = flangeGeometry(p, i);
+      const m = polyMoments(fg.poly);
+      want += m.area * fg.width + (fg.ss + fg.se) * m.mm;
+    }
+    expect(g.volume).toBeCloseTo(want, 1);
+    const fp = designFlatPattern(p)!;
+    const BA = bendAllowance(90, 2, 2, 0.44);
+    expect(fp.size[0]).toBeCloseTo(100 + 2 * (BA + 20), 6);
+    expect(fp.outline).toHaveLength(1);
+  });
+
+  it('a flange on the end of a flange, in the flat pattern too', () => {
+    let p = parseDesign('sheet metal 100 by 60 thick 2 bend 2', { nf: 0 }, [0, 0, 0], undefined, 0)!.params;
+    p = parseDesign('flange edge 1 30', p)!.params;
+    p = parseDesign('flange on flange 12', p)!.params;
+    const g = build(p);
+    expect(g.components).toBe(1);
+    expect(g.verdict).toBe('verified');
+    const fp = designFlatPattern(p)!;
+    const BA = bendAllowance(90, 2, 2, 0.44);
+    expect(fp.size[1]).toBeCloseTo(60 + 2 * BA + 30 + 12, 6);
+    expect(fp.bends).toHaveLength(4);
   });
 });

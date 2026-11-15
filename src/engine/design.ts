@@ -65,7 +65,7 @@
 
 import type { Feature, PartSpec } from './types.js';
 import { gearOutline, polygonOutline, rectOutline, slotOutline } from './profiles.js';
-import { flangeSection, flatPattern, sheetEdges } from './sheetmetal.js';
+import { bentStrip, FlatChain, flangeMoves, flatPattern, movesFlatLength, sheetEdges, StripMove } from './sheetmetal.js';
 import { MemberProfile, PROFILE_CODES, profileLoops } from './weldment.js';
 import { subdCage } from './generated.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
@@ -115,7 +115,7 @@ export function readFeature(p: Params, i: number): DesignFeature {
 }
 
 /** Extra per-feature values beyond a..h: a sketch plane's in-plane rotation (r) and tilt (w), degrees. */
-const EXTRA = ['r', 'w', 'pk', 'pw', 'ph', 'pt', 'sc', 'sw', 'sh', 'nx', 'ny', 'nz', 'sym', 'nc', 'tr', 'tt', 'hr', 'hh'] as const;
+const EXTRA = ['r', 'w', 'pk', 'pw', 'ph', 'pt', 'sc', 'sw', 'sh', 'nx', 'ny', 'nz', 'sym', 'nc', 'tr', 'tt', 'hr', 'hh', 'mt'] as const;
 
 /** The parameters with one more feature at the end. */
 export function addFeature(p: Params, op: number, v: Partial<DesignFeature['v']>): Params {
@@ -210,55 +210,137 @@ export function sketchFeatures(
   return out;
 }
 
-/** The flanges on a sheet: edge index, length, angle, up or down. */
-function flangesOf(p: Params, sheet: number): { index: number; edge: number; length: number; angle: number; up: boolean }[] {
-  const out: { index: number; edge: number; length: number; angle: number; up: boolean }[] = [];
+/** The flanges on a sheet's own edges (not on other flanges): index, edge, mitred. */
+function flangesOf(p: Params, sheet: number): { index: number; edge: number; mitre: boolean }[] {
+  const out: { index: number; edge: number; mitre: boolean }[] = [];
   for (let j = 0; j < featureCount(p); j++) {
     const { op, v } = readFeature(p, j);
-    if (op === OPS.FLANGE && Math.round(v.a) === sheet) out.push({ index: j, edge: Math.round(v.b), length: v.c, angle: v.d || 90, up: Math.round(v.e) !== 1 });
+    if (op === OPS.FLANGE && Math.round(v.a) === sheet) out.push({ index: j, edge: Math.round(v.b), mitre: (p[`mt${j}`] ?? 0) === 1 });
   }
   return out;
 }
 
+type V3 = [number, number, number];
+const mapL = (o: V3, m: V3, y: V3, a: number, b: number): V3 => [o[0] + m[0] * a + y[0] * b, o[1] + m[1] * a + y[1] * b, o[2] + m[2] * a + y[2] * b];
+
+export interface FlangeGeom {
+  origin: V3;
+  m: V3;
+  y: V3;
+  dir: V3;
+  poly: [number, number][];
+  width: number;
+  ss: number;
+  se: number;
+  inset: [number, number];
+  /** Where the flange ends: the frame a flange on this flange starts from. */
+  end: { o: V3; m: V3; y: V3 };
+  moves: StripMove[];
+  R: number;
+  t: number;
+  sheet: number;
+  edge: number;
+}
+
 /**
- * A flange's plane and section: the plane square to its edge (x outwards, y up), the section from
- * src/engine/sheetmetal.ts, the width along the edge (less corner relief where the next edge has a flange too).
+ * A flange as a bent strip (src/engine/sheetmetal.ts): on a sheet's edge (corner relief, or mitred ends where it
+ * meets another mitred flange), or on the end of another flange. FLANGE: a parent (sheet or flange), b edge,
+ * c length, d angle, e 1 = down, f bend radius (0 = the sheet's), g 0 flange / 1 hem / 2 jog, h jog height;
+ * mt{i} 1 = mitred corners.
  */
-export function flangeGeometry(p: Params, i: number): { origin: [number, number, number]; normal: [number, number, number]; x: [number, number, number]; section: unknown[]; width: number; inset: [number, number] } {
+export function flangeGeometry(p: Params, i: number): FlangeGeom {
   const { v } = readFeature(p, i);
-  const s = Math.round(v.a);
-  const sheet = readFeature(p, s);
-  if (sheet.op !== OPS.SHEET) throw new Error(`feature ${s + 1} is not a sheet-metal base`);
-  const k = Math.round(sheet.v.a);
-  const pts = outlinePts(p, k);
-  const edges = sheetEdges(pts);
-  const j = Math.round(v.b);
-  const e = edges[j];
-  if (!e) throw new Error(`the sheet has ${edges.length} edges`);
-  const t = sheet.v.b;
-  const R = sheet.v.c;
-  const others = flangesOf(p, s).filter((f) => f.index !== i).map((f) => f.edge);
-  const n = edges.length;
-  const relief = R + t;
-  const inset: [number, number] = [others.includes((j - 1 + n) % n) ? relief : 0, others.includes((j + 1) % n) ? relief : 0];
-  const width = e.length - inset[0] - inset[1];
-  if (!(width > 0)) throw new Error('that edge is too short for a flange with corner relief');
-  // Sketch (u, v) on the top plane is model (x, -z).
-  const start = [e.a[0] + e.dir[0] * inset[0], e.a[1] + e.dir[1] * inset[0]];
-  const dir3: [number, number, number] = [e.dir[0], 0, -e.dir[1]];
-  const out3: [number, number, number] = [e.out[0], 0, -e.out[1]];
-  // The plane's y must run up: n x x = +Y. Otherwise face the other way, from the edge's far end.
-  const yUp = dir3[2] * out3[0] - dir3[0] * out3[2] > 0;
-  const o: [number, number, number] = yUp ? [start[0], 0, -start[1]] : [start[0] + e.dir[0] * width, 0, -(start[1] + e.dir[1] * width)];
+  const parent = Math.round(v.a);
+  const pf = readFeature(p, parent);
+  const kind = (['flange', 'hem', 'jog'] as const)[Math.max(0, Math.min(2, Math.round(v.g)))];
   const up = Math.round(v.e) !== 1;
+  let frame: { o: V3; m: V3; y: V3; dir: V3; width: number; y0: number; ss: number; se: number; inset: [number, number]; sheet: number; edge: number };
+  if (pf.op === OPS.FLANGE) {
+    const g = flangeGeometry(p, parent);
+    frame = { o: g.end.o, m: g.end.m, y: g.end.y, dir: g.dir, width: g.width, y0: 0, ss: 0, se: 0, inset: g.inset, sheet: g.sheet, edge: g.edge };
+  } else if (pf.op === OPS.SHEET) {
+    const pts = outlinePts(p, Math.round(pf.v.a));
+    const edges = sheetEdges(pts);
+    const j = Math.round(v.b);
+    const e = edges[j];
+    if (!e) throw new Error(`the sheet has ${edges.length} edges`);
+    const n = edges.length;
+    const others = flangesOf(p, parent).filter((f) => f.index !== i);
+    const mine = (p[`mt${i}`] ?? 0) === 1;
+    const relief = pf.v.c + pf.v.b;
+    // At each end: a mitre when both flanges are mitred (slope cot(half the corner)), else corner relief, else nothing.
+    const end = (k: number, prev: boolean): { inset: number; slope: number } => {
+      const o = others.find((f) => f.edge === k);
+      if (!o) return { inset: 0, slope: 0 };
+      if (mine && o.mitre) {
+        const d0 = prev ? edges[k].dir : e.dir;
+        const d1 = prev ? e.dir : edges[k].dir;
+        const phi = Math.acos(Math.max(-1, Math.min(1, -(d0[0] * d1[0] + d0[1] * d1[1]))));
+        return { inset: 0, slope: 1 / Math.tan(phi / 2) };
+      }
+      return { inset: relief, slope: 0 };
+    };
+    const s0 = end((j - 1 + n) % n, true);
+    const s1 = end((j + 1) % n, false);
+    const width = e.length - s0.inset - s1.inset;
+    if (!(width > 0)) throw new Error('that edge is too short for a flange with corner relief');
+    const start = [e.a[0] + e.dir[0] * s0.inset, e.a[1] + e.dir[1] * s0.inset];
+    // Sketch (u, v) on the top plane is model (x, -z).
+    frame = { o: [start[0], 0, -start[1]], m: [e.out[0], 0, -e.out[1]], y: [0, 1, 0], dir: [e.dir[0], 0, -e.dir[1]], width, y0: pf.v.f, ss: s0.slope, se: s1.slope, inset: [s0.inset, s1.inset], sheet: parent, edge: j };
+  } else throw new Error(`feature ${parent + 1} is not sheet metal`);
+  const sheet = readFeature(p, frame.sheet);
+  const t = sheet.v.b;
+  const R = v.f > 0 ? v.f : kind === 'hem' ? Math.max(0.05, t / 2) : sheet.v.c;
+  const moves = flangeMoves(kind, v.d || 90, v.c, up, v.h);
+  const strip = bentStrip(frame.y0, t, R, moves);
+  const hd = strip.heading;
+  const endM: V3 = [frame.m[0] * Math.cos(hd) + frame.y[0] * Math.sin(hd), frame.m[1] * Math.cos(hd) + frame.y[1] * Math.sin(hd), frame.m[2] * Math.cos(hd) + frame.y[2] * Math.sin(hd)];
+  const endY: V3 = [-frame.m[0] * Math.sin(hd) + frame.y[0] * Math.cos(hd), -frame.m[1] * Math.sin(hd) + frame.y[1] * Math.cos(hd), -frame.m[2] * Math.sin(hd) + frame.y[2] * Math.cos(hd)];
   return {
-    origin: o,
-    normal: yUp ? dir3 : [-dir3[0], 0, -dir3[2]],
-    x: out3,
-    section: flangeSection(sheet.v.f, t, R, v.d || 90, v.c, up),
-    width,
-    inset,
+    origin: frame.o,
+    m: frame.m,
+    y: frame.y,
+    dir: frame.dir,
+    poly: strip.poly,
+    width: frame.width,
+    ss: frame.ss,
+    se: frame.se,
+    inset: frame.inset,
+    end: { o: mapL(frame.o, frame.m, frame.y, strip.end[0], strip.end[1]), m: endM, y: endY },
+    moves,
+    R,
+    t,
+    sheet: frame.sheet,
+    edge: frame.edge,
   };
+}
+
+/** The flat pattern of the last sheet-metal part in the design, or null when there is none. */
+export function designFlatPattern(p: Params): ReturnType<typeof flatPattern> | null {
+  let s = -1;
+  for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) { s = i; break; }
+  if (s < 0) return null;
+  const sheet = readFeature(p, s);
+  const pts = outlinePts(p, Math.round(sheet.v.a));
+  const K = sheet.v.g || 0.44;
+  const chains: FlatChain[] = flangesOf(p, s).map((root) => {
+    const g0 = flangeGeometry(p, root.index);
+    // Down the chain: each flange's first child (a flange on its end).
+    let length = 0;
+    const bends: [number, number][] = [];
+    let at = root.index;
+    for (let guard = 0; guard < 32 && at >= 0; guard++) {
+      const g = flangeGeometry(p, at);
+      const fl = movesFlatLength(g.moves, g.R, g.t, K);
+      for (const [b0, b1] of fl.bends) bends.push([length + b0, length + b1]);
+      length += fl.total;
+      let next = -1;
+      for (let j = 0; j < featureCount(p); j++) if (readFeature(p, j).op === OPS.FLANGE && Math.round(readFeature(p, j).v.a) === at) { next = j; break; }
+      at = next;
+    }
+    return { edge: root.edge, inset: g0.inset, length, bends, ss: g0.ss, se: g0.se };
+  });
+  return flatPattern(pts, chains);
 }
 
 /** A generated feature's kind and spec from its parameters. */
@@ -342,16 +424,6 @@ export function addMember(p: Params, profile: MemberProfile, a: [number, number,
   return { ...q, [`pk${i}`]: PROFILE_CODES.indexOf(profile.kind), [`pw${i}`]: profile.w, [`ph${i}`]: profile.h, [`pt${i}`]: profile.t };
 }
 
-/** The flat pattern of the last sheet-metal part in the design, or null when there is none. */
-export function designFlatPattern(p: Params): ReturnType<typeof flatPattern> | null {
-  let s = -1;
-  for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) { s = i; break; }
-  if (s < 0) return null;
-  const sheet = readFeature(p, s);
-  const pts = outlinePts(p, Math.round(sheet.v.a));
-  const fl = flangesOf(p, s).map((f) => ({ edge: f.edge, length: f.length, angle: f.angle, up: f.up, inset: flangeGeometry(p, f.index).inset }));
-  return flatPattern(pts, fl, sheet.v.b, sheet.v.c, sheet.v.g || 0.44);
-}
 
 /** The outline's loops as ranges of point indices [first, end). */
 function outlineLoops(p: Params, k: number): [number, number][] {
@@ -608,9 +680,7 @@ export function designSpec(p: Params): PartSpec {
       features.push({ $op: 'feature.extrude', id, args: { depth: v.b } });
     } else if (op === OPS.FLANGE) {
       const fl = flangeGeometry(p, i);
-      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: fl.origin, normal: fl.normal, x_dir: fl.x } });
-      features.push({ $op: 'sketch.loops', id: `s${i}`, sketched_on: `pl${i}`, args: { loops: [fl.section] } });
-      features.push({ $op: 'feature.extrude', id, args: { depth: fl.width } });
+      features.push({ $op: 'feature.strip', id, args: { origin: fl.origin, m: fl.m, y: fl.y, dir: fl.dir, poly: fl.poly, width: fl.width, ss: fl.ss, se: fl.se } });
     } else if (op === OPS.BASE) {
       features.push({ $op: 'feature.mesh', id, args: { mesh: `imp${Math.round(v.a)}` } });
     } else if (op === OPS.SURF) {
@@ -1457,6 +1527,74 @@ function parseProduction(t: string, p: Params, here: [number, number, number] | 
   if (kf) {
     for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) return { params: { ...p, [`g${i}`]: parseFloat(kf[1]) }, reply: `K-factor ${kf[1]}: the flat pattern uses it.` };
     return { params: p, reply: 'There is no sheet-metal part.' };
+  }
+  // Flange on the end of the last flange: "flange on flange 15", "flange the end 12 at 60".
+  if (/\bflange (?:on (?:the )?(?:last )?flange|the end|on its end)\b/u.test(t)) {
+    let f = -1;
+    for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.FLANGE) { f = i; break; }
+    if (f < 0) return { params: p, reply: 'There is no flange to add to.' };
+    const rest = t.replace(/\bflange (?:on (?:the )?(?:last )?flange|the end|on its end)\b/u, '');
+    const len = rest.match(/(\d+(?:\.\d+)?)(?!\s*(?:deg|degrees|°))/u);
+    const ang = rest.match(/\bat\s*(\d+(?:\.\d+)?)/u);
+    const L = len ? parseFloat(len[1]) : 15;
+    const A = ang ? parseFloat(ang[1]) : 90;
+    return { params: addFeature(p, OPS.FLANGE, { a: f, b: 0, c: L, d: A, e: /\bdown\b/u.test(t) ? 1 : 0 }), reply: `A ${L} mm flange on the end of flange ${f + 1}, at ${A} degrees.` };
+  }
+  // Mitre flanges round every edge: "mitre flange 20" (mitred corners, no relief).
+  if (/\bmitre?d? flanges?|\bmiter(?:ed)? flanges?/u.test(t)) {
+    let s = -1;
+    for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) { s = i; break; }
+    if (s < 0) return { params: p, reply: 'Make a sheet-metal base first.' };
+    const n = sheetEdges(outlinePts(p, Math.round(readFeature(p, s).v.a))).length;
+    const len = t.match(/(\d+(?:\.\d+)?)/u);
+    const L = len ? parseFloat(len[1]) : 20;
+    let q = p;
+    for (let j = 0; j < n; j++) {
+      q = addFeature(q, OPS.FLANGE, { a: s, b: j, c: L, d: 90, e: /\bdown\b/u.test(t) ? 1 : 0 });
+      q = { ...q, [`mt${featureCount(q) - 1}`]: 1 };
+    }
+    return { params: q, reply: `Mitre flanges on all ${n} edges, ${L} mm: their corners meet on the mitre, no gaps.` };
+  }
+  // Hems and jogs on an edge: "hem edge 2 8", "open hem here 10 radius 1", "jog edge 1 15 offset 8".
+  const hj = t.match(/\b(hem|jog)\b/u);
+  if (hj) {
+    let s = -1;
+    for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) { s = i; break; }
+    if (s < 0) return { params: p, reply: 'Make a sheet-metal base first.' };
+    const edges = sheetEdges(outlinePts(p, Math.round(readFeature(p, s).v.a)));
+    const em = t.match(/\bedge\s*(\d+)/u);
+    let edge = em ? parseInt(em[1], 10) - 1 : 0;
+    if (!em && here) {
+      const q2: [number, number] = [here[0], -here[2]];
+      let best = Infinity;
+      edges.forEach((e, k) => {
+        const dx = e.b[0] - e.a[0];
+        const dy = e.b[1] - e.a[1];
+        const u = Math.max(0, Math.min(1, ((q2[0] - e.a[0]) * dx + (q2[1] - e.a[1]) * dy) / (dx * dx + dy * dy)));
+        const dist = Math.hypot(e.a[0] + dx * u - q2[0], e.a[1] + dy * u - q2[1]);
+        if (dist < best) {
+          best = dist;
+          edge = k;
+        }
+      });
+    }
+    const rest = t.replace(/\bedge\s*\d+/u, '');
+    const nums2 = [...rest.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
+    const rad = rest.match(/\bradius\s*(\d*\.?\d+)/u);
+    const off = rest.match(/\b(?:offset|high|height)\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:high|offset)/u);
+    const L = nums2.find((x) => (!rad || x !== parseFloat(rad[1])) && (!off || x !== parseFloat(off[1] ?? off[2]))) ?? 10;
+    const down = /\bdown\b/u.test(t);
+    if (hj[1] === 'hem') {
+      return {
+        params: addFeature(p, OPS.FLANGE, { a: s, b: edge, c: L, d: 180, e: down ? 1 : 0, f: rad ? parseFloat(rad[1]) : 0, g: 1 }),
+        reply: `${rad ? 'Open' : 'Closed'} hem on edge ${edge + 1}: folded back flat, ${L} mm.`,
+      };
+    }
+    const H = off ? parseFloat(off[1] ?? off[2]) : 8;
+    return {
+      params: addFeature(p, OPS.FLANGE, { a: s, b: edge, c: L, d: 90, e: down ? 1 : 0, g: 2, h: H }),
+      reply: `Jog on edge ${edge + 1}: up ${H} mm and out ${L} mm, back to parallel.`,
+    };
   }
   if (/\bflange\b/u.test(t)) {
     let s = -1;

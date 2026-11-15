@@ -13,6 +13,7 @@
 import { surfaceBox, surfacePatchOf, surfaceVolume } from './surface.js';
 import { generate, GeneratedKind, meshBox, meshVolume } from './generated.js';
 import { knurlSection } from './profiles.js';
+import { polyMoments } from './sheetmetal.js';
 import { draftScale, draftVolume } from './profiles.js';
 import {
   Frame,
@@ -307,6 +308,29 @@ export function expectVolume(spec: PartSpec): Expectation {
 
     if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round' || f.$op === 'feature.thread') {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
+    }
+    if (f.$op === 'feature.strip') {
+      // A sheared prism: area x width + (start slope + end slope) x the section's first moment about the edge.
+      const poly = a.poly as [number, number][];
+      const W = Number(a.width);
+      const ss = Number(a.ss ?? 0);
+      const se = Number(a.se ?? 0);
+      const { area, mm } = polyMoments(poly);
+      const sv = area * W + (ss + se) * mm;
+      const M = a.m as Vec3;
+      const Y = a.y as Vec3;
+      const Dd = a.dir as Vec3;
+      const o = a.origin as Vec3;
+      const pts: Vec3[] = [];
+      for (const [m, y] of poly) {
+        for (const z of [-m * ss, W + m * se]) pts.push([o[0] + M[0] * m + Y[0] * y + Dd[0] * z, o[1] + M[1] * m + Y[1] * y + Dd[1] * z, o[2] + M[2] * m + Y[2] * y + Dd[2] * z]);
+      }
+      const why = addBody(boxOf(pts), f.id);
+      if (why) return unknown(why, terms);
+      volume = bodies.length > 1 ? volume + sv : sv;
+      terms.push(`${f.id}: sheet-metal strip, section ${fmt(area)} x ${fmt(W)}${ss || se ? `, mitred ends + ${fmt((ss + se) * mm)}` : ''}`);
+      if (bodies.length === 1) revolved = true;
+      continue;
     }
     if (f.$op === 'feature.knurl') {
       // Straight knurl: the serrated section times the length (exact); diamond: the intersection is kernel-checked.

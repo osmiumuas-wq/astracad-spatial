@@ -78,33 +78,39 @@ export interface FlangeSpec {
   inset: [number, number];
 }
 
+/** A flange chain on a base edge, for the flat pattern: unrolled length, bend zones, corner set-backs and mitres. */
+export interface FlatChain {
+  edge: number;
+  inset: [number, number];
+  /** Unrolled length out from the edge, and each bend zone [from, to] along it. */
+  length: number;
+  bends: [number, number][];
+  /** Mitre slopes at the start and end (0: square). */
+  ss: number;
+  se: number;
+}
+
 /**
- * The flat pattern: the base outline, and each flange unrolled outwards from its edge (the bend allowance,
- * then its straight length), with the bend lines where each bend starts and ends.
+ * The flat pattern: one cut contour (the base outline with each flanged edge replaced by a detour round its
+ * unrolled chain, mitred ends slanted), and the bend lines where each bend starts and ends.
  */
-export function flatPattern(
-  base: [number, number][],
-  flanges: FlangeSpec[],
-  t: number,
-  R: number,
-  K: number,
-): { outline: [number, number][][]; bends: [number, number][][]; size: [number, number] } {
+export function flatPattern(base: [number, number][], chains: FlatChain[]): { outline: [number, number][][]; bends: [number, number][][]; size: [number, number] } {
   const edges = sheetEdges(base);
   const bends: [number, number][][] = [];
-  // One cut contour: the base outline with each flanged edge replaced by a detour round its unrolled flange.
   const contour: [number, number][] = [];
   edges.forEach((e, i) => {
     contour.push(e.a);
-    const f = flanges.find((x) => x.edge === i);
+    const f = chains.find((x) => x.edge === i);
     if (!f) return;
-    const BA = bendAllowance(f.angle, R, t, K);
     const a: [number, number] = [e.a[0] + e.dir[0] * f.inset[0], e.a[1] + e.dir[1] * f.inset[0]];
     const b: [number, number] = [e.b[0] - e.dir[0] * f.inset[1], e.b[1] - e.dir[1] * f.inset[1]];
-    const push = (q: [number, number], d: number): [number, number] => [q[0] + e.out[0] * d, q[1] + e.out[1] * d];
+    // A point d out from the edge, slid along it by the mitre (back at the start, on at the end).
+    const atA = (d: number): [number, number] => [a[0] + e.out[0] * d - e.dir[0] * d * f.ss, a[1] + e.out[1] * d - e.dir[1] * d * f.ss];
+    const atB = (d: number): [number, number] => [b[0] + e.out[0] * d + e.dir[0] * d * f.se, b[1] + e.out[1] * d + e.dir[1] * d * f.se];
     if (f.inset[0] > 0) contour.push(a);
-    contour.push(push(a, BA + f.length), push(b, BA + f.length));
+    contour.push(atA(f.length), atB(f.length));
     if (f.inset[1] > 0) contour.push(b);
-    bends.push([a, b], [push(a, BA), push(b, BA)]);
+    for (const [d0, d1] of f.bends) bends.push([atA(d0), atB(d0)], [atA(d1), atB(d1)]);
   });
   const outline = [contour];
   const xs = outline.flat().map((p) => p[0]);
@@ -142,3 +148,108 @@ export function flatPatternSvg(fp: ReturnType<typeof flatPattern>, title: string
 <text x="4" y="${H - 6}" font-family="Arial" font-size="3.5" fill="#10182c">${title}: flat ${fp.size[0].toFixed(1)} x ${fp.size[1].toFixed(1)} mm, bend lines dashed</text>
 </svg>`;
 }
+
+export type StripMove = { bend: number } | { line: number };
+
+/** Arc points from angle a0 by `sweep` (rad) about c, radius r, area-compensated like the kernel's arcs (ends on r). */
+function arcPts(c: [number, number], r: number, a0: number, sweep: number): [number, number][] {
+  const n = Math.max(2, Math.ceil(Math.abs(sweep) / ((2 * Math.PI) / 72)));
+  const step = Math.abs(sweep) / n;
+  const theta = Math.abs(sweep);
+  const rp = n === 2 ? (r * theta) / (2 * Math.sin(step)) : (r * (-1 + Math.sqrt(1 + ((n - 2) * theta) / Math.sin(step)))) / (n - 2);
+  const out: [number, number][] = [];
+  for (let i = 1; i < n; i++) {
+    const a = a0 + (sweep * i) / n;
+    out.push([c[0] + rp * Math.cos(a), c[1] + rp * Math.sin(a)]);
+  }
+  return out;
+}
+
+/**
+ * A bent strip of sheet t thick: from its start (the bottom surface at (0, y0), heading along +m) through bends
+ * (degrees, + towards +y, inside radius R) and straight runs. Returns its section (anticlockwise) and where its
+ * bottom surface ends, with the heading there.
+ */
+export function bentStrip(y0: number, t: number, R: number, moves: StripMove[]): { poly: [number, number][]; end: [number, number]; heading: number } {
+  let p: [number, number] = [0, y0];
+  let h = 0;
+  const bottom: [number, number][] = [[0, y0]];
+  const top: [number, number][] = [[0, y0 + t]];
+  for (const mv of moves) {
+    const dir: [number, number] = [Math.cos(h), Math.sin(h)];
+    const left: [number, number] = [-Math.sin(h), Math.cos(h)];
+    if ('line' in mv) {
+      if (mv.line <= 0) continue;
+      p = [p[0] + dir[0] * mv.line, p[1] + dir[1] * mv.line];
+      bottom.push(p);
+      top.push([p[0] + left[0] * t, p[1] + left[1] * t]);
+      continue;
+    }
+    const phi = (mv.bend * Math.PI) / 180;
+    if (Math.abs(phi) < 1e-9) continue;
+    if (phi > 0) {
+      // Up: the centre above the top surface; the bottom is the outside (R + t), the top the inside (R).
+      const c: [number, number] = [p[0] + left[0] * (R + t), p[1] + left[1] * (R + t)];
+      const a0 = h - Math.PI / 2;
+      bottom.push(...arcPts(c, R + t, a0, phi));
+      top.push(...arcPts(c, R, a0, phi));
+      h += phi;
+      p = [c[0] + (R + t) * Math.cos(h - Math.PI / 2), c[1] + (R + t) * Math.sin(h - Math.PI / 2)];
+    } else {
+      // Down: the centre below the bottom surface; the bottom is the inside (R), the top the outside (R + t).
+      const c: [number, number] = [p[0] - left[0] * R, p[1] - left[1] * R];
+      const a0 = h + Math.PI / 2;
+      bottom.push(...arcPts(c, R, a0, phi));
+      top.push(...arcPts(c, R + t, a0, phi));
+      h += phi;
+      p = [c[0] + R * Math.cos(h + Math.PI / 2), c[1] + R * Math.sin(h + Math.PI / 2)];
+    }
+    bottom.push(p);
+    const l2: [number, number] = [-Math.sin(h), Math.cos(h)];
+    top.push([p[0] + l2[0] * t, p[1] + l2[1] * t]);
+  }
+  // Anticlockwise: along the bottom, back along the top.
+  const poly = [...bottom, ...top.reverse()];
+  let a = 0;
+  for (let i = 0; i < poly.length; i++) a += poly[i][0] * poly[(i + 1) % poly.length][1] - poly[(i + 1) % poly.length][0] * poly[i][1];
+  return { poly: a >= 0 ? poly : poly.reverse(), end: p, heading: h };
+}
+
+/** Area and first moment about m = 0 (the integral of m dA) of a polygon. */
+export function polyMoments(poly: [number, number][]): { area: number; mm: number } {
+  let A = 0;
+  let Mx = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [x0, y0] = poly[i];
+    const [x1, y1] = poly[(i + 1) % poly.length];
+    const c = x0 * y1 - x1 * y0;
+    A += c / 2;
+    Mx += ((x0 + x1) * c) / 6;
+  }
+  const s = A < 0 ? -1 : 1;
+  return { area: A * s, mm: Mx * s };
+}
+
+/** The moves of a flange: a plain flange, a hem (folded back flat), or a jog (out, over, and back to parallel). */
+export function flangeMoves(kind: 'flange' | 'hem' | 'jog', angle: number, length: number, up: boolean, jogHeight = 0): StripMove[] {
+  const s = up ? 1 : -1;
+  if (kind === 'hem') return [{ bend: s * 180 }, { line: length }];
+  if (kind === 'jog') return [{ bend: s * angle }, { line: jogHeight }, { bend: -s * angle }, { line: length }];
+  return [{ bend: s * angle }, { line: length }];
+}
+
+/** The flat length of a flange's moves: bend allowances plus straights. */
+export function movesFlatLength(moves: StripMove[], R: number, t: number, K: number): { total: number; bends: [number, number][] } {
+  let d = 0;
+  const bends: [number, number][] = [];
+  for (const mv of moves) {
+    if ('line' in mv) d += Math.max(0, mv.line);
+    else {
+      const ba = bendAllowance(Math.abs(mv.bend), R, t, K);
+      bends.push([d, d + ba]);
+      d += ba;
+    }
+  }
+  return { total: d, bends };
+}
+
