@@ -48,6 +48,7 @@ function dropSlivers(body: Manifold, keep: <T extends Disposable>(o: T) => T): M
   return out ?? body;
 }
 import { surfaceMesh, surfacePatchOf } from './surface.js';
+import { BladeSpec, generate, GeneratedKind } from './generated.js';
 import { VIEW_AXES, viewLines, ViewLines } from './hidden-lines.js';
 import { chamferLoops, extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
@@ -88,6 +89,7 @@ export function registerMesh(id: string, positions: Float32Array, indices: Uint3
 const ARG_SETS: Record<string, readonly string[]> = {
   'feature.mesh': ['mesh'],
   'feature.surface': ['origin', 'sx', 'sz', 'n', 'heights', 'thickness'],
+  'feature.generated': ['kind', 'spec'],
   'ref.plane': ['origin', 'normal', 'x_dir', 'base', 'offset'],
   'sketch.rectangle': ['width', 'height', 'x', 'y'],
   'sketch.circle': ['radius', 'diameter', 'x', 'y'],
@@ -652,6 +654,30 @@ export class Kernel {
             }
             const plan = loftPlan((ids as string[]).map((k) => takeNamed(k, f)));
             const tool: Tool = { solid: this.loftSolid(plan, keep), op: 'add' };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.generated') {
+            // Springs, SubD shapes and blades: closed meshes from src/engine/generated.ts.
+            const kind = String(a.kind) as GeneratedKind;
+            const gm = generate(kind, a.spec);
+            const mesh = new this.m.Mesh({ numProp: 3, vertProperties: new Float32Array(gm.positions), triVerts: new Uint32Array(gm.indices) });
+            mesh.merge();
+            let solid: Manifold;
+            try {
+              solid = keep(new this.m.Manifold(mesh));
+            } catch {
+              throw new SpecError(`that ${kind === 'subd' ? 'shape folds through itself; move its cage points less far' : kind} is not a closed solid`, f.id);
+            }
+            const bs = a.spec as BladeSpec;
+            if (kind === 'blade' && bs.hubR > 0) {
+              // The hub: a cylinder on the axis, joined to the blades.
+              const ax = bs.axis;
+              const zx: Vec3 = Math.abs(ax[1]) < 0.9 ? norm(cross([0, 1, 0], ax)) : norm(cross([1, 0, 0], ax));
+              const zy = cross(ax, zx);
+              const hub = keep(keep(this.m.Manifold.cylinder(bs.hubH, bs.hubR, bs.hubR, 64)).transform([zx[0], zx[1], zx[2], 0, zy[0], zy[1], zy[2], 0, ax[0], ax[1], ax[2], 0, bs.origin[0], bs.origin[1], bs.origin[2], 1] as Mat4));
+              solid = keep(solid.add(hub));
+            }
+            const tool: Tool = { solid, op: 'add' };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
           } else if (f.$op === 'feature.surface') {

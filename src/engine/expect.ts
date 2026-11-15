@@ -11,6 +11,7 @@
  */
 
 import { surfaceBox, surfacePatchOf, surfaceVolume } from './surface.js';
+import { generate, GeneratedKind, meshBox, meshVolume } from './generated.js';
 import { draftScale, draftVolume } from './profiles.js';
 import {
   Frame,
@@ -305,6 +306,24 @@ export function expectVolume(spec: PartSpec): Expectation {
 
     if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round' || f.$op === 'feature.thread') {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
+    }
+    if (f.$op === 'feature.generated') {
+      const kind = String(a.kind) as GeneratedKind;
+      const bs = a.spec as { hubR?: number };
+      if (kind === 'blade' && (bs.hubR ?? 0) > 0) return unknown(`"${f.id}": blades joined to a hub overlap it; the kernel measures their union`, terms);
+      let gm;
+      try {
+        gm = generate(kind, a.spec);
+      } catch (e) {
+        return unknown(`"${f.id}": ${e instanceof Error ? e.message : String(e)}`, terms);
+      }
+      const why = addBody(meshBox(gm), f.id);
+      if (why) return unknown(why, terms);
+      const gv = meshVolume(gm);
+      volume = bodies.length > 1 ? volume + gv : gv;
+      terms.push(`${f.id}: ${kind}, its own mesh measured: ${fmt(gv)}`);
+      if (bodies.length === 1) revolved = true;
+      continue;
     }
     if (f.$op === 'feature.surface') {
       // The sampled freeform solid: exact for its grid (src/engine/surface.ts), a body of its own.
