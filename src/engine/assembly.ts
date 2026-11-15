@@ -41,7 +41,7 @@ export interface Ref {
   dir: Vec3;
 }
 
-export type MateKind = 'coincident' | 'concentric' | 'distance' | 'angle' | 'parallel' | 'hinge' | 'slider' | 'gear';
+export type MateKind = 'coincident' | 'concentric' | 'distance' | 'angle' | 'parallel' | 'hinge' | 'slider' | 'gear' | 'screw' | 'rack';
 
 export interface Mate {
   id: string;
@@ -57,6 +57,11 @@ export interface Mate {
   /** A gear mate: the hinge it follows and the ratio (this angle = -ratio x that angle). */
   follows?: string;
   ratio?: number;
+  /** Limits on the driven value (deg for hinges, mm for sliders): it stops there, like a limit mate. */
+  min?: number;
+  max?: number;
+  /** A screw's pitch: mm along the axis per turn. */
+  pitch?: number;
 }
 
 export interface Instance {
@@ -264,8 +269,15 @@ export function solveAssembly(instances: Instance[], mates: Mate[]): SolveReport
   const free: Record<string, number> = {};
   for (const i of out) free[i.id] = placed.has(i.id) ? 0 : 6;
   const hingeAngle = new Map<string, number>();
-  for (const m of mates) if (m.kind === 'hinge') hingeAngle.set(m.id, m.value ?? 0);
-  for (const m of mates) if (m.kind === 'gear' && m.follows) hingeAngle.set(m.id, -(m.ratio ?? 1) * (hingeAngle.get(m.follows) ?? 0));
+  const clampV = (m: Mate, v: number): number => Math.min(m.max ?? Infinity, Math.max(m.min ?? -Infinity, v));
+  for (const m of mates) if (m.kind === 'hinge' || m.kind === 'screw' || m.kind === 'slider') hingeAngle.set(m.id, clampV(m, m.value ?? 0));
+  // Followers: a gear turns the other way at its ratio; a rack slides ratio mm per degree of its pinion.
+  for (const m of mates) {
+    if (!m.follows) continue;
+    const lead = hingeAngle.get(m.follows) ?? 0;
+    if (m.kind === 'gear') hingeAngle.set(m.id, clampV(m, -(m.ratio ?? 1) * lead));
+    if (m.kind === 'rack') hingeAngle.set(m.id, clampV(m, (m.ratio ?? 1) * lead));
+  }
 
   // Keep going until no mate can be applied (each pass places what it can).
   const pending = mates.slice();
@@ -285,6 +297,7 @@ export function solveAssembly(instances: Instance[], mates: Mate[]): SolveReport
       switch (m.kind) {
         case 'concentric':
         case 'hinge':
+        case 'screw':
         case 'gear': {
           if (m.ra.kind !== 'axis' || m.rb.kind !== 'axis') {
             failed.push({ id: m.id, reason: `${m.kind} needs two round faces (axes)` });
@@ -293,7 +306,8 @@ export function solveAssembly(instances: Instance[], mates: Mate[]): SolveReport
           // Direction, then onto the line (keep the position along the axis).
           let pose = alignDir(A.pose, m.ra.dir, rb.dir, ra.point);
           const pa = toWorld(pose, m.ra.point);
-          const along = dot3(sub(pa, rb.point), rb.dir);
+          // A screw advances its pitch along the axis per turn: its axial place is set by its angle.
+          const along = m.kind === 'screw' ? ((m.pitch ?? 1) * (hingeAngle.get(m.id) ?? 0)) / 360 : dot3(sub(pa, rb.point), rb.dir);
           const onLine = add(rb.point, scale(rb.dir, along));
           pose = { p: add(pose.p, sub(onLine, pa)), q: pose.q };
           if (m.kind !== 'concentric') {
@@ -323,6 +337,7 @@ export function solveAssembly(instances: Instance[], mates: Mate[]): SolveReport
           free[A.id] = Math.max(0, free[A.id] - 3);
           break;
         }
+        case 'rack':
         case 'slider': {
           if (m.ra.kind !== 'plane' || m.rb.kind !== 'plane') {
             failed.push({ id: m.id, reason: 'a slider needs two flat faces' });
@@ -333,7 +348,7 @@ export function solveAssembly(instances: Instance[], mates: Mate[]): SolveReport
           const pa = toWorld(pose, m.ra.point);
           pose = { p: sub(pose.p, scale(rb.dir, dot3(sub(pa, rb.point), rb.dir))), q: pose.q };
           const slide = unit(Math.abs(rb.dir[1]) < 0.9 ? cross3(rb.dir, [0, 1, 0]) : cross3(rb.dir, [1, 0, 0]));
-          pose = { p: add(pose.p, scale(slide, m.value ?? 0)), q: pose.q };
+          pose = { p: add(pose.p, scale(slide, hingeAngle.get(m.id) ?? m.value ?? 0)), q: pose.q };
           A.pose = pose;
           free[A.id] = Math.min(free[A.id], 1);
           break;
@@ -390,13 +405,20 @@ function residuals(inst: Map<string, Instance>, mates: Mate[], angle: Map<string
     if (!A || !B) continue;
     const ra = worldRef(A, m.ra);
     const rb = worldRef(B, m.rb);
-    if (m.kind === 'concentric' || m.kind === 'hinge' || m.kind === 'gear') {
+    if (m.kind === 'concentric' || m.kind === 'hinge' || m.kind === 'gear' || m.kind === 'screw') {
       const c = cross3(ra.dir, rb.dir);
       const d = sub(ra.point, rb.point);
       const perp = sub(d, scale(rb.dir, dot3(d, rb.dir)));
       out.push(c[0] * L, c[1] * L, c[2] * L, perp[0], perp[1], perp[2]);
       if (m.kind !== 'concentric') out.push(wrap(hingeNow(A, m, B) - ((angle.get(m.id) ?? 0) * Math.PI) / 180) * L);
-    } else if (m.kind === 'coincident' || m.kind === 'distance' || m.kind === 'slider') {
+      if (m.kind === 'screw') out.push(dot3(d, rb.dir) - ((m.pitch ?? 1) * (angle.get(m.id) ?? 0)) / 360);
+    } else if (m.kind === 'slider' || m.kind === 'rack') {
+      // Faces against each other, and the travel along the face's first in-plane direction.
+      const s = add(ra.dir, rb.dir);
+      const slide = unit(Math.abs(rb.dir[1]) < 0.9 ? cross3(rb.dir, [0, 1, 0]) : cross3(rb.dir, [1, 0, 0]));
+      const d = sub(ra.point, rb.point);
+      out.push(s[0] * L, s[1] * L, s[2] * L, dot3(d, rb.dir), dot3(d, slide) - (angle.get(m.id) ?? 0));
+    } else if (m.kind === 'coincident' || m.kind === 'distance') {
       const s = add(ra.dir, rb.dir);
       out.push(s[0] * L, s[1] * L, s[2] * L, dot3(sub(ra.point, rb.point), rb.dir) - (m.kind === 'distance' ? m.value ?? 0 : 0));
     } else if (m.kind === 'parallel') {
@@ -527,7 +549,7 @@ export function encodeAssembly(doc: AssemblyDoc): string {
   const json = JSON.stringify({
     v: 1,
     i: doc.instances.map((i) => [i.id, i.name, i.job, i.material, Object.fromEntries(Object.entries(i.params).map(([k, v]) => [k, r6(v)])), [...i.pose.p.map(r6), ...i.pose.q.map(r6)], i.grounded ? 1 : 0]),
-    m: doc.mates.map((m) => [m.id, m.kind, m.a, refOut(m.ra), m.b, refOut(m.rb), m.value ?? null, m.follows ?? null, m.ratio ?? null]),
+    m: doc.mates.map((m) => [m.id, m.kind, m.a, refOut(m.ra), m.b, refOut(m.rb), m.value ?? null, m.follows ?? null, m.ratio ?? null, m.min ?? null, m.max ?? null, m.pitch ?? null]),
   });
   const bytes = new TextEncoder().encode(json);
   let bin = '';
@@ -535,7 +557,7 @@ export function encodeAssembly(doc: AssemblyDoc): string {
   return btoa(bin).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');
 }
 
-const KINDS: MateKind[] = ['coincident', 'concentric', 'distance', 'angle', 'parallel', 'hinge', 'slider', 'gear'];
+const KINDS: MateKind[] = ['coincident', 'concentric', 'distance', 'angle', 'parallel', 'hinge', 'slider', 'gear', 'screw', 'rack'];
 
 /** Read an assembly string; anything malformed gives null, never a guessed assembly. `knownJob` checks part ids. */
 export function decodeAssembly(text: string, knownJob: (id: string) => boolean): AssemblyDoc | null {
@@ -555,11 +577,11 @@ export function decodeAssembly(text: string, knownJob: (id: string) => boolean):
     const ids = new Set(instances.map((i) => i.id));
     const mates: Mate[] = [];
     for (const r of o.m) {
-      const [id, kind, a, ra, b, rb, value, follows, ratio] = r as [string, MateKind, string, unknown, string, unknown, number | null, string | null, number | null];
+      const [id, kind, a, ra, b, rb, value, follows, ratio, min, max, pitch] = r as [string, MateKind, string, unknown, string, unknown, number | null, string | null, number | null, number | null, number | null, number | null];
       const A = refIn(ra);
       const B = refIn(rb);
       if (!KINDS.includes(kind) || !ids.has(a) || !ids.has(b) || !A || !B) return null;
-      mates.push({ id: String(id), kind, a, ra: A, b, rb: B, value: value ?? undefined, follows: follows ?? undefined, ratio: ratio ?? undefined });
+      mates.push({ id: String(id), kind, a, ra: A, b, rb: B, value: value ?? undefined, follows: follows ?? undefined, ratio: ratio ?? undefined, min: min ?? undefined, max: max ?? undefined, pitch: pitch ?? undefined });
     }
     return { instances, mates };
   } catch {

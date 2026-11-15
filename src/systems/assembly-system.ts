@@ -21,6 +21,9 @@ import { CancelledError } from '../app/engine-client.js';
 import { TextLabel, faceViewer } from '../app/labels.js';
 import { COLORS, CSS } from '../app/palette.js';
 import { makeButton, setButton } from '../app/ui3d.js';
+import { massProperties } from '../engine/stability.js';
+import { writeStep } from '../engine/step-export.js';
+import { MATERIALS } from '../engine/materials.js';
 import { decodeAssembly, encodeAssembly, fitAxis, IDENTITY, Instance, Mate, MateKind, Pose, Quat, Ref, solveAssembly } from '../engine/assembly.js';
 import { loadAssembly, saveAssembly } from '../app/persistence.js';
 import { JOBS } from '../engine/jobs.js';
@@ -443,7 +446,7 @@ export class AssemblySystem extends createSystem({}) {
   // ----- motion --------------------------------------------------------------------------------
 
   private drivers(): Mate[] {
-    return this.mates.filter((m) => m.kind === 'hinge' || m.kind === 'slider');
+    return this.mates.filter((m) => m.kind === 'hinge' || m.kind === 'slider' || m.kind === 'screw');
   }
 
   private key(): void {
@@ -473,8 +476,141 @@ export class AssemblySystem extends createSystem({}) {
   }
 
   /** Voice: "turn the hinge to 90", "slide to 20", "assembly demo". */
+  /** The part being edited from the assembly (its instance id), while the bench shows it alone. */
+  private editing: string | null = null;
+
+  /** Edit a part in place: the bench shows it with every tool; "back to the assembly" puts the change back. */
+  private editPart(n: number): string {
+    const inst = this.instances[n - 1];
+    if (!inst) return `There are ${this.instances.length} parts.`;
+    const { app } = ctx;
+    this.editing = inst.id;
+    this.setActive(false);
+    app.selectJob(inst.job);
+    app.replaceParams(inst.params);
+    app.setMaterial(inst.material);
+    return `Editing ${inst.name}. Change it with any tool, then say "back to the assembly".`;
+  }
+
+  private async backToAssembly(): Promise<void> {
+    const { app } = ctx;
+    const inst = this.instances.find((i) => i.id === this.editing);
+    this.editing = null;
+    if (!inst) return;
+    inst.params = { ...app.params.peek() };
+    inst.material = app.material.peek();
+    this.setActive(true);
+    try {
+      const data = await this.build(inst.job, inst.params);
+      const old = this.views.get(inst.id);
+      if (old) this.root.remove(old.group);
+      this.views.delete(inst.id);
+      this.makeView(inst, data);
+      this.solve(false);
+      this.persist();
+      app.say(`${inst.name} updated in the assembly; its mates are solved again.`, 'good');
+    } catch (e) {
+      if (!(e instanceof CancelledError)) app.say(e instanceof Error ? e.message : String(e), 'warn');
+    }
+  }
+
+  /** The bill of materials as CSV: item, name, part, material, quantity, mass each (g). */
+  private bomCsv(): string {
+    const rows = new Map<string, { name: string; job: string; material: string; qty: number; mass: number }>();
+    for (const i of this.instances) {
+      const key = `${i.job}|${i.material}|${JSON.stringify(i.params)}`;
+      const r = rows.get(key);
+      if (r) {
+        r.qty++;
+        continue;
+      }
+      const v = this.views.get(i.id);
+      const vol = v ? massProperties({ positions: v.data.positions, indices: v.data.indices }).volume : 0;
+      const density = MATERIALS.find((m) => m.id === i.material)?.density ?? 1.24;
+      rows.set(key, { name: i.name, job: jobById(i.job).title, material: i.material.toUpperCase(), qty: 1, mass: (vol / 1000) * density });
+    }
+    const lines = ['Item,Name,Part,Material,Quantity,Mass each (g)'];
+    [...rows.values()].forEach((r, k) => lines.push(`${k + 1},"${r.name}","${r.job}",${r.material},${r.qty},${r.mass.toFixed(2)}`));
+    return lines.join('\n') + '\n';
+  }
+
+  private download(text: string | Uint8Array, name: string, type: string): void {
+    const url = URL.createObjectURL(new Blob([text as BlobPart], { type }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   private command(text: string): string | null {
     const t = text.toLowerCase();
+    if (this.editing && /\b(back to (the )?assembly|done editing|finish editing)\b/u.test(t)) {
+      void this.backToAssembly();
+      return 'Back to the assembly.';
+    }
+    if (this.active) {
+      const ed = t.match(/\bedit part (\d+)\b/u);
+      if (ed) return this.editPart(parseInt(ed[1], 10));
+      if (/\b(export|save|download)\b.*\b(step|stp)\b/u.test(t)) {
+        const bodies = this.instances.flatMap((inst) => {
+          const v = this.views.get(inst.id);
+          if (!v) return [];
+          v.group.updateMatrix();
+          const e = v.group.matrix.elements;
+          const src = v.data.positions;
+          const out = new Float32Array(src.length);
+          for (let i = 0; i < src.length; i += 3) {
+            const x = src[i], y = src[i + 1], z = src[i + 2];
+            out[i] = e[0] * x + e[4] * y + e[8] * z + e[12];
+            out[i + 1] = e[1] * x + e[5] * y + e[9] * z + e[13];
+            out[i + 2] = e[2] * x + e[6] * y + e[10] * z + e[14];
+          }
+          return [{ name: inst.name, positions: out, indices: v.data.indices }];
+        });
+        if (!bodies.length) return 'The assembly is empty.';
+        this.download(writeStep(bodies, 'assembly.step'), 'assembly.step', 'model/step');
+        return `Saved assembly.step: ${bodies.length} solids where they sit now.`;
+      }
+      if (/\b(bill of materials|bom|parts list)\b/u.test(t)) {
+        this.download(this.bomCsv(), 'assembly-bom.csv', 'text/csv');
+        return `Bill of materials saved: ${this.instances.length} parts.`;
+      }
+      const lim = t.match(/\blimit (?:the )?(hinge|slider|screw)?.*?(-?\d+(?:\.\d+)?)\s*(?:to|and)\s*(-?\d+(?:\.\d+)?)/u);
+      if (lim) {
+        const m = [...this.drivers()].reverse().find((d) => !lim[1] || d.kind === lim[1]);
+        if (!m) return 'There is nothing to limit.';
+        m.min = Math.min(parseFloat(lim[2]), parseFloat(lim[3]));
+        m.max = Math.max(parseFloat(lim[2]), parseFloat(lim[3]));
+        this.solve(true);
+        this.persist();
+        return `${m.kind} limited to ${m.min} to ${m.max}${m.kind === 'hinge' || m.kind === 'screw' ? ' degrees' : ' mm'}.`;
+      }
+      const sc = t.match(/\bscrew\b.*?\bpitch\s*(\d+(?:\.\d+)?)/u);
+      if (sc) {
+        const m = [...this.mates].reverse().find((d) => d.kind === 'hinge' || d.kind === 'concentric');
+        if (!m) return 'Make a hinge first, then turn it into a screw.';
+        m.kind = 'screw';
+        m.pitch = parseFloat(sc[1]);
+        this.solve(true);
+        this.persist();
+        return `A screw: ${m.pitch} mm along the axis per turn. Turning it now moves it along.`;
+      }
+      const rk = t.match(/\brack\b.*?\b(?:radius|pitch radius)\s*(\d+(?:\.\d+)?)/u);
+      if (rk) {
+        const s = [...this.mates].reverse().find((d) => d.kind === 'slider' || d.kind === 'rack');
+        const h = this.mates.find((d) => d.kind === 'hinge');
+        if (!s || !h) return 'A rack and pinion needs a hinge (the pinion) and a slider (the rack).';
+        s.kind = 'rack';
+        s.follows = h.id;
+        s.ratio = (2 * Math.PI * parseFloat(rk[1])) / 360;
+        this.solve(true);
+        this.persist();
+        return `Rack and pinion: the rack moves ${(s.ratio * 360).toFixed(1)} mm per turn of the pinion.`;
+      }
+    }
     if (/\b(linkage|four bar|4 bar)( demo)?\b/u.test(t)) {
       void this.linkage();
       return 'Building a four-bar linkage: a closed loop, solved as one.';

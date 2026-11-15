@@ -4,6 +4,7 @@
  * immersive bench and the flat page.
  */
 
+import { writeStep } from '../engine/step-export.js';
 import { batch, Signal, signal } from '@iwsdk/core';
 import { Finding, runAgents, safetyFactor, StressSummary } from '../engine/agents.js';
 import { MeasurementRecord } from '../engine/exporters.js';
@@ -952,6 +953,12 @@ export class App {
     // Assembly: "assembly demo", "turn the hinge to 90", "play", "clash check"...
     const asm = this.assemblyCommand?.(sentence) ?? null;
     if (asm) return asm;
+    if (/\b(export|save|download)\b.*\b(step|stp)\b/u.test(sentence.toLowerCase())) {
+      const s = this.exportStep();
+      if (!s) return 'Nothing to export yet.';
+      this.download(s.step, `${s.name}.step`, 'model/step');
+      return `Saved ${s.name}.step: a solid with ${s.faces} faces, ready for SOLIDWORKS, CATIA or Creo.`;
+    }
     if (/^\s*(assembly|assemble|open (the )?assembly)\s*$/u.test(sentence.toLowerCase())) {
       this.actions.assembly?.();
       return 'Assembly.';
@@ -1249,6 +1256,33 @@ export class App {
   }
 
   /** Build the STL and the JSON record for the current part. */
+  /** The part as a STEP file (AP214 B-rep, millimetres) that SOLIDWORKS, CATIA, Creo and Fusion open. */
+  exportStep(): { step: string; name: string; faces: number } | null {
+    const built = this.built.peek();
+    const grown = this.grown.peek();
+    const mesh = grown?.final ? grown.mesh : built?.mesh;
+    if (!mesh) {
+      this.say('Build a part first, then export it.', 'warn');
+      return null;
+    }
+    const name = this.job.id;
+    const step = writeStep([{ name: this.job.title, positions: mesh.positions, indices: mesh.indices }], `${name}.step`);
+    const faces = (step.match(/ADVANCED_FACE\(/gu) ?? []).length;
+    return { step, name, faces };
+  }
+
+  /** Save text or bytes to the downloads folder (works in the headset browser too). */
+  download(data: string | Uint8Array, name: string, type: string): void {
+    const url = URL.createObjectURL(new Blob([data as BlobPart], { type }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
   async exportFiles(): Promise<{ stl: Uint8Array; json: string; name: string } | null> {
     const grown = this.grown.peek();
     const mesh = grown?.final

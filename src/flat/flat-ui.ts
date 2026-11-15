@@ -328,6 +328,13 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
             app.say(`Drawing saved${d.holes ? ` with ${d.holes} through-hole callout${d.holes === 1 ? '' : 's'}` : ''}. Open it in a browser to print or save as PDF.`, 'good');
           }
         } }, 'Download drawing'),
+        h('button', { type: 'button', title: 'A solid B-rep (AP214) that SOLIDWORKS, CATIA, Creo and Fusion open', click: () => {
+          const s = app.exportStep();
+          if (s) {
+            download(s.step, `${s.name}.step`, 'model/step');
+            app.say(`STEP saved: one solid, ${s.faces} faces.`, 'good');
+          }
+        } }, 'Download STEP'),
       ),
       h('div', { class: 'share' }, qr, h('div', {}, h('p', { class: 'note' }, 'Scan to open this exact part on another device. The link holds the part; no server is involved.'), link)),
     ),

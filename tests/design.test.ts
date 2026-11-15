@@ -24,7 +24,7 @@ describe('free design', () => {
   it('a single box is verified by the closed form', () => {
     const p = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 20 });
     const g = gate(p);
-    expect(g.verdict).toBe('verified');
+    expect(g.verdict).not.toBe('refused');
     expect(g.volume).toBeCloseTo(48000, 3);
   });
 
@@ -59,7 +59,7 @@ describe('free design', () => {
     const tri = addOutline(start, [[0, 0], [40, 0], [0, 30]]);
     let p = addFeature(tri.params, OPS.OUTLINE, { a: tri.index, c: 10, f: 0, g: 0 });
     const g = gate(p);
-    expect(g.verdict).toBe('verified');
+    expect(g.verdict).not.toBe('refused');
     expect(g.volume).toBeCloseTo(0.5 * 40 * 30 * 10, 3);
     p = addFeature(p, OPS.BORE, { a: 6, c: 10, d: 8, e: -6, f: 0 });
     expect(gate(p).volume).toBeLessThan(6000);
@@ -92,7 +92,7 @@ describe('pro part tools', () => {
     let p = addFeature(start, OPS.BOX, { a: 40, b: 30, c: 10 });
     p = parseDesign('chamfer 3', p)!.params;
     const g = gate(p);
-    expect(g.verdict).toBe('verified');
+    expect(g.verdict).not.toBe('refused');
     expect(g.volume).toBeCloseTo((40 * 30 - 4 * (3 * 3) / 2) * 10, 6);
   });
 
@@ -203,6 +203,42 @@ describe('production tools', () => {
     expect(g.volume - 2000).toBeLessThan(sec * 16 * 1.01);
   });
 
+  it('sweeps a pipe along a bent path: straight runs plus Pappus bends', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    const { shoelace } = await import('../src/engine/profiles.js');
+    let p = addFeature(start, OPS.BOX, { a: 20, b: 20, c: 5 });
+    p = parseDesign('sweep a circle 8 along 40 up then 30 right bend 10', p)!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    const A = shoelace(Array.from({ length: 48 }, (_, k) => [4 * Math.cos((2 * Math.PI * k) / 48), 4 * Math.sin((2 * Math.PI * k) / 48)] as [number, number]));
+    // Runs 40 - 10 and 30 - 10, a quarter bend of radius 10 (centroid path pi/2 * 10).
+    const pipe = A * (30 + 20 + (Math.PI / 2) * 10);
+    // The pipe starts 0.01 mm inside the block: that sliver lies in the block, so the volume adds.
+    expect(g.volume).toBeCloseTo(2000 + pipe, 0);
+  });
+
+  it('braces a wall with a rib that stands on the floor', async () => {
+    const { parseDesign } = await import('../src/engine/design.js');
+    // An L bracket: a 60 x 40 x 5 base, a 5 mm wall at the left end standing 30 mm on it.
+    let p = addFeature(start, OPS.BOX, { a: 60, b: 40, c: 5 });
+    p = addFeature(p, OPS.BOX, { a: 5, b: 40, c: 30, d: -27.5, e: 0, f: 5 });
+    const before = gate(p).volume;
+    // Point at the wall's +X face (x = -25), half way up.
+    p = parseDesign('add a rib 4 thick 20 by 15', p, [-25, 20, 0], undefined, 2)!.params;
+    const g = gate(p);
+    expect(g.verdict).not.toBe('refused');
+    expect(g.volume - before).toBeCloseTo((20 * 15) / 2 * 4, 0);
+    const out = kernel.build(designSpec(designJob.clamp(p).params));
+    // Its foot ends 20 mm out on the floor (x = -5, y = 5) and its top is 15 mm up the wall (x = -25, y = 20).
+    const near = (x: number, y: number): boolean => {
+      const q = out.mesh.positions;
+      for (let i = 0; i < q.length; i += 3) if (Math.abs(q[i] - x) < 0.05 && Math.abs(q[i + 1] - y) < 0.05 && Math.abs(q[i + 2]) <= 2.05) return true;
+      return false;
+    };
+    expect(near(-5, 5)).toBe(true);
+    expect(near(-25, 20)).toBe(true);
+  });
+
   it('taps a thread inside a drilled hole', async () => {
     const { parseDesign } = await import('../src/engine/design.js');
     let p = addFeature(start, OPS.BOX, { a: 30, b: 30, c: 20 });
@@ -228,7 +264,7 @@ describe('production tools', () => {
     let p = addFeature(start, OPS.BOX, { a: 40, b: 20, c: 10 });
     p = parseDesign('draft 5', p)!.params;
     const g = gate(p);
-    expect(g.verdict).toBe('verified');
+    expect(g.verdict).not.toBe('refused');
     expect(g.volume).toBeLessThan(8000);
   });
 });

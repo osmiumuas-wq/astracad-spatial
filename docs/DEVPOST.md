@@ -56,11 +56,22 @@ hands, and every number on screen backed by a check you can see.
   feature 3" to change any earlier step, with the feature tree beside the part. Point at any edge, straight or curved,
   and say "fillet this edge 3": a rolling-ball fillet that follows tangent edges, and edges filleted one after another
   blend their corner into a sphere. "Round all edges 2" rounds the whole part; "chamfer this edge 2" bevels one.
+- **Production parts by voice.** "Gear module 2 with 20 teeth 8 thick bore 6" makes an ISO involute spur gear. "M8
+  thread 16 long" makes a threaded rod; "tap m8 15 deep" cuts the thread into a hole. "Draft 3" tapers a boss for
+  moulding. "Loft a rectangle 40 by 30 to a circle 20 over 25". "Sweep a circle 8 along 40 up then 30 right, bend
+  10" makes a bent pipe or handle. Point at a wall and say "rib 3 thick 20 by 20" to brace it. Point at any face for
+  a hole, a counterbore, or an exact rectangle, circle, slot or hexagon.
+- **Into your desktop CAD.** "Export step" saves the part as an AP214 solid that SOLIDWORKS, CATIA, Creo and Fusion
+  open. Flat faces are true planes; curved faces are made of small flat faces. A test reads every file back with
+  OpenCascade and checks the volume.
 - **Assemblies and motion.** Insert parts and mate them with the hand ray: pinch a face or a pin on one part, then
   where it goes on another, and it glides into place (coincident, concentric, hinge, slider, gear). An exact clash
   check shows interference in red, an exploded view lifts the parts apart, and a motion study plays keyframes:
   "turn the hinge to 90", "play". Closed loops are solved too: "linkage demo" builds a four-bar that turns through a
-  full revolution. Assemblies are saved, and Share puts the whole assembly in the QR code.
+  full revolution. Screw mates advance by their pitch, rack and pinion slides as the pinion turns, and any hinge
+  or slider can be limited ("limit the hinge 0 to 90"). "Edit part 2" changes a part in place; "bill of materials"
+  saves a parts list with masses; "export step" saves the whole assembly. Assemblies are saved, and Share puts the
+  whole assembly in the QR code.
 - **The Lab.** Explore builds, verifies and stress-tests six variants and marks the best trade-offs. A tip test finds
   the exact centre of mass and the angle the part falls at, with its load resting on it. Point at the part and say
   "make this thicker". Hear the stress rise as you push. A gyroid lattice core behind a solid skin, cut open to see.
@@ -119,9 +130,9 @@ cells and grid sizes tied to wall thickness; before that, results moved 30 % wit
 
 ## What is next
 
-Gears and general mates for assemblies, full feature recognition for imported STEP files, supports and bridging in
-the slicer, sending G-code to a printer on the network, and the desktop AstraCAD bridge for drawings and production
-solvers.
+Exact cylinders and B-spline surfaces in the STEP export, assembly drawings with balloons, a sketcher with typed
+dimensions on every line, full feature recognition for imported STEP files, supports and bridging in the slicer,
+sending G-code to a printer on the network, and the desktop AstraCAD bridge for drawings and production solvers.
 
 ## Built with
 

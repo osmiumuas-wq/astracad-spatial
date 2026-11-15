@@ -35,10 +35,12 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (164 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
-CalculiX, modal, flow, STEP, hinge, drawing, describe, spoken commands, voice, co-design, calibration, stability,
-explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free design, pro part tools,
-assemblies, mates and loops, edge fillets, rolling-ball fillets and corner blends):
+Engine tests (181 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+CalculiX, modal, flow, STEP import and export, hinge, drawing, describe, spoken commands, voice, co-design,
+calibration, stability, explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free
+design, pro part tools, production tools (gears, threads, draft, lofts, sweeps, ribs, holes on any face), assemblies,
+mates and loops, screw, rack and limit mates, edge fillets, rolling-ball fillets, corner blends and curved
+chamfers):
 
 ```bash
 npx vitest run
@@ -144,7 +146,22 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   another with the same radius form a set, and where their edges meet the corner blends into a sphere patch. "Round
   all edges" rolls the ball over the whole part (a rounded block matches Steiner's formula). Circular rims take an
   exact revolved section (Pappus); other curved edges use a 32-segment ball, within about 1 % of the true blend.
-  Chamfers of curved edges and general booleans of unrelated bodies are refused by name.
+  Chamfers follow straight edges and circular edges; a chamfer of any other curve is refused by name.
+- Production tools in free design: ISO involute spur gears (20 degree pressure angle, checked by the area of their
+  own outline), ISO 68-1 metric threads (rods and tapped holes; the thread section swept with a twist, 36 steps per
+  turn), draft on bosses (closed form A h (1 + (a + b)/2 + ab/3)), lofts between a rectangle, circle or hexagon,
+  sweeps of a profile along a path of straight runs and round bends, ribs that brace a wall from the floor, and
+  exact rectangles, circles, slots and polygons sketched on any face. Gears and threads are kernel-checked, not
+  closed form; their teeth and flanks are faceted, not exact curves.
+- STEP export writes AP214 (automotive_design): each part a MANIFOLD_SOLID_BREP of planar ADVANCED_FACEs, with
+  coplanar triangles merged into one face and holes kept as inner loops. A round-trip test reads the file back with
+  OpenCascade and gets the same volume to 1e-4. Flat faces come out as true planes; curved faces (fillets, holes,
+  gears) come out as many small flat faces, not cylinders or B-spline surfaces. It opens and measures correctly in
+  desktop CAD, but those faces cannot be edited there as one cylinder. NURBS freeform surfaces are not modelled.
+- Assemblies have coincident, concentric, distance, angle, parallel, hinge, slider, gear, screw (pitch per turn),
+  rack and pinion, and limits on any hinge, slider or screw. "Edit part 2" opens a part on the bench with every tool;
+  "back to the assembly" puts it back and solves the mates again. "Bill of materials" saves a CSV (item, part,
+  material, quantity, mass). "Export step" saves every part where it sits. Assembly drawings are not made yet.
 - Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step.
 - The agents are rule-based expert systems, not language models.
 - Capture makes a parametric extrusion of an object's traced footprint and height, not a 3D scan: overhangs,

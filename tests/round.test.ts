@@ -85,3 +85,16 @@ describe('rolling-ball fillets: any edge, blended corners', () => {
     expect(out.props.components).toBe(1);
   });
 });
+
+describe('curved chamfers', () => {
+  it('chamfers the rim of a hole all the way round (Pappus)', () => {
+    const plain = kernel.build(block([], true)).props.volume;
+    const out = kernel.build(block([{ $op: 'feature.round', id: 'c', args: { at: [8, 20, 0], radius: 1.5, kind: 'chamfer' } }], true));
+    const removed = plain - out.props.volume;
+    // A 45 degree chamfer d = 1.5 on a rim of radius 8: triangle area d^2/2 at centroid radius 8 + d/3.
+    const exact = (1.5 * 1.5) / 2 * 2 * Math.PI * (8 + 1.5 / 3);
+    expect(removed / exact).toBeGreaterThan(0.97);
+    expect(removed / exact).toBeLessThan(1.03);
+    expect(out.props.components).toBe(1);
+  });
+});

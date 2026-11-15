@@ -159,3 +159,40 @@ describe('closed loops', () => {
     }
   });
 });
+
+describe('screw, rack and pinion, limits', () => {
+  const ax = (x: number): { kind: 'axis'; point: Vec3; dir: Vec3 } => ({ kind: 'axis', point: [x, 0, 0], dir: [0, 1, 0] });
+  const plane = (y: number, up: boolean): { kind: 'plane'; point: Vec3; dir: Vec3 } => ({ kind: 'plane', point: [0, y, 0], dir: [0, up ? 1 : -1, 0] });
+
+  it('a screw advances its pitch per turn', () => {
+    const base = inst('base', [0, 0, 0], IDENTITY, true);
+    const nut = inst('nut', [5, 3, 1], qaxis([0, 1, 0], 0.4));
+    for (const deg of [0, 90, 720]) {
+      const r = solveAssembly([base, nut], [{ id: 's', kind: 'screw', a: 'nut', ra: ax(0), b: 'base', rb: ax(0), value: deg, pitch: 1.25 }]);
+      expect(r.failed).toEqual([]);
+      const p = toWorld(r.instances.find((i) => i.id === 'nut')!.pose, [0, 0, 0]);
+      expect(p[1]).toBeCloseTo((1.25 * deg) / 360, 6);
+      expect(Math.hypot(p[0], p[2])).toBeLessThan(1e-6);
+    }
+  });
+
+  it('a rack slides with its pinion, and a hinge stops at its limit', () => {
+    const frame = inst('frame', [0, 0, 0], IDENTITY, true);
+    const pinion = inst('pinion', [0, 0, 0]);
+    const rack = inst('rack', [10, 0, 3]);
+    // Pinion of pitch radius 10: one degree of turn moves the rack 2 pi 10 / 360 mm.
+    const k = (2 * Math.PI * 10) / 360;
+    const mates: Mate[] = [
+      { id: 'h', kind: 'hinge', a: 'pinion', ra: ax(0), b: 'frame', rb: ax(0), value: 45, min: -30, max: 30 },
+      { id: 'r', kind: 'rack', a: 'rack', ra: plane(0, false), b: 'frame', rb: plane(5, true), follows: 'h', ratio: k },
+    ];
+    const r = solveAssembly([frame, pinion, rack], mates);
+    expect(r.failed).toEqual([]);
+    // The hinge stops at 30 degrees, and the rack moves 30 k.
+    const R = r.instances.find((i) => i.id === 'rack')!;
+    const travel = toWorld(R.pose, [0, 0, 0]);
+    // The slide runs along the face's first in-plane direction, here -z; the rack keeps its free sideways place.
+    expect(-travel[2]).toBeCloseTo(30 * k, 5);
+    expect(travel[1]).toBeCloseTo(5, 6);
+  });
+});

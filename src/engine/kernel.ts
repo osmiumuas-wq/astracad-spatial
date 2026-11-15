@@ -99,7 +99,7 @@ const ARG_SETS: Record<string, readonly string[]> = {
   'feature.chamfer': ['distance', 'feature', 'edges'],
   'feature.mirror': ['plane', 'offset'],
   'feature.edge_fillet': ['from', 'to', 'radius', 'kind'],
-  'feature.round': ['at', 'radius', 'all'],
+  'feature.round': ['at', 'radius', 'all', 'kind'],
   'feature.thread': ['origin', 'axis', 'major', 'pitch', 'length', 'internal'],
   'feature.shell': ['thickness', 'feature', 'open'],
   'feature.loft': ['sketches'],
@@ -451,11 +451,12 @@ export class Kernel {
                 if (o.isEmpty()) throw new SpecError(`a ${r} mm round is bigger than the part`, f.id);
                 body = o;
               } else {
-                // The set: this round and the ones straight after it with the same radius.
+                // The set: this round and the ones straight after it with the same radius (fillets only).
+                const kind = a.kind === 'chamfer' ? 'chamfer' : 'fillet';
                 const set: Feature[] = [f];
-                for (let k = i + 1; k < count; k++) {
+                for (let k = i + 1; k < count && kind === 'fillet'; k++) {
                   const g = spec.features[k];
-                  if (g.$op !== 'feature.round' || g.args?.all === true || Number(g.args?.radius) !== r) break;
+                  if (g.$op !== 'feature.round' || g.args?.all === true || g.args?.kind === 'chamfer' || Number(g.args?.radius) !== r) break;
                   set.push(g);
                 }
                 const mesh = this.extract(body, keep).mesh;
@@ -490,7 +491,7 @@ export class Kernel {
                   const radial = norm([mid[0] - circ.c[0], mid[1] - circ.c[1], mid[2] - circ.c[2]]);
                   const sRho = dot3k(tFlat, radial) > 0 ? 1 : -1;
                   const sH = dot3k(tWall, axis) > 0 ? 1 : -1;
-                  const sec = edgeSection({ ...efc, t1: tFlat, t2: tWall, phi: Math.PI / 2 }, r, 'fillet');
+                  const sec = edgeSection({ ...efc, t1: tFlat, t2: tWall, phi: Math.PI / 2 }, r, kind);
                   const poly: Vec2[] = sec.map(([x, y]) => [circ.r + sRho * x, sH * y]);
                   if (poly.some(([rho]) => rho < 0)) throw new SpecError(`a ${r} mm round does not fit inside that ${(2 * circ.r).toFixed(1)} mm circle`, f.id);
                   const ring = keep(keep(new this.m.CrossSection([poly], 'EvenOdd')).revolve(96));
@@ -501,7 +502,7 @@ export class Kernel {
                 } else if (one && straight && efc && efc.phi < Math.PI - 1e-3) {
                   // A lone straight edge: the exact prism cutter.
                   const ends: Vec3[] = [one[0][0], one[one.length - 1][1]];
-                  const poly = edgeSection(efc, r, 'fillet');
+                  const poly = edgeSection(efc, r, kind);
                   const L = Math.hypot(ends[1][0] - ends[0][0], ends[1][1] - ends[0][1], ends[1][2] - ends[0][2]);
                   const u = norm([ends[1][0] - ends[0][0], ends[1][1] - ends[0][1], ends[1][2] - ends[0][2]]);
                   const x = efc.t1;
@@ -512,6 +513,8 @@ export class Kernel {
                   const prism = keep(keep(keep(new this.m.CrossSection([poly], 'EvenOdd')).extrude(L + 0.04)).translate(0, 0, -0.02));
                   const tool = keep(prism.transform([x[0], x[1], x[2], 0, y[0], y[1], y[2], 0, along[0], along[1], along[2], 0, start[0], start[1], start[2], 1] as Mat4));
                   body = keep(efc.convex ? body.subtract(tool) : body.add(tool));
+                } else if (kind === 'chamfer') {
+                  throw new SpecError('a chamfer follows a straight edge or a circle; that edge is neither', f.id);
                 } else {
                   // The rolling ball on the part near every chain of the set, kept within tubes round them.
                   const R = r * 2.5;
