@@ -412,6 +412,18 @@ export class SketchBench {
     return this.settle(`${count} in a ${round ? 'circle round the origin' : 'row'}: ${made.length} copies.`);
   }
 
+  /** A sheet-metal base flange from this sketch's outline (on a top face): thickness t, bends of inside radius R. */
+  finishSheet(params: Params, t: number, R: number): { params: Params; reply: string } {
+    if (this.code !== 0 || this.rot || this.tilt) throw new Error('sketch a sheet-metal base on a top face (flat, not tilted)');
+    const [r] = profiles(this.sk);
+    const loop = r.loops[0];
+    // The sketch's (u, v) are the top plane's, shifted by the sketch origin.
+    const o = this.origin;
+    const out = addOutline(params, loop.pts.map(([u, v]) => [u + o[0], v - o[2]] as [number, number]), loop.sweeps);
+    const q = addFeature(out.params, OPS.SHEET, { a: out.index, b: t, c: R, f: o[1], g: 0.44 });
+    return { params: q, reply: `Sheet-metal base: ${t} mm thick, bends R${R}. Point at an edge and say "flange 25".` };
+  }
+
   /** Move the sketch plane along its normal (an offset reference plane), with what is drawn on it. */
   offsetPlane(d: number): string {
     const f = this.frame();

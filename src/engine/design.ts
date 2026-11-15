@@ -42,6 +42,9 @@
  *             STEP model as a body, so holes, bosses, fillets and chamfers can be added to it
  *  24 SURF    a size x, b size z, c thickness (0 = filled to the base), d e f centre of its base, g control
  *             points a side; heights z{i}_{k}: a freeform B-spline patch (src/engine/surface.ts)
+ *  25 SHEET   a outline, b thickness, c bend radius (inside), f base height, g K-factor: a sheet-metal base flange
+ *  26 FLANGE  a the sheet's feature index, b edge (outline point b to b + 1), c length, d angle (deg), e 1 = down:
+ *             an edge flange, bent round the sheet's bend radius (src/engine/sheetmetal.ts)
  * Bosses (BOX, CYL, OUTLINE, FACE, FCIRC) take h = draft angle in degrees.
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
@@ -51,10 +54,11 @@
 
 import type { Feature, PartSpec } from './types.js';
 import { gearOutline, polygonOutline, rectOutline, slotOutline } from './profiles.js';
+import { flangeSection, flatPattern, sheetEdges } from './sheetmetal.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23, SURF: 24 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported', 24: 'Freeform' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23, SURF: 24, SHEET: 25, FLANGE: 26 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported', 24: 'Freeform', 25: 'Sheet metal', 26: 'Flange' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -193,6 +197,68 @@ export function sketchFeatures(
   return out;
 }
 
+/** The flanges on a sheet: edge index, length, angle, up or down. */
+function flangesOf(p: Params, sheet: number): { index: number; edge: number; length: number; angle: number; up: boolean }[] {
+  const out: { index: number; edge: number; length: number; angle: number; up: boolean }[] = [];
+  for (let j = 0; j < featureCount(p); j++) {
+    const { op, v } = readFeature(p, j);
+    if (op === OPS.FLANGE && Math.round(v.a) === sheet) out.push({ index: j, edge: Math.round(v.b), length: v.c, angle: v.d || 90, up: Math.round(v.e) !== 1 });
+  }
+  return out;
+}
+
+/**
+ * A flange's plane and section: the plane square to its edge (x outwards, y up), the section from
+ * src/engine/sheetmetal.ts, the width along the edge (less corner relief where the next edge has a flange too).
+ */
+export function flangeGeometry(p: Params, i: number): { origin: [number, number, number]; normal: [number, number, number]; x: [number, number, number]; section: unknown[]; width: number; inset: [number, number] } {
+  const { v } = readFeature(p, i);
+  const s = Math.round(v.a);
+  const sheet = readFeature(p, s);
+  if (sheet.op !== OPS.SHEET) throw new Error(`feature ${s + 1} is not a sheet-metal base`);
+  const k = Math.round(sheet.v.a);
+  const pts = outlinePts(p, k);
+  const edges = sheetEdges(pts);
+  const j = Math.round(v.b);
+  const e = edges[j];
+  if (!e) throw new Error(`the sheet has ${edges.length} edges`);
+  const t = sheet.v.b;
+  const R = sheet.v.c;
+  const others = flangesOf(p, s).filter((f) => f.index !== i).map((f) => f.edge);
+  const n = edges.length;
+  const relief = R + t;
+  const inset: [number, number] = [others.includes((j - 1 + n) % n) ? relief : 0, others.includes((j + 1) % n) ? relief : 0];
+  const width = e.length - inset[0] - inset[1];
+  if (!(width > 0)) throw new Error('that edge is too short for a flange with corner relief');
+  // Sketch (u, v) on the top plane is model (x, -z).
+  const start = [e.a[0] + e.dir[0] * inset[0], e.a[1] + e.dir[1] * inset[0]];
+  const dir3: [number, number, number] = [e.dir[0], 0, -e.dir[1]];
+  const out3: [number, number, number] = [e.out[0], 0, -e.out[1]];
+  // The plane's y must run up: n x x = +Y. Otherwise face the other way, from the edge's far end.
+  const yUp = dir3[2] * out3[0] - dir3[0] * out3[2] > 0;
+  const o: [number, number, number] = yUp ? [start[0], 0, -start[1]] : [start[0] + e.dir[0] * width, 0, -(start[1] + e.dir[1] * width)];
+  const up = Math.round(v.e) !== 1;
+  return {
+    origin: o,
+    normal: yUp ? dir3 : [-dir3[0], 0, -dir3[2]],
+    x: out3,
+    section: flangeSection(sheet.v.f, t, R, v.d || 90, v.c, up),
+    width,
+    inset,
+  };
+}
+
+/** The flat pattern of the last sheet-metal part in the design, or null when there is none. */
+export function designFlatPattern(p: Params): ReturnType<typeof flatPattern> | null {
+  let s = -1;
+  for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) { s = i; break; }
+  if (s < 0) return null;
+  const sheet = readFeature(p, s);
+  const pts = outlinePts(p, Math.round(sheet.v.a));
+  const fl = flangesOf(p, s).map((f) => ({ edge: f.edge, length: f.length, angle: f.angle, up: f.up, inset: flangeGeometry(p, f.index).inset }));
+  return flatPattern(pts, fl, sheet.v.b, sheet.v.c, sheet.v.g || 0.44);
+}
+
 /** The outline's loops as ranges of point indices [first, end). */
 function outlineLoops(p: Params, k: number): [number, number][] {
   const m = Math.round(p[`q${k}n`] ?? 0);
@@ -247,7 +313,7 @@ function outlineSketch(p: Params, k: number, id: string, on: string): Feature {
   return loops ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
 }
 
-const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE || op === OPS.SURF;
+const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE || op === OPS.SURF || op === OPS.SHEET || op === OPS.FLANGE;
 
 function outlinePts(p: Params, k: number): [number, number][] {
   // The first loop (lofts, sweeps and the like take one profile).
@@ -413,6 +479,15 @@ export function designSpec(p: Params): PartSpec {
         features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
         features.push({ $op: 'feature.sweep', id, args: path.length > 2 ? { sketch: `s${i}`, path, bend_radius: v.c } : { sketch: `s${i}`, path } });
       }
+    } else if (op === OPS.SHEET) {
+      features.push(plane(`pl${i}`, v.f));
+      features.push(outlineSketch(p, Math.round(v.a), `s${i}`, `pl${i}`));
+      features.push({ $op: 'feature.extrude', id, args: { depth: v.b } });
+    } else if (op === OPS.FLANGE) {
+      const fl = flangeGeometry(p, i);
+      features.push({ $op: 'ref.plane', id: `pl${i}`, args: { origin: fl.origin, normal: fl.normal, x_dir: fl.x } });
+      features.push({ $op: 'sketch.loops', id: `s${i}`, sketched_on: `pl${i}`, args: { loops: [fl.section] } });
+      features.push({ $op: 'feature.extrude', id, args: { depth: fl.width } });
     } else if (op === OPS.BASE) {
       features.push({ $op: 'feature.mesh', id, args: { mesh: `imp${Math.round(v.a)}` } });
     } else if (op === OPS.SURF) {
@@ -539,6 +614,10 @@ function liveDefs(p: Params): ParamDef[] {
       return [d('a', 'Rib thickness', 0.4, 50, 0.2), d('b', 'Rib length', 1, 300), d('c', 'Rib height', 1, 300)];
     case OPS.SURF:
       return [d('a', 'Surface width', 5, 400), d('b', 'Surface depth', 5, 400), d('c', 'Sheet thickness', 0, 30, 0.2)];
+    case OPS.SHEET:
+      return [d('b', 'Sheet thickness', 0.3, 10, 0.1), d('c', 'Bend radius', 0, 30, 0.1)];
+    case OPS.FLANGE:
+      return [d('c', 'Flange length', 0, 300), { ...d('d', 'Bend angle', 1, 180), unit: 'deg' }];
     case OPS.MIRROR:
       return [d('b', 'Mirror offset', -150, 150)];
     case OPS.REVOLVE:
@@ -601,6 +680,12 @@ function addedBox(p: Params): { min: [number, number, number]; max: [number, num
       min[0] = Math.min(min[0], v.d - v.a / 2); max[0] = Math.max(max[0], v.d + v.a / 2);
       min[2] = Math.min(min[2], v.e - v.b / 2); max[2] = Math.max(max[2], v.e + v.b / 2);
       min[1] = Math.min(min[1], v.f); max[1] = Math.max(max[1], v.f + v.c);
+    } else if (op === OPS.SHEET) {
+      for (const [x, y] of outlinePts(p, Math.round(v.a))) {
+        min[0] = Math.min(min[0], x); max[0] = Math.max(max[0], x);
+        min[2] = Math.min(min[2], -y); max[2] = Math.max(max[2], -y);
+      }
+      min[1] = Math.min(min[1], v.f); max[1] = Math.max(max[1], v.f + v.b);
     } else if (op === OPS.SURF) {
       min[0] = Math.min(min[0], v.d - v.a / 2); max[0] = Math.max(max[0], v.d + v.a / 2);
       min[2] = Math.min(min[2], v.f - v.b / 2); max[2] = Math.max(max[2], v.f + v.b / 2);
@@ -702,6 +787,8 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.SWEEP) s = `${Math.max(0, Math.round(p[`q${Math.round(v.b)}n`] ?? 0) - 1)} runs, bends r ${f(v.c)}`;
     else if (op === OPS.RIB) s = `${f(v.a)} thick, ${f(v.b)} x ${f(v.c)}`;
     else if (op === OPS.BASE) s = `${f(v.c - v.b)} x ${f(v.e - v.d)} x ${f(v.g - v.f)} from STEP`;
+    else if (op === OPS.SHEET) s = `${f(v.b)} thick, bends R${f(v.c)}, K ${f(v.g || 0.44)}`;
+    else if (op === OPS.FLANGE) s = `edge ${Math.round(v.b) + 1}, ${f(v.c)} long at ${f(v.d || 90)}\u00b0${Math.round(v.e) === 1 ? ' down' : ''}`;
     else if (op === OPS.SURF) s = `${f(v.a)} x ${f(v.b)}, ${Math.round(v.g)}x${Math.round(v.g)} points, ${v.c > 0 ? `${f(v.c)} sheet` : 'filled'}`;
     else if (op === OPS.ROUND) s = Math.round(v.b) === 1 ? `r ${f(v.a)}, every edge` : `r ${f(v.a)} on an edge`;
     else if (op === OPS.EDGE) s = `${Math.round(v.b) === 1 ? 'chamfer' : 'fillet'} ${f(v.a)}, ${f(Math.hypot(v.f - v.c, v.g - v.d, v.h - v.e))} long`;
@@ -731,7 +818,8 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
   // Exact placement by numbers, not the hand: "at 10, -5" (x, z on the top face) or "at 10, 20, -5" (x, y, z).
   if (!typedSketch(t)) {
     const N = '(-?\\d+(?:\\.\\d+)?)';
-    const pm = t.match(new RegExp(`\\b(?:at|centred at|centered at|positioned at)\\s*\\(?\\s*(?:x\\s*)?${N}\\s*,?\\s*(?:y\\s*)?${N}(?:\\s*,?\\s*(?:z\\s*)?${N})?\\s*\\)?`, 'u'));
+    const SEP = '(?:\\s*,\\s*|\\s+)';
+    const pm = t.match(new RegExp(`\\b(?:at|centred at|centered at|positioned at)\\s*\\(?\\s*(?:x\\s*)?${N}${SEP}(?:y\\s*)?${N}(?:${SEP}(?:z\\s*)?${N})?\\s*\\)?`, 'u'));
     if (pm) {
       const [x, b, c] = [pm[1], pm[2], pm[3]].map((s) => (s === undefined ? undefined : parseFloat(s)));
       here = c === undefined ? [x!, topOf(p), b!] : [x!, b!, c];
@@ -1097,16 +1185,68 @@ function parseProduction(t: string, p: Params, here: [number, number, number] | 
       reply: `A spur gear, module ${module}, ${teeth} teeth (pitch diameter ${(module * teeth).toFixed(1)} mm), ${thick} mm thick${bore ? `, ${bore} mm bore` : ''}, involute 20 degrees.`,
     };
   }
+  // Sheet metal: "sheet metal 100 by 60 thick 2 bend 2", "flange edge 2 30", "flange here 25 at 120 down", "k factor 0.4".
+  if (/\bsheet ?metal\b/u.test(t)) {
+    const sz = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:by|x)\s*(\d+(?:\.\d+)?)/u);
+    const th = t.match(/\bthick(?:ness)?\s*(\d+(?:\.\d+)?)/u) ?? t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?thick\b(?!\s*\d)/u);
+    const bd = t.match(/\bbend(?: radius)?\s*(\d+(?:\.\d+)?)/u);
+    const w = sz ? parseFloat(sz[1]) : 100;
+    const dd = sz ? parseFloat(sz[2]) : 60;
+    const tk = th ? parseFloat(th[1]) : 2;
+    const R = bd ? parseFloat(bd[1]) : tk;
+    const o = addOutline(p, (rectOutline(w, dd) as [number, number][]).map(([x, y]) => [x + at[0], y - at[2]] as [number, number]));
+    const q = addFeature(o.params, OPS.SHEET, { a: o.index, b: tk, c: R, f: here ? at[1] : 0, g: 0.44 });
+    return { params: q, reply: `A ${w} by ${dd} mm sheet, ${tk} mm thick, bends R${R}, K-factor 0.44. Add flanges: point at an edge and say "flange 25", or "flange edge 2 25".` };
+  }
+  const kf = t.match(/\bk ?-?factor\s*(\d*\.?\d+)/u);
+  if (kf) {
+    for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) return { params: { ...p, [`g${i}`]: parseFloat(kf[1]) }, reply: `K-factor ${kf[1]}: the flat pattern uses it.` };
+    return { params: p, reply: 'There is no sheet-metal part.' };
+  }
+  if (/\bflange\b/u.test(t)) {
+    let s = -1;
+    for (let i = featureCount(p) - 1; i >= 0; i--) if (readFeature(p, i).op === OPS.SHEET) { s = i; break; }
+    if (s < 0) return { params: p, reply: 'Make a sheet-metal base first: "sheet metal 100 by 60 thick 2".' };
+    const edges = sheetEdges(outlinePts(p, Math.round(readFeature(p, s).v.a)));
+    const em = t.match(/\bedge\s*(\d+)/u);
+    let edge = em ? parseInt(em[1], 10) - 1 : -1;
+    if (edge < 0 && here) {
+      // The edge nearest where you point (sketch u, v = x, -z).
+      const q: [number, number] = [here[0], -here[2]];
+      let best = Infinity;
+      edges.forEach((e, k) => {
+        const dx = e.b[0] - e.a[0];
+        const dy = e.b[1] - e.a[1];
+        const u = Math.max(0, Math.min(1, ((q[0] - e.a[0]) * dx + (q[1] - e.a[1]) * dy) / (dx * dx + dy * dy)));
+        const dist = Math.hypot(e.a[0] + dx * u - q[0], e.a[1] + dy * u - q[1]);
+        if (dist < best) {
+          best = dist;
+          edge = k;
+        }
+      });
+    }
+    if (edge < 0 || edge >= edges.length) return { params: p, reply: `Point at an edge, or name one: edges 1 to ${edges.length}.` };
+    const rest = t.replace(/\bedge\s*\d+/u, '');
+    const len = rest.match(/(\d+(?:\.\d+)?)(?!\s*(?:deg|degrees|°))/u);
+    const ang = rest.match(/\bat\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*(?:deg|degrees|°)/u);
+    const L = len ? parseFloat(len[1]) : 20;
+    const A = ang ? parseFloat(ang[1] ?? ang[2]) : 90;
+    const down = /\bdown\b/u.test(t);
+    return {
+      params: addFeature(p, OPS.FLANGE, { a: s, b: edge, c: L, d: A, e: down ? 1 : 0 }),
+      reply: `Flange on edge ${edge + 1}: ${L} mm at ${A} degrees ${down ? 'down' : 'up'}, bent round R${readFeature(p, s).v.c}.`,
+    };
+  }
   // Freeform surfaces: "freeform surface 80 by 60 thick 3", "freeform top 80 by 60" (filled), "5 by 5 points".
   if (/\b(freeform|free form|surface patch|nurbs|b-?spline surface)\b/u.test(t)) {
     const sz = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:by|x)\s*(\d+(?:\.\d+)?)/u);
-    const th = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?thick|\bthick(?:ness)?\s*(\d+(?:\.\d+)?)/u);
+    const th = t.match(/\bthick(?:ness)?\s*(\d+(?:\.\d+)?)/u) ?? t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?thick\b(?!\s*\d)/u);
     const np = t.match(/(\d)\s*(?:by|x)\s*\d\s*(?:control )?points/u);
     const n = np ? Math.max(2, Math.min(8, parseInt(np[1], 10))) : 4;
     const fill = /\b(top|solid|filled|fill|block)\b/u.test(t) && !th;
     const sx = sz ? parseFloat(sz[1]) : 80;
     const sZ = sz ? parseFloat(sz[2]) : 60;
-    const thick = fill ? 0 : th ? parseFloat(th[1] ?? th[2]) : 3;
+    const thick = fill ? 0 : th ? parseFloat(th[1]) : 3;
     let q = addFeature(p, OPS.SURF, { a: sx, b: sZ, c: thick, d: at[0], e: at[1], f: at[2], g: n });
     const k = featureCount(q) - 1;
     for (let j = 0; j < n * n; j++) q = { ...q, [`z${k}_${j}`]: fill ? 10 : 0 };

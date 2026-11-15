@@ -17,7 +17,7 @@ import { describeDesign, setDesignCurrent } from '../engine/design.js';
  * The feature ribbon, like a CAD program's: tabs of tools (create, holes, modify, output). "Here" and "edge"
  * tools act where the hand ray last pointed; every size can be changed after (handles, dial, voice).
  */
-const TABS = ['Create', 'Holes', 'Modify', 'Output'] as const;
+const TABS = ['Create', 'Holes', 'Modify', 'Sheet', 'Output'] as const;
 type Tab = (typeof TABS)[number];
 const TOOLS: [string, string, string, Tab][] = [
   ['design:sketch', 'Sketch here', 'sketch here', 'Create'],
@@ -26,6 +26,12 @@ const TOOLS: [string, string, string, Tab][] = [
   ['design:pocket', 'Pocket here', 'cut a box pocket 15 by 15 by 5', 'Create'],
   ['design:rib', 'Rib here', 'rib 3 thick 15 by 15', 'Create'],
   ['design:gear', 'Gear m2 z20', 'gear module 2 with 20 teeth 8 thick', 'Create'],
+  ['design:sheet', 'Sheet metal', 'sheet metal 100 by 60 thick 2 bend 2', 'Sheet'],
+  ['design:flange', 'Flange here', 'flange 25', 'Sheet'],
+  ['design:flange2', 'Flange 45\u00b0', 'flange 25 at 45', 'Sheet'],
+  ['design:flat', 'Flat pattern', 'flat pattern', 'Sheet'],
+  ['design:surface', 'Freeform', 'freeform surface 80 by 60 thick 3', 'Sheet'],
+  ['design:top', 'Freeform top', 'freeform top 80 by 60', 'Sheet'],
   ['design:hole', 'Hole here', 'drill a 5 mm hole here', 'Holes'],
   ['design:cbore', 'C-bore here', 'counterbore 10 by 3', 'Holes'],
   ['design:tap', 'Tap M6 here', 'tap m6 12 deep', 'Holes'],
@@ -59,12 +65,12 @@ export class DesignSystem extends createSystem({}) {
     const e = this.world.createTransformEntity(this.strip, { parent: ctx.benchEntity, persistent: true });
     // Tabs along the top, then the open tab's tools in three columns.
     TABS.forEach((tab, i) => {
-      const b = makeButton(e, { key: `design:tab:${tab}`, label: tab, width: 0.045, height: 0.016, tone: 'ghost' }, () => {
+      const b = makeButton(e, { key: `design:tab:${tab}`, label: tab, width: 0.037, height: 0.016, tone: 'ghost' }, () => {
         ctx.sfx.play('select');
         this.tab = tab;
         this.refresh();
       });
-      b.position.set(i * 0.0475 - 0.071, 0.06, 0);
+      b.position.set(i * 0.039 - 0.078, 0.06, 0);
     });
     const slot = new Map<Tab, number>();
     TOOLS.forEach(([key, label, sentence, tab]) => {
