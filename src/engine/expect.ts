@@ -12,6 +12,7 @@
 
 import { surfaceBox, surfacePatchOf, surfaceVolume } from './surface.js';
 import { generate, GeneratedKind, meshBox, meshVolume } from './generated.js';
+import { knurlSection } from './profiles.js';
 import { draftScale, draftVolume } from './profiles.js';
 import {
   Frame,
@@ -306,6 +307,27 @@ export function expectVolume(spec: PartSpec): Expectation {
 
     if (f.$op === 'feature.edge_fillet' || f.$op === 'feature.round' || f.$op === 'feature.thread') {
       return unknown(`"${f.id}": an edge fillet's volume is checked by its own closed form in the tests, not here`, terms);
+    }
+    if (f.$op === 'feature.knurl') {
+      // Straight knurl: the serrated section times the length (exact); diamond: the intersection is kernel-checked.
+      if (a.diamond === true) return unknown(`"${f.id}": a diamond knurl (two twisted serrations intersected) is measured by the kernel`, terms);
+      const star = knurlSection(Number(a.diameter), Number(a.pitch));
+      let area = 0;
+      for (let i = 0; i < star.length; i++) area += (star[i][0] * star[(i + 1) % star.length][1] - star[(i + 1) % star.length][0] * star[i][1]) / 2;
+      const L = Number(a.length);
+      const o = a.origin as Vec3;
+      const ax = a.axis as Vec3;
+      const R = Number(a.diameter) / 2;
+      const ends = [o, [o[0] + ax[0] * L, o[1] + ax[1] * L, o[2] + ax[2] * L] as Vec3];
+      const why = addBody(boxOf(ends, R), f.id);
+      if (why) return unknown(why, terms);
+      volume = bodies.length > 1 ? volume + area * L : area * L;
+      terms.push(`${f.id}: straight knurl, section ${fmt(area)} x ${fmt(L)}`);
+      if (bodies.length === 1) revolved = true;
+      continue;
+    }
+    if (f.$op === 'feature.text') {
+      return unknown(`"${f.id}": lettering (overlapping strokes) is measured by the kernel`, terms);
     }
     if (f.$op === 'feature.generated') {
       const kind = String(a.kind) as GeneratedKind;

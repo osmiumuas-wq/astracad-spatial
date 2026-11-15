@@ -160,3 +160,18 @@ export function draftScale(w: number, d: number, h: number, deg: number): [numbe
   const t = Math.tan((deg * Math.PI) / 180);
   return [Math.max(0.01, (w - 2 * h * t) / w), Math.max(0.01, (d - 2 * h * t) / d)];
 }
+
+/** A knurl's section: a circle of diameter D serrated with teeth `pitch` apart, 0.4 pitch deep (anticlockwise). */
+export function knurlSection(D: number, pitch: number): [number, number][] {
+  const n = Math.max(8, Math.round((Math.PI * D) / pitch));
+  const R = D / 2;
+  const r = R - 0.4 * pitch;
+  const out: [number, number][] = [];
+  for (let k = 0; k < 2 * n; k++) {
+    const a = (Math.PI * k) / n;
+    const rr = k % 2 === 0 ? R : r;
+    out.push([rr * Math.cos(a), rr * Math.sin(a)]);
+  }
+  return out;
+}
+

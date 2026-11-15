@@ -53,6 +53,9 @@
  *             k{i}_{v}x/y/z/n each cage point's offset and push: a subdivision (organic) shape
  *  30 BLADE   a span, b root chord, c tip chord, d e f origin, g normal code (axis), h blades; nc NACA code,
  *             tr tt twist at root and tip (deg), hr hh hub radius and height: a blade, fan or propeller
+ *  31 KNURL   a diameter, b length, c pitch, d e f base centre, g normal code (axis), h 1 = diamond: a knurled band
+ *  32 TEXT    a letter height, b depth, c 1 = engraved (cut) / 0 embossed, d e f where, g normal code; the
+ *             letters' codes tx{i}_{j}: lettering in the stroke font (src/engine/strokefont.ts)
  * Bosses (BOX, CYL, OUTLINE, FACE, FCIRC) take h = draft angle in degrees.
  *  14 FACE    a outline index, b normal code, c depth, d x, e y, f z origin, g 0 boss / 1 cut:
  *             a sketch on any flat face, pulled out of it or cut into it
@@ -67,8 +70,8 @@ import { MemberProfile, PROFILE_CODES, profileLoops } from './weldment.js';
 import { subdCage } from './generated.js';
 import type { HandleDef, Job, LoadCase, ParamDef, Params } from './jobs.js';
 
-export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23, SURF: 24, SHEET: 25, FLANGE: 26, MEMBER: 27, SPRING: 28, SUBD: 29, BLADE: 30 } as const;
-export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported', 24: 'Freeform', 25: 'Sheet metal', 26: 'Flange', 27: 'Member', 28: 'Spring', 29: 'SubD shape', 30: 'Blade' };
+export const OPS = { BOX: 1, CYL: 2, CUTBOX: 3, HOLE: 4, FILLET: 5, SHELL: 6, LINPAT: 7, CIRCPAT: 8, OUTLINE: 9, BORE: 10, CHAMFER: 11, MIRROR: 12, REVOLVE: 13, FACE: 14, EDGE: 15, ROUND: 16, FCIRC: 17, GEAR: 18, THREAD: 19, LOFT: 20, SWEEP: 21, RIB: 22, BASE: 23, SURF: 24, SHEET: 25, FLANGE: 26, MEMBER: 27, SPRING: 28, SUBD: 29, BLADE: 30, KNURL: 31, TEXT: 32 } as const;
+export const OP_NAMES: Record<number, string> = { 1: 'Box', 2: 'Cylinder', 3: 'Cut box', 4: 'Hole', 5: 'Fillet', 6: 'Shell', 7: 'Pattern', 8: 'Circular pattern', 9: 'Sketch', 10: 'Bore', 11: 'Chamfer', 12: 'Mirror', 13: 'Revolve', 14: 'Face sketch', 15: 'Edge', 16: 'Fillet', 17: 'Circle', 18: 'Gear', 19: 'Thread', 20: 'Loft', 21: 'Sweep', 22: 'Rib', 23: 'Imported', 24: 'Freeform', 25: 'Sheet metal', 26: 'Flange', 27: 'Member', 28: 'Spring', 29: 'SubD shape', 30: 'Blade', 31: 'Knurl', 32: 'Lettering' };
 
 /** Plane normal and in-plane axes per normal code; the sketch's y runs up (or back, on a flat top). */
 export const FACE_FRAMES: { n: [number, number, number]; x: [number, number, number]; y: [number, number, number] }[] = [
@@ -122,7 +125,7 @@ export function addFeature(p: Params, op: number, v: Partial<DesignFeature['v']>
   delete out.sel;
   for (const s of SLOTS) out[`${s}${i}`] = v[s] ?? 0;
   for (const s of EXTRA) delete out[`${s}${i}`];
-  for (const k of Object.keys(out)) if (k.startsWith(`z${i}_`) || k.startsWith(`k${i}_`)) delete out[k];
+  for (const k of Object.keys(out)) if (k.startsWith(`z${i}_`) || k.startsWith(`k${i}_`) || k.startsWith(`tx${i}_`)) delete out[k];
   return out;
 }
 
@@ -148,7 +151,7 @@ export function removeLast(p: Params): Params {
   if (!n) return p;
   const out: Params = { ...p, nf: n - 1 };
   for (const k of ['o', ...SLOTS, ...EXTRA]) delete out[`${k}${n - 1}`];
-  for (const k of Object.keys(out)) if (k.startsWith(`z${n - 1}_`) || k.startsWith(`k${n - 1}_`)) delete out[k];
+  for (const k of Object.keys(out)) if (k.startsWith(`z${n - 1}_`) || k.startsWith(`k${n - 1}_`) || k.startsWith(`tx${n - 1}_`)) delete out[k];
   return out;
 }
 
@@ -404,7 +407,7 @@ function outlineSketch(p: Params, k: number, id: string, on: string): Feature {
   return loops ? { $op: 'sketch.loops', id, sketched_on: on, args: { loops } } : { $op: 'sketch.profile', id, sketched_on: on, args: { points: outlinePts(p, k) } };
 }
 
-const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE || op === OPS.SURF || op === OPS.SHEET || op === OPS.FLANGE || op === OPS.MEMBER || op === OPS.SPRING || op === OPS.SUBD || op === OPS.BLADE;
+const isBody = (op: number): boolean => op === OPS.BOX || op === OPS.CYL || op === OPS.CUTBOX || op === OPS.OUTLINE || op === OPS.BORE || op === OPS.FACE || op === OPS.REVOLVE || op === OPS.FCIRC || op === OPS.GEAR || op === OPS.THREAD || op === OPS.LOFT || op === OPS.SWEEP || op === OPS.RIB || op === OPS.BASE || op === OPS.SURF || op === OPS.SHEET || op === OPS.FLANGE || op === OPS.MEMBER || op === OPS.SPRING || op === OPS.SUBD || op === OPS.BLADE || op === OPS.KNURL || op === OPS.TEXT;
 
 function outlinePts(p: Params, k: number): [number, number][] {
   // The first loop (lofts, sweeps and the like take one profile).
@@ -570,6 +573,14 @@ export function designSpec(p: Params): PartSpec {
         features.push({ $op: 'sketch.profile', id: `s${i}`, sketched_on: `pl${i}`, args: { points: outlinePts(p, Math.round(v.a)) } });
         features.push({ $op: 'feature.sweep', id, args: path.length > 2 ? { sketch: `s${i}`, path, bend_radius: v.c } : { sketch: `s${i}`, path } });
       }
+    } else if (op === OPS.KNURL) {
+      const ax = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(v.g)))].n;
+      features.push({ $op: 'feature.knurl', id, args: { origin: onFace(p, i, [v.d, v.e, v.f], axisOf(Math.round(v.g))), axis: ax, diameter: v.a, length: v.b, pitch: v.c, diamond: Math.round(v.h) === 1 } });
+    } else if (op === OPS.TEXT) {
+      const fr = FACE_FRAMES[Math.max(0, Math.min(5, Math.round(v.g)))];
+      let text = '';
+      for (let j = 0; j < 64 && `tx${i}_${j}` in p; j++) text += String.fromCharCode(p[`tx${i}_${j}`]);
+      features.push({ $op: 'feature.text', id, args: { origin: onFace(p, i, [v.d, v.e, v.f], axisOf(Math.round(v.g))), normal: fr.n, x_dir: fr.x, text, height: v.a, depth: v.b, cut: Math.round(v.c) === 1 } });
     } else if (op === OPS.SPRING || op === OPS.SUBD || op === OPS.BLADE) {
       features.push({ $op: 'feature.generated', id, args: generatedOf(p, i) });
     } else if (op === OPS.MEMBER) {
@@ -733,6 +744,10 @@ function liveDefs(p: Params): ParamDef[] {
       return [d('a', 'Surface width', 5, 400), d('b', 'Surface depth', 5, 400), d('c', 'Sheet thickness', 0, 30, 0.2)];
     case OPS.SHEET:
       return [d('b', 'Sheet thickness', 0.3, 10, 0.1), d('c', 'Bend radius', 0, 30, 0.1)];
+    case OPS.KNURL:
+      return [d('a', 'Knurl diameter', 2, 300, 0.5), d('b', 'Knurl length', 1, 300), d('c', 'Knurl pitch', 0.3, 5, 0.1)];
+    case OPS.TEXT:
+      return [d('a', 'Letter height', 1, 200, 0.5), d('b', 'Letter depth', 0.1, 20, 0.1)];
     case OPS.SPRING:
       return [d('a', 'Coil diameter', 2, 300, 0.5), d('b', 'Wire diameter', 0.2, 30, 0.1), d('c', 'Pitch', 0.3, 100, 0.1), { ...d('h', 'Turns', 0.5, 100, 0.5), unit: '' }];
     case OPS.SUBD:
@@ -924,7 +939,12 @@ export function describeDesign(p: Params): string[] {
     else if (op === OPS.SWEEP) s = `${Math.max(0, Math.round(p[`q${Math.round(v.b)}n`] ?? 0) - 1)} runs, bends r ${f(v.c)}`;
     else if (op === OPS.RIB) s = `${f(v.a)} thick, ${f(v.b)} x ${f(v.c)}`;
     else if (op === OPS.BASE) s = `${f(v.c - v.b)} x ${f(v.e - v.d)} x ${f(v.g - v.f)} from STEP`;
-    else if (op === OPS.SPRING) s = `\u2300${f(v.a)}, wire ${f(v.b)}, pitch ${f(v.c)}, ${f(v.h)} turns`;
+    else if (op === OPS.KNURL) s = `${Math.round(v.h) === 1 ? 'diamond' : 'straight'} \u2300${f(v.a)} x ${f(v.b)}, pitch ${f(v.c)}`;
+    else if (op === OPS.TEXT) {
+      let text = '';
+      for (let j = 0; j < 64 && `tx${i}_${j}` in p; j++) text += String.fromCharCode(p[`tx${i}_${j}`]);
+      s = `"${text}" ${Math.round(v.c) === 1 ? 'engraved' : 'embossed'} ${f(v.a)} high`;
+    } else if (op === OPS.SPRING) s = `\u2300${f(v.a)}, wire ${f(v.b)}, pitch ${f(v.c)}, ${f(v.h)} turns`;
     else if (op === OPS.SUBD) s = `${f(v.a)} x ${f(v.b)} x ${f(v.c)} cage`;
     else if (op === OPS.BLADE) s = `${Math.round(v.h) || 1} x NACA ${String(Math.round(p[`nc${i}`] ?? 2412)).padStart(4, '0')}, span ${f(v.a)}`;
     else if (op === OPS.MEMBER) s = `${f(Math.hypot(v.e - v.b, v.f - v.c, v.g - v.d))} long`;
@@ -971,7 +991,7 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
   const nums = [...t.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
   const top = topOf(p);
   const at = here ?? [0, top, 0];
-  const prod = parseProduction(t, p, here, faceCode);
+  const prod = parseProduction(t, p, here, faceCode, text);
   if (prod) return prod;
   const edit = t.match(/\b(edit|select|change) feature (\d+)\b/u);
   if (edit) {
@@ -1283,7 +1303,7 @@ export function typedSketch(t: string): { pts: [number, number][]; sweeps: numbe
   return { pts, sweeps, depth, cut, lines: lines + (closedBy ? 1 : 0), arcs, area: Math.abs(area), closedBy };
 }
 
-function parseProduction(t: string, p: Params, here: [number, number, number] | undefined, code: number): DesignEdit | null {
+function parseProduction(t: string, p: Params, here: [number, number, number] | undefined, code: number, text = t): DesignEdit | null {
   const nums = [...t.matchAll(/(\d+(?:\.\d+)?)/gu)].map((m) => parseFloat(m[1]));
   const at: [number, number, number] = here ?? [0, topOf(p), 0];
   const fc = here ? code : 0;
@@ -1325,6 +1345,35 @@ function parseProduction(t: string, p: Params, here: [number, number, number] | 
       params: addFeature(p, OPS.GEAR, { a: module, b: teeth, c: thick, d: at[0], e: at[1], f: at[2], g: fc, h: bore }),
       reply: `A spur gear, module ${module}, ${teeth} teeth (pitch diameter ${(module * teeth).toFixed(1)} mm), ${thick} mm thick${bore ? `, ${bore} mm bore` : ''}, involute 20 degrees.`,
     };
+  }
+  // Knurling: "knurl 20 diameter 30 long pitch 1 diamond", "straight knurl 16 by 20".
+  if (/\bknurl/u.test(t)) {
+    const dm = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?(?:diameter|dia)|\bknurl(?:ed|ing)?\s+(\d+(?:\.\d+)?)/u);
+    const by = t.match(/(\d+(?:\.\d+)?)\s*(?:by|x)\s*(\d+(?:\.\d+)?)/u);
+    const ln = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?long/u);
+    const pm = t.match(/\bpitch\s*(\d*\.?\d+)/u);
+    const D = by ? parseFloat(by[1]) : dm ? parseFloat(dm[1] ?? dm[2]) : 20;
+    const L = by ? parseFloat(by[2]) : ln ? parseFloat(ln[1]) : 20;
+    const pitch = pm ? parseFloat(pm[1]) : 1;
+    const diamond = !/\bstraight\b/u.test(t);
+    return {
+      params: addFeature(p, OPS.KNURL, { a: D, b: L, c: pitch, d: at[0], e: at[1], f: at[2], g: here ? fc : 0, h: diamond ? 1 : 0 }),
+      reply: `A ${diamond ? 'diamond' : 'straight'} knurl, ⌀${D} by ${L} mm, pitch ${pitch}: real teeth, not a texture.`,
+    };
+  }
+  // Lettering: "engrave ACME 2026 here 6 high 0.5 deep", "emboss LOT 7 8 high 1 tall".
+  const lt = text.match(/\b(engrave|emboss|letter|stamp)\s+(?:the\s+)?(?:text\s+)?["']?([A-Za-z0-9 .:+/-]+?)["']?(?=\s+(?:here|on|at|\d+(?:\.\d+)?\s*(?:mm\s*)?(?:high|tall|deep))|\s*$)/iu);
+  if (lt) {
+    const words = lt[2].trim().toUpperCase();
+    const hm = t.match(/(\d+(?:\.\d+)?)\s*(?:mm\s*)?high/u);
+    const dpm = t.match(/(\d*\.?\d+)\s*(?:mm\s*)?(?:deep|tall|proud)/u);
+    const cut = /^(engrave|stamp)$/iu.test(lt[1]);
+    let q = addFeature(p, OPS.TEXT, { a: hm ? parseFloat(hm[1]) : 6, b: dpm ? parseFloat(dpm[1]) : cut ? 0.5 : 1, c: cut ? 1 : 0, d: at[0], e: at[1], f: at[2], g: fc });
+    const k = featureCount(q) - 1;
+    [...words].slice(0, 64).forEach((ch, j) => {
+      q = { ...q, [`tx${k}_${j}`]: ch.charCodeAt(0) };
+    });
+    return { params: q, reply: `"${words}" ${cut ? 'engraved' : 'embossed'} on the ${face} face, ${q[`a${k}`]} mm letters.` };
   }
   // Springs and coils: "spring 20 diameter wire 2 pitch 6 8 turns closed ends", "coil 30 rectangular wire 4 by 2".
   if (/\b(spring|coil|helix|helical)\b/u.test(t) && !/\bthread\b/u.test(t)) {

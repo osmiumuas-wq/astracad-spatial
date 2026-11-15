@@ -5,6 +5,7 @@
  */
 
 import { SketchBench } from './sketch-bench.js';
+import { Appearance, appearanceOf } from './appearance.js';
 import { writeStep } from '../engine/step-export.js';
 import { batch, Signal, signal } from '@iwsdk/core';
 import { Finding, runAgents, safetyFactor, StressSummary } from '../engine/agents.js';
@@ -1175,6 +1176,19 @@ export class App {
       this.download(s.step, `${s.name}.step`, 'model/step');
       return `Saved ${s.name}.step: a solid with ${s.faces} faces, ready for SOLIDWORKS, CATIA or Creo.`;
     }
+    // Appearance: "appearance brushed aluminium", "make it anodised red", "finish carbon fibre", "no appearance".
+    if (/\b(appearance|finish|looks? like|render(?:ed)? (?:in|as)|make it (?:look )?(?:brushed|anodi[sz]ed|chrome|polished|matte?|gloss|carbon|wood|rubber|glass))\b/u.test(sentence.toLowerCase()) && !/\bsurface finish\b/u.test(sentence.toLowerCase())) {
+      const t = sentence.toLowerCase();
+      if (/\b(no|plain|default|bench) (appearance|finish|look)\b/u.test(t)) {
+        this.appearance.value = null;
+        return 'Back to the bench look.';
+      }
+      const a = appearanceOf(t);
+      if (a) {
+        this.appearance.value = a;
+        return `Appearance: ${a.name}. It is how it looks; the material for strength and mass is still ${this.materialData.name}.`;
+      }
+    }
     // Equations, variables and configurations.
     const eqr = this.equationCommand(wordsToDigits(sentence).toLowerCase());
     if (eqr) {
@@ -1494,6 +1508,9 @@ export class App {
   }
 
   /** A three-view A4 drawing of the current part, as SVG text. */
+  /** The part's appearance (src/app/appearance.ts), or null for the bench look. */
+  readonly appearance: Signal<Appearance | null> = signal(null);
+
   /** Global variables and the equations that drive dimensions from them (src/engine/equations.ts). */
   equations: EquationSet = emptyEquations();
   /** Named configurations of the design: its parameters and variables. */

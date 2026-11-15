@@ -30,6 +30,13 @@ const TOOLS: [string, string, string, Tab][] = [
   ['design:flange', 'Flange here', 'flange 25', 'Sheet'],
   ['design:flange2', 'Flange 45\u00b0', 'flange 25 at 45', 'Sheet'],
   ['design:flat', 'Flat pattern', 'flat pattern', 'Sheet'],
+  ['design:spring', 'Spring', 'spring 20 diameter wire 2 pitch 6 8 turns closed ends', 'Sheet'],
+  ['design:subd', 'SubD shape', 'subd box 60 by 30 by 30 symmetric', 'Sheet'],
+  ['design:prop', 'Propeller', 'propeller 3 blades span 60 chord 25 to 12', 'Sheet'],
+  ['design:knurl', 'Knurl here', 'knurl 20 diameter 20 long diamond', 'Modify'],
+  ['design:engrave', 'Engrave here', 'engrave PART 1 here 6 high 0.5 deep', 'Modify'],
+  ['design:brushed', 'Brushed alu', 'appearance brushed aluminium', 'Output'],
+  ['design:carbon', 'Carbon fibre', 'appearance carbon fibre', 'Output'],
   ['design:surface', 'Freeform', 'freeform surface 80 by 60 thick 3', 'Sheet'],
   ['design:top', 'Freeform top', 'freeform top 80 by 60', 'Sheet'],
   ['design:hole', 'Hole here', 'drill a 5 mm hole here', 'Holes'],
@@ -99,6 +106,7 @@ export class DesignSystem extends createSystem({}) {
       }),
       app.jobId.subscribe(() => this.refresh()),
       app.sketchBenchOpen.subscribe(() => this.refresh()),
+      app.appearance.subscribe((a) => ctx.bench.part.setAppearance(a)),
     );
     app.actions.design = () => {
       app.selectJob('design');

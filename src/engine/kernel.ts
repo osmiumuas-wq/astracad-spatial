@@ -49,6 +49,8 @@ function dropSlivers(body: Manifold, keep: <T extends Disposable>(o: T) => T): M
 }
 import { surfaceMesh, surfacePatchOf } from './surface.js';
 import { BladeSpec, generate, GeneratedKind } from './generated.js';
+import { textBars } from './strokefont.js';
+import { knurlSection } from './profiles.js';
 import { VIEW_AXES, viewLines, ViewLines } from './hidden-lines.js';
 import { chamferLoops, extrudeModifiers, filletLoops, loftPlan, offsetLoops, outerIndex, shellRange, sweepPlan, sweepRings } from './advanced.js';
 import {
@@ -90,6 +92,8 @@ const ARG_SETS: Record<string, readonly string[]> = {
   'feature.mesh': ['mesh'],
   'feature.surface': ['origin', 'sx', 'sz', 'n', 'heights', 'thickness'],
   'feature.generated': ['kind', 'spec'],
+  'feature.knurl': ['origin', 'axis', 'diameter', 'length', 'pitch', 'diamond'],
+  'feature.text': ['origin', 'normal', 'x_dir', 'text', 'height', 'depth', 'cut'],
   'ref.plane': ['origin', 'normal', 'x_dir', 'base', 'offset'],
   'sketch.rectangle': ['width', 'height', 'x', 'y'],
   'sketch.circle': ['radius', 'diameter', 'x', 'y'],
@@ -654,6 +658,42 @@ export class Kernel {
             }
             const plan = loftPlan((ids as string[]).map((k) => takeNamed(k, f)));
             const tool: Tool = { solid: this.loftSolid(plan, keep), op: 'add' };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.knurl') {
+            // A knurled band: a serrated section, extruded straight, or twisted both ways and intersected (diamond).
+            const ax = norm(a.axis as Vec3);
+            const D = numArg(a.diameter, 'diameter');
+            const L = numArg(a.length, 'length');
+            const pitch = numArg(a.pitch, 'pitch');
+            const star = knurlSection(D, pitch);
+            const cs = keep(new this.m.CrossSection([star], 'EvenOdd'));
+            let band: Manifold;
+            if (a.diamond === true) {
+              const twist = ((L * Math.tan(Math.PI / 6)) / (Math.PI * D)) * 360;
+              const steps = Math.max(8, Math.ceil(L / (pitch / 2)));
+              band = keep(keep(cs.extrude(L, steps, twist)).intersect(keep(cs.extrude(L, steps, -twist))));
+            } else band = keep(cs.extrude(L));
+            const zx: Vec3 = Math.abs(ax[1]) < 0.9 ? norm(cross([0, 1, 0], ax)) : norm(cross([1, 0, 0], ax));
+            const zy = cross(ax, zx);
+            const o = a.origin as Vec3;
+            const tool: Tool = { solid: keep(band.transform([zx[0], zx[1], zx[2], 0, zy[0], zy[1], zy[2], 0, ax[0], ax[1], ax[2], 0, o[0], o[1], o[2], 1] as Mat4)), op: 'add' };
+            tools.set(f.id, [tool]);
+            apply(tool, f.id);
+          } else if (f.$op === 'feature.text') {
+            // Engraved (cut) or embossed text from the stroke font, on a face.
+            const bars = textBars(String(a.text ?? ''), numArg(a.height, 'height'));
+            if (!bars.length) throw new SpecError('there are no letters the font can draw in that text', f.id);
+            const depth = numArg(a.depth, 'depth');
+            const cut = a.cut === true;
+            const cs = keep(new this.m.CrossSection(bars, 'NonZero'));
+            const n = norm(a.normal as Vec3);
+            const x = norm(a.x_dir as Vec3);
+            const y = cross(n, x);
+            const o = a.origin as Vec3;
+            const prism = keep(keep(cs.extrude(depth + (cut ? 0.02 : 0))).translate([0, 0, cut ? -depth : 0]));
+            const placed = keep(prism.transform([x[0], x[1], x[2], 0, y[0], y[1], y[2], 0, n[0], n[1], n[2], 0, o[0], o[1], o[2], 1] as Mat4));
+            const tool: Tool = { solid: placed, op: cut ? 'sub' : 'add' };
             tools.set(f.id, [tool]);
             apply(tool, f.id);
           } else if (f.$op === 'feature.generated') {

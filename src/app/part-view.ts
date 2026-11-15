@@ -24,6 +24,7 @@ import {
 } from '@iwsdk/core';
 import { Box3 as PartBox, MeshData } from '../engine/types.js';
 import { COLORS, stressColor } from './palette.js';
+import { Appearance, boxUv, textureFor } from './appearance.js';
 
 export type PartLook = 'normal' | 'rolled-back' | 'refused' | 'grown';
 
@@ -54,6 +55,8 @@ export class PartView {
   private readonly tiltQ = new Quaternion();
   private readonly tiltV = new Vector3();
   private readonly tint = new Color(COLORS.part);
+  /** The part's appearance (null: the bench's own look). */
+  private appearance: Appearance | null = null;
 
   /** 0 to 1: how strongly stressed areas glow (rises as the load nears yield). */
   private readonly heat = { value: 0 };
@@ -159,6 +162,7 @@ export class PartView {
       this.colors = new Float32Array(0);
     }
     this.base = data.positions.slice();
+    if (this.appearance?.texture) this.mesh.geometry.setAttribute('uv', new BufferAttribute(boxUv(data.positions, data.normals), 2));
     const eg = new BufferGeometry();
     eg.setAttribute('position', new BufferAttribute(data.edges.slice(), 3));
     this.edges.geometry.dispose();
@@ -269,12 +273,43 @@ ${block}
     m.needsUpdate = true;
   }
 
+  /** Show the part in an appearance (a metal, a colour, carbon fibre, wood...), or null for the bench look. */
+  setAppearance(a: Appearance | null): void {
+    this.appearance = a;
+    const m = this.mesh.material;
+    const g = this.mesh.geometry;
+    if (a) {
+      this.tint.setHex(a.color);
+      m.metalness = a.metalness;
+      m.roughness = a.roughness;
+      m.transparent = (a.opacity ?? 1) < 1;
+      m.opacity = a.opacity ?? 1;
+      const tex = a.texture ? textureFor(a.texture) : null;
+      m.map = tex;
+      const pos = g.getAttribute('position') as BufferAttribute | undefined;
+      const nrm = g.getAttribute('normal') as BufferAttribute | undefined;
+      if (tex && pos && nrm) g.setAttribute('uv', new BufferAttribute(boxUv(pos.array, nrm.array), 2));
+      this.rim.value = 0.15;
+    } else {
+      this.tint.setHex(COLORS.part);
+      m.metalness = 0.12;
+      m.roughness = 0.38;
+      m.transparent = false;
+      m.opacity = 1;
+      m.map = null;
+      this.rim.value = 0.55;
+    }
+    if (!m.vertexColors) m.color.copy(this.tint);
+    this.edges.visible = !a;
+    m.needsUpdate = true;
+  }
+
   setLook(look: PartLook): void {
     const m = this.mesh.material;
     m.transparent = look === 'rolled-back';
     m.opacity = look === 'rolled-back' ? 0.78 : 1;
     this.tint.setHex(
-      look === 'rolled-back' ? COLORS.partRolled : look === 'refused' ? 0xf0b9b9 : COLORS.part,
+      look === 'rolled-back' ? COLORS.partRolled : look === 'refused' ? 0xf0b9b9 : this.appearance ? this.appearance.color : COLORS.part,
     );
     if (!m.vertexColors) {
       m.color.copy(this.tint);
