@@ -40,7 +40,7 @@ import { dailyBrief, dailyMet } from '../engine/daily.js';
 import { calibrate, CALIBRATION_READINGS, CARD_MM, correct } from '../engine/calibration.js';
 import { recognise, type ImportedMesh } from '../engine/step-import.js';
 import { History } from './history.js';
-import { drawingSvg } from '../engine/drawing.js';
+import { DEFAULT_GDT, drawingSvg, GdtScheme } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
@@ -1174,6 +1174,12 @@ export class App {
       this.download(s.step, `${s.name}.step`, 'model/step');
       return `Saved ${s.name}.step: a solid with ${s.faces} faces, ready for SOLIDWORKS, CATIA or Creo.`;
     }
+    // Geometric tolerancing on drawings.
+    const gd = this.gdtCommand(sentence.toLowerCase());
+    if (gd) {
+      this.say(gd, 'info');
+      return gd;
+    }
     // A weldment's cut list: members grouped by profile and length.
     if (/\bcut ?list\b/u.test(sentence.toLowerCase()) && this.jobId.peek() === 'design') {
       const members = designMembers(this.params.peek());
@@ -1481,6 +1487,44 @@ export class App {
   }
 
   /** A three-view A4 drawing of the current part, as SVG text. */
+  /** The drawing's geometric tolerancing (datums A, B, C and the frames' tolerances), or null for none. */
+  gdt: GdtScheme | null = { ...DEFAULT_GDT };
+
+  /** "Position tolerance 0.05", "flatness 0.02", "perpendicularity 0.03", "tolerance class fine", "no gd&t". */
+  gdtCommand(t: string): string | null {
+    if (/\b(no|remove|turn off|hide) (gd ?& ?t|gdt|geometric toleranc\w*)\b/u.test(t)) {
+      this.gdt = null;
+      return 'Drawings without geometric tolerancing.';
+    }
+    const g = (this.gdt ??= { ...DEFAULT_GDT });
+    const num = (re: RegExp): number | null => {
+      const m = t.match(re);
+      return m ? parseFloat(m[1]) : null;
+    };
+    const pos = num(/\bposition(?: tolerance)?\s*(\d*\.?\d+)/u);
+    if (pos !== null) {
+      g.position = pos;
+      return `Hole position tolerance \u2300${pos} to A, B, C.`;
+    }
+    const fl = num(/\bflatness\s*(\d*\.?\d+)/u);
+    if (fl !== null) {
+      g.flatness = fl;
+      return `Flatness of the top face ${fl} mm.`;
+    }
+    const pp = num(/\bperpendicularity\s*(\d*\.?\d+)/u);
+    if (pp !== null) {
+      g.perpendicularity = pp;
+      return `Face B square to A within ${pp} mm.`;
+    }
+    const cls = t.match(/\b(?:tolerance class|general tolerance)\s*(fine|medium|coarse|very coarse)\b/u);
+    if (cls) {
+      g.general = cls[1] === 'fine' ? 'f' : cls[1] === 'medium' ? 'm' : cls[1] === 'coarse' ? 'c' : 'v';
+      return `General tolerances ISO 2768-${g.general}K.`;
+    }
+    if (/\b(gd ?& ?t|gdt|geometric toleranc\w*) on\b|\badd (gd ?& ?t|gdt)\b/u.test(t)) return 'Drawings carry datums A, B, C and feature control frames.';
+    return null;
+  }
+
   async makeDrawing(): Promise<{ svg: string; name: string; holes: number } | null> {
     const built = this.built.peek();
     if (!built || this.rollback.peek() !== null) {
@@ -1504,6 +1548,7 @@ export class App {
         date: today(),
         params: job.params.map((d) => `${d.label} = ${d.unit === '' ? Math.round(params[d.id]) : params[d.id].toFixed(2)}${unit(d.unit)}`),
         exact: [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]],
+        gdt: this.gdt,
       });
       return { svg, name: job.id, holes: holes.reduce((s, h) => s + h.count, 0) };
     } catch (e) {

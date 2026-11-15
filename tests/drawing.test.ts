@@ -107,3 +107,23 @@ describe('assembly drawing', () => {
     expect((d.svg.match(/class="ball"/gu) ?? []).length).toBe(2);
   });
 });
+
+describe('geometric tolerancing', () => {
+  it('puts datums A, B, C, a position frame on each hole, flatness and perpendicularity, and ISO 2768 in the title block', async () => {
+    const { addFeature, designJob, designSpec, OPS } = await import('../src/engine/design.js');
+    const { DEFAULT_GDT } = await import('../src/engine/drawing.js');
+    let p = addFeature({ nf: 0 }, OPS.BOX, { a: 80, b: 50, c: 12 });
+    p = addFeature(p, OPS.HOLE, { a: 8, b: 0, d: 20, e: 0, f: 12 });
+    const views = kernel.views(designSpec(designJob.clamp(p).params));
+    const { svg } = drawingSvg(views, { title: 'Plate', name: 'plate', material: 'PLA', massG: 1, volume: 1, verdict: 'verified', date: '2026-11-15', params: [], gdt: { ...DEFAULT_GDT, position: 0.05 } });
+    for (const letter of ['A', 'B', 'C']) expect(svg).toContain(`class="fct">${letter}</text>`);
+    expect(svg).toContain('⌖');
+    expect(svg).toContain('⌀0.05');
+    expect(svg).toContain('⏥');
+    expect(svg).toContain('⊥');
+    expect(svg).toContain('ISO 2768-mK');
+    const plain = drawingSvg(views, { title: 'Plate', name: 'plate', material: 'PLA', massG: 1, volume: 1, verdict: 'verified', date: '2026-11-15', params: [], gdt: null }).svg;
+    expect(plain).not.toContain('⌖');
+  });
+});
+
