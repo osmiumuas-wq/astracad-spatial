@@ -160,7 +160,9 @@ describe('the language is strict', () => {
     expect(() =>
       kernel.build({ ...ok, features: [ok.features[0], { $op: 'feature.extrude', id: 'b', args: { depth: 5, taper: 3 } }] }),
     ).toThrow(/unknown argument "taper"/);
-    expect(() => kernel.build(bad({ $op: 'feature.chamfer', id: 'f', args: { distance: 2 } }))).toThrow(/desktop B-rep/);
+    expect(() => kernel.build(bad({ $op: 'body.boolean', id: 'f', args: {} }))).toThrow(/desktop B-rep/);
+    // Chamfers the headset can build exactly (an extrusion's outline corners) are accepted; others by name.
+    expect(() => kernel.build(bad({ $op: 'feature.chamfer', id: 'f', args: { distance: 2, feature: 'b', edges: 'top' } }))).toThrow(/"profile" edges/);
     // Fillets the headset can build exactly are accepted; arbitrary edge selections are refused by name.
     expect(() => kernel.build(bad({ $op: 'feature.fillet', id: 'f', args: { radius: 2, feature: 'b', edges: 'top' } }))).toThrow(/"profile" edges/);
   });

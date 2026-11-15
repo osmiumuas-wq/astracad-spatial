@@ -35,9 +35,10 @@ Desktop preview over plain HTTP on localhost, headless managed browser, scriptab
 node scripts/dev-http.mjs
 ```
 
-Engine tests (145 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
+Engine tests (153 tests: kernel, closed form, truth gate, beam theory, agents, optimiser, export, FEA against
 CalculiX, modal, flow, STEP, hinge, drawing, describe, spoken commands, voice, co-design, calibration, stability,
-explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free design):
+explore, lattice, drilling template, G-code, constraint sketching, ray scan, style, free design, pro part tools,
+assemblies and mates):
 
 ```bash
 npx vitest run
@@ -121,6 +122,9 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   coarser than its walls). The G-code is plain: two walls, solid skins, 20 % infill, no supports or bridging rules;
   check it in your slicer's preview before a long print. The ray scan rests on the headset's surface hits and is good
   to about a centimetre. A free design made of several bodies is kernel-checked; only single bodies have a closed form.
+- Assemblies are solved constructively (each part mated to parts already placed), which covers the usual chains of
+  pins, hinges, sliders and gears; closed loops of mates (a four-bar linkage) are not solved. A round surface's axis
+  is fitted from the mesh near the pick. Assemblies live for the session and are not yet saved or shared.
 
 - Stress results are a design preview: linear statics on a voxel grid, typical datasheet material values. Checked
   against CalculiX on the wall bracket (scripts/verify/ccx_bracket.py, tests/ccx-reference.test.ts): deflection
@@ -131,8 +135,9 @@ Not verified on a device yet. Everything below was checked only in the IWSDK emu
   each checked against an exact closed form. Their scope is what can be checked exactly: fillets round the corners of
   an extrusion's outline (the edges along the extrusion), shells hollow an extrusion (corners mitred, hole walls from
   later features not thickened), lofts are ruled through profiles on parallel planes, and sweeps follow a polyline
-  whose corners are bends of one radius. Fillets of other edges, chamfers, mirrors and general booleans are refused by
-  name and belong to desktop AstraCAD.
+  whose corners are bends of one radius. Chamfers cut an extrusion's outline corners (exact, closed-form checked);
+  mirrors join the body with its copy across a plane (kernel-checked). Fillets and chamfers of other edges and general
+  booleans of unrelated bodies are refused by name.
 - Hand-tracking measurements are good to a few millimetres, not hundredths. The 0.05 mm dial is an input step.
 - The agents are rule-based expert systems, not language models.
 - Capture makes a parametric extrusion of an object's traced footprint and height, not a 3D scan: overhangs,
