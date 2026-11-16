@@ -29,6 +29,7 @@ import {
 } from './sketch.js';
 import { crossSection as edgeSection, edgeFaces } from './edges.js';
 import { circleOf, edgeChain, segmentsOf } from './round.js';
+import { closing, opening } from './minkowski.js';
 import { draftScale, threadSection } from './profiles.js';
 
 const dot3k = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -474,8 +475,11 @@ export class Kernel {
               if (!(r > 0)) throw new SpecError('radius must be positive', f.id);
               const { Manifold: M } = this.m;
               const ball = keep(M.sphere(r, 32));
-              const open = (s: Manifold): Manifold => keep(keep(s.minkowskiDifference(ball)).minkowskiSum(ball));
-              const close = (s: Manifold): Manifold => keep(keep(s.minkowskiSum(ball)).minkowskiDifference(ball));
+              // Patch by patch (src/engine/minkowski.ts): the solids manifold-3d's minkowskiDifference then
+              // minkowskiSum (or the reverse) give, from far fewer hulls once the part is not convex (a block
+              // with a boss took over a minute that way).
+              const open = (s: Manifold): Manifold => opening(this.m, s, ball, keep);
+              const close = (s: Manifold): Manifold => closing(this.m, s, ball, keep);
               if (a.all === true) {
                 const o = open(body);
                 if (o.isEmpty()) throw new SpecError(`a ${r} mm round is bigger than the part`, f.id);

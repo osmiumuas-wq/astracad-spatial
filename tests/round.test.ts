@@ -1,7 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { addFeature, designJob, designSpec, OPS, parseDesign } from '../src/engine/design.js';
 import { filletArea } from '../src/engine/edges.js';
 import { initKernel, Kernel } from '../src/engine/kernel.js';
 import { roundedBoxVolume } from '../src/engine/round.js';
+import { VOLUME_TOL } from '../src/engine/truth.js';
+import type { Params } from '../src/engine/jobs.js';
 import type { PartSpec } from '../src/engine/types.js';
 
 let kernel: Kernel;
@@ -123,5 +126,47 @@ describe('curved chamfers', () => {
     const exact = (P * 1) / 2 + Math.PI / 3;
     expect((out.props.volume - plain) / exact).toBeGreaterThan(0.97);
     expect((out.props.volume - plain) / exact).toBeLessThan(1.03);
+  });
+});
+
+describe('round all edges on a free design with a boss', () => {
+  // A 70 x 45 x 18 box with a 24 x 12 cylinder on top, as said in the app. Rolling the ball over the whole
+  // part (opening by the ball) took over a minute here, 97 s with a chamfered rim: the boss makes the part
+  // non-convex and manifold-3d swept every triangle with its own hull (src/engine/minkowski.ts).
+  const boss = (): Params => parseDesign('add a cylinder 24 by 12', addFeature({ nf: 0 }, OPS.BOX, { a: 70, b: 45, c: 18 }))!.params;
+  const roundAll = (p: Params) => {
+    const spec = designSpec(designJob.clamp(parseDesign('round all edges 2', p)!.params).params);
+    expect(spec.features.at(-1)).toMatchObject({ $op: 'feature.round', args: { radius: 2, all: true } });
+    const t = performance.now();
+    const out = kernel.build(spec);
+    return { out, ms: performance.now() - t };
+  };
+
+  it('builds in seconds, and the volume is the one the per-triangle sweep gave', () => {
+    const { out, ms } = roundAll(boss());
+    console.log('round all with a boss ms', Math.round(ms), 'volume', out.props.volume.toFixed(4));
+    // manifold-3d's own minkowskiDifference then minkowskiSum, before this was made fast.
+    expect(Math.abs(out.props.volume / 61607.2121147 - 1)).toBeLessThan(VOLUME_TOL);
+    // Closed form for a true sphere: the box rounded all round (Steiner) plus the boss with its top rim
+    // rounded (Pappus: the fillet's section r^2 (1 - pi/4), centroid r (10 - 3 pi)/(12 - 3 pi) in from the
+    // wall). The foot stays sharp: the ball rolled inside reaches into a concave edge. A 32-segment ball
+    // is a polyhedron a little inside the sphere.
+    const r = 2;
+    const cx = (r * (10 - 3 * Math.PI)) / (12 - 3 * Math.PI);
+    const exact = roundedBoxVolume(70, 45, 18, r) + Math.PI * 12 * 12 * 12 - filletArea(r, Math.PI / 2) * 2 * Math.PI * (12 - cx);
+    expect(out.props.volume / exact).toBeGreaterThan(0.997);
+    expect(out.props.volume / exact).toBeLessThan(1.0001);
+    expect(out.props.components).toBe(1);
+    expect(ms).toBeLessThan(10000);
+  });
+
+  it('builds in seconds after a chamfer on the boss rim', () => {
+    // "chamfer this edge 3" at a point on the boss's top rim.
+    const { out, ms } = roundAll(addFeature(boss(), OPS.ROUND, { a: 3, c: 12, d: 30, e: 0, f: 1 }));
+    console.log('round all after a chamfer ms', Math.round(ms), 'volume', out.props.volume.toFixed(4));
+    // manifold-3d's own per-triangle sweeps gave 61350.11197 mm^3 in 97 s.
+    expect(Math.abs(out.props.volume / 61350.11197 - 1)).toBeLessThan(VOLUME_TOL);
+    expect(out.props.components).toBe(1);
+    expect(ms).toBeLessThan(10000);
   });
 });
