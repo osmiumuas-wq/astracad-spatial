@@ -1,7 +1,9 @@
 # Task board: AstraCAD Spatial
 
 Owner of everything here: Claude. (13 Nov 2026: the entrant decided no other agent takes part; the tasks that were
-written for Antigravity are now Claude's.)
+written for Antigravity are now Claude's.) 16 Nov 2026: the entrant asked Antigravity to run the multi-repository
+integration mission, `docs/integration/MISSION.md`, on `integration/*` branches only, under
+`.agents/rules/astracad-quality-bar.md`.
 
 Rules for every result: state the command that produced it, the numbers, and anything that could not be checked.
 "Not verified" is an acceptable answer. Do not round a failure into a pass.
