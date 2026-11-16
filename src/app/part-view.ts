@@ -26,6 +26,7 @@ import {
 import { Box3 as PartBox, MeshData } from '../engine/types.js';
 import { COLORS, stressColor } from './palette.js';
 import { Appearance, boxUv, textureFor } from './appearance.js';
+import { clampZoom } from './view-zoom.js';
 
 export type PartLook = 'normal' | 'rolled-back' | 'refused' | 'grown';
 
@@ -145,7 +146,7 @@ export class PartView {
   }
 
   setZoom(zoom: number): void {
-    this.zoom = Math.min(4, Math.max(0.4, zoom));
+    this.zoom = clampZoom(zoom);
     this.applyScale();
     this.seat(true);
   }

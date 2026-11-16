@@ -40,6 +40,7 @@ const TOOLS: [string, string, string, Tab][] = [
   ['design:parting', 'Parting line', 'parting line', 'Output'],
   ['design:mould', 'Make mould', 'make mould margin 15 shrink 0.5', 'Output'],
   ['design:carbon', 'Carbon fibre', 'appearance carbon fibre', 'Output'],
+  ['design:zoom', 'Zoom 1:1 / 2×', 'toggle zoom', 'Output'],
   ['design:surface', 'Freeform', 'freeform surface 80 by 60 thick 3', 'Sheet'],
   ['design:top', 'Freeform top', 'freeform top 80 by 60', 'Sheet'],
   ['design:hole', 'Hole here', 'drill a 5 mm hole here', 'Holes'],
@@ -112,6 +113,7 @@ export class DesignSystem extends createSystem({}) {
       app.appearance.subscribe((a) => ctx.bench.part.setAppearance(a)),
       app.draftColors.subscribe((c) => c && ctx.bench.part.setVertexColors(c)),
       app.partingLines.subscribe((l) => l && ctx.bench.part.showLines(l, 0xffb020)),
+      app.viewZoom.subscribe((z) => ctx.bench.part.setZoom(z)),
     );
     app.actions.design = () => {
       app.selectJob('design');
