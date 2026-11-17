@@ -101,6 +101,13 @@ export class WorkspaceSystem extends createSystem({
   private qr!: TextPanel;
   private qrCanvas!: HTMLCanvasElement;
   private qrOpen = false;
+
+  /** Open or close the share panel (the QR code to this part): the Share button and the voice command. */
+  private toggleShare(): void {
+    this.qrOpen = !this.qrOpen;
+    this.coOpen = false;
+    this.refreshShare();
+  }
   private co!: TextPanel;
   private note!: TextPanel;
   private noteUntil = 0;
@@ -131,6 +138,8 @@ export class WorkspaceSystem extends createSystem({
   private historyCount = 0;
 
   init(): void {
+    // "share" by voice or typing opens the same panel as the Share button.
+    ctx.app.actions.share = () => this.toggleShare();
     const { app, bench, benchEntity, sfx } = ctx;
     this.ui = new Group();
     this.ui.name = 'Workspace UI';
@@ -249,7 +258,7 @@ export class WorkspaceSystem extends createSystem({
         ['act:job', 'Next part', () => this.nextJob(), 0.052],
         ['act:mat', 'PLA', () => this.nextMaterial(), 0.052],
         ['act:save', 'Save', () => { if (app.save()) sfx.play('save'); }, 0.052],
-        ['act:share', 'Share', () => { this.qrOpen = !this.qrOpen; this.coOpen = false; this.refreshShare(); }, 0.052],
+        ['act:share', 'Share', () => this.toggleShare(), 0.052],
         ['act:co', 'Co-design', () => { this.coOpen = !this.coOpen; this.qrOpen = false; this.refreshShare(); }, 0.052],
         ['act:drawing', 'Drawing', () => void this.world.getSystem(DrawingSystem)?.toggle(), 0.052],
       ],

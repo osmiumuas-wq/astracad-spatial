@@ -8,6 +8,8 @@ import { SketchBench } from './sketch-bench.js';
 import { Appearance, appearanceOf } from './appearance.js';
 import { draftAnalysis, partingLine } from '../engine/mould.js';
 import { toBinaryStl } from '../engine/exporters.js';
+import { toThreeMF } from '../engine/threemf.js';
+import { stressColor } from './palette.js';
 import { writeStep } from '../engine/step-export.js';
 import { batch, Signal, signal } from '@iwsdk/core';
 import { Finding, runAgents, safetyFactor, StressSummary } from '../engine/agents.js';
@@ -1095,6 +1097,14 @@ export class App {
     // Assembly: "assembly demo", "turn the hinge to 90", "play", "clash check"...
     const asm = this.assemblyCommand?.(sentence) ?? null;
     if (asm) return asm;
+    // "two more bolts" on a part with no bolts: say so, rather than let a guess replace the part.
+    const counted = wordsToDigits(sentence).toLowerCase().match(/\b(more|fewer|less|extra)\b.*?\b(bolts?|holes?|screws?|spokes?)\b/u);
+    if (counted && job.id !== 'design' && !job.params.some((d) => d.unit === '' && /bolt|hole|screw|spoke/iu.test(d.label))) {
+      const noun = counted[2].endsWith('s') ? counted[2] : `${counted[2]}s`;
+      const reply = `The ${job.title.toLowerCase()} has no ${noun} to add or remove. Say a size to change, or "next part" for another part.`;
+      this.say(reply, 'info');
+      return reply;
+    }
     // The sketch workbench takes its own words while a sketch is open.
     if (this.sketchBench) {
       const s = wordsToDigits(sentence).toLowerCase();
@@ -1182,6 +1192,16 @@ export class App {
       });
       return 'Running a convergence study: three grids, each finer than the last.';
     }
+    // STL or 3MF for the slicer: "export stl", "save the 3mf", "download stl".
+    if (/\b(export|save|download|give me)\b.*\b(stl|3mf)\b|\b(stl|3mf) (file|export)\b/u.test(sentence.toLowerCase())) {
+      if (/3mf/u.test(sentence.toLowerCase())) return this.export3mf();
+      void this.exportFiles().then((f) => {
+        if (!f) return;
+        this.download(f.stl, `${f.name}.stl`, 'model/stl');
+        this.say(`Saved ${f.name}.stl for your slicer.`, 'good');
+      });
+      return 'Saving the STL.';
+    }
     if (/\b(export|save|download)\b.*\b(step|stp)\b/u.test(sentence.toLowerCase())) {
       const s = this.exportStep();
       if (!s) return 'Nothing to export yet.';
@@ -1223,8 +1243,9 @@ export class App {
         .catch((e: unknown) => this.say(e instanceof Error ? e.message : String(e), 'bad'));
       return 'Making the core and cavity.';
     }
-    // Appearance: "appearance brushed aluminium", "make it anodised red", "finish carbon fibre", "no appearance".
-    if (/\b(appearance|finish|looks? like|render(?:ed)? (?:in|as)|make it (?:look )?(?:brushed|anodi[sz]ed|chrome|polished|matte?|gloss|carbon|wood|rubber|glass))\b/u.test(sentence.toLowerCase()) && !/\bsurface finish\b/u.test(sentence.toLowerCase())) {
+    // Appearance: "appearance brushed aluminium", "make it anodised red", "make it blue", "paint it red",
+    // "finish carbon fibre", "no appearance".
+    if (/\b(appearance|finish|looks? like|render(?:ed)? (?:in|as)|make it (?:look )?(?:brushed|anodi[sz]ed|chrome|polished|matte?|gloss|carbon|wood|rubber|glass|red|blue|green|black|white|orange|yellow|purple|gr[ae]y|silver|gold|teal|pink)|(?:paint|colou?r) it)\b/u.test(sentence.toLowerCase()) && !/\bsurface finish\b/u.test(sentence.toLowerCase())) {
       const t = sentence.toLowerCase();
       if (/\b(no|plain|default|bench) (appearance|finish|look)\b/u.test(t)) {
         this.appearance.value = null;
@@ -1313,7 +1334,7 @@ export class App {
       const pointedAtEdge = /\b(this|that) edge\b|\bedge here\b|\b(rim|hole edge)\b/u.test(sentence.toLowerCase());
       const here = raw && !pointedAtEdge ? (raw.map(grid) as [number, number, number]) : raw;
       const mesh = this.built.peek()?.mesh;
-      const edgeAt = mesh ? (at: [number, number, number]) => edgeNear(mesh.edges, at) : undefined;
+      const edgeAt = mesh ? (at: [number, number, number], reach?: number) => edgeNear(mesh.edges, at, reach) : undefined;
       const nrm = this.pointed && performance.now() - this.pointed.at < 8000 ? this.pointed.normal : undefined;
       const code = nrm ? Math.max(0, normalCode(nrm)) : 0;
       const edit = parseDesign(wordsToDigits(sentence), this.params.peek(), here, edgeAt, code);
@@ -1454,6 +1475,9 @@ export class App {
       tone = 'warn';
     } else if (u.kind === 'tie') {
       reply = `Did you mean ${u.a.label} or ${u.b.label}? Say it again with one of those words.`;
+    } else if (u.kind === 'confirm') {
+      // Not sure enough to change the part on a guess: say what it would do, and how to ask for it.
+      reply = `Did you mean ${u.intent.label}? To do that, say "${u.intent.phrases[0]}".`;
     } else if (u.kind === 'action') {
       reply = `I took that as ${u.intent.label}. ${this.runAction(u.action)}`;
     } else {
@@ -1765,6 +1789,27 @@ export class App {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  /** Save the part as 3MF, with the stress map as vertex colours when it has been tested. Returns the reply. */
+  export3mf(): string {
+    const built = this.built.peek();
+    const grown = this.grown.peek();
+    const mesh = grown?.final ? grown.mesh : built?.mesh;
+    if (!mesh) return 'Nothing to export yet.';
+    const s = this.stress.peek();
+    let colors: Float32Array | null = null;
+    if (s && s.vertexStress.length * 3 === mesh.positions.length) {
+      colors = new Float32Array(mesh.positions.length);
+      const k = this.loadN.peek() / s.newtons / this.materialData.yield;
+      const safe = this.settings.peek().colorSafe;
+      for (let v = 0; v < s.vertexStress.length; v++) stressColor(s.vertexStress[v] * k, safe, colors, v * 3);
+    }
+    const res = toThreeMF(mesh.positions, mesh.indices, colors, this.job.title);
+    this.download(res.bytes, `${this.job.id}${colors ? '_stress' : ''}.3mf`, 'model/3mf');
+    const reply = colors ? `3MF saved with ${res.colors} stress colours.` : '3MF saved. Run a load test first to include stress colours.';
+    this.say(reply, 'good');
+    return reply;
   }
 
   async exportFiles(): Promise<{ stl: Uint8Array; json: string; name: string } | null> {
