@@ -34,8 +34,8 @@ Run all of these before reporting any change as done, and paste the summary line
 
 A change that lowers the passing count, adds a type error or breaks the build is not done. A new feature comes
 with tests that would fail without it. Geometry changes keep the truth gate's verdicts: a part that was
-`verified` stays `verified` (closed form and kernel agree to about 1e-9 relative); never loosen a tolerance to
-make a check pass.
+`verified` stays `verified` (the gate's tolerance is `VOLUME_TOL = 1e-5` relative, `src/engine/truth.ts:11`; the
+kernel usually agrees to about 1e-9); never loosen a tolerance to make a check pass.
 
 For anything the browser shows, also check it in the running app (`npm run dev`, then the IWSDK CLI or the
 browser) and say exactly what you observed. Read `AGENTS.md` at the repository root first: this is an IWSDK

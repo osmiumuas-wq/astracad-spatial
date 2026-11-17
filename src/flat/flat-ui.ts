@@ -23,6 +23,7 @@ import { FlowSystem } from '../systems/flow-system.js';
 import { HingeSystem } from '../systems/hinge-system.js';
 import { ModeSystem } from '../systems/mode-system.js';
 import { Sfx } from '../app/sfx.js';
+import { clampZoom } from '../app/view-zoom.js';
 
 type Child = Node | string | null | undefined | false;
 
@@ -675,7 +676,7 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
     (ev) => {
       if (world.visibilityState.peek() === VisibilityState.NonImmersive) {
         ev.preventDefault();
-        bench.part.setZoom(bench.part.zoom * (ev.deltaY < 0 ? 1.08 : 0.926));
+        app.viewZoom.value = clampZoom(app.viewZoom.peek() * (ev.deltaY < 0 ? 1.08 : 0.926));
       }
     },
     { passive: false },

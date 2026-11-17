@@ -46,6 +46,7 @@ import { History } from './history.js';
 import { DEFAULT_GDT, drawingSvg, GdtScheme } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
+import { nextZoom, parseZoom, zoomReply } from './view-zoom.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
 import { addFeature, designFlatPattern, designMembers, edgeNear, featureDefs, normalCode, OPS, parseDesign } from '../engine/design.js';
 import { applyEquations, emptyEquations, EquationSet, evalExpr, spokenToExpr } from '../engine/equations.js';
@@ -1082,6 +1083,15 @@ export class App {
   runCommand(sentence: string): string {
     const job = this.job;
     const before = { ...this.params.peek() };
+    // The view's zoom by hand or voice: "true size", "zoom in", "zoom 2 times", "toggle zoom". Any job.
+    const zoom = parseZoom(sentence);
+    if (zoom) {
+      const z = nextZoom(this.viewZoom.peek(), zoom);
+      this.viewZoom.value = z;
+      const reply = zoomReply(z);
+      this.say(reply, 'info');
+      return reply;
+    }
     // Assembly: "assembly demo", "turn the hinge to 90", "play", "clash check"...
     const asm = this.assemblyCommand?.(sentence) ?? null;
     if (asm) return asm;
@@ -1549,6 +1559,8 @@ export class App {
   readonly draftColors: Signal<Float32Array | null> = signal(null);
   /** A parting line to draw over the part (segments, mm), or null. */
   readonly partingLines: Signal<number[] | null> = signal(null);
+  /** The bench view's zoom (1 = true size); voice, the ribbon and the desktop wheel all set it. */
+  readonly viewZoom: Signal<number> = signal(1);
 
   /** The part's appearance (src/app/appearance.ts), or null for the bench look. */
   readonly appearance: Signal<Appearance | null> = signal(null);
