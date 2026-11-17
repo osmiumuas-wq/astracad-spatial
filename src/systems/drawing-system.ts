@@ -46,7 +46,7 @@ export class DrawingSystem extends createSystem({}) {
     this.texture.generateMipmaps = false;
     this.sheet = new Mesh(
       new PlaneGeometry(0.297, 0.21),
-      new MeshBasicMaterial({ map: this.texture, toneMapped: false, side: DoubleSide, transparent: true }),
+      new MeshBasicMaterial({ map: this.texture, toneMapped: false, side: DoubleSide, transparent: true, forceSinglePass: true }),
     );
     this.sheet.name = 'Engineering drawing';
     this.sheet.visible = false;

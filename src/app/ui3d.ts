@@ -176,7 +176,9 @@ export function makeButton(
   const mesh = new Mesh(
     new PlaneGeometry(width, height),
     // Double-sided so a ray from a low hand still hits a button tilted away from it.
-    new MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false, depthWrite: false, side: DoubleSide }),
+    // Single pass: three.js otherwise draws a transparent double-sided material twice (back faces, then front),
+    // flagging it for a shader recompile check each time; on a flat panel the second pass changes nothing.
+    new MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false, depthWrite: false, side: DoubleSide, forceSinglePass: true }),
   );
   mesh.name = `Button ${spec.key}`;
   mesh.renderOrder = 12;
@@ -307,7 +309,7 @@ export function highlightButton(key: string | null): void {
     texture.generateMipmaps = false;
     beacon = new Mesh(
       new PlaneGeometry(1, 1),
-      new MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false, depthWrite: false, side: DoubleSide }),
+      new MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false, depthWrite: false, side: DoubleSide, forceSinglePass: true }),
     );
     beacon.name = 'Guide beacon';
     beacon.renderOrder = 11;

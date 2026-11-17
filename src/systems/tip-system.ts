@@ -82,7 +82,7 @@ export class TipSystem extends createSystem({}) {
   init(): void {
     const { app, bench } = ctx;
     const flat = (color: number): MeshBasicMaterial =>
-      new MeshBasicMaterial({ color, toneMapped: false, depthTest: false, transparent: true, side: DoubleSide });
+      new MeshBasicMaterial({ color, toneMapped: false, depthTest: false, transparent: true, side: DoubleSide, forceSinglePass: true });
     this.footprint = new Mesh(new BufferGeometry(), flat(COLORS.green));
     this.edge = new Mesh(new BufferGeometry(), flat(COLORS.amber));
     this.bead = new Mesh(new SphereGeometry(1, 16, 12), flat(COLORS.amber));

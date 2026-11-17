@@ -142,7 +142,7 @@ export class SketchBenchSystem extends createSystem({}) {
     for (let q = 0; q < MAX_QUADS; q++) index.set([q * 4, q * 4 + 1, q * 4 + 2, q * 4 + 1, q * 4 + 3, q * 4 + 2], q * 6);
     g.setIndex(new BufferAttribute(index, 1));
     g.setDrawRange(0, 0);
-    this.mesh = new Mesh(g, new MeshBasicMaterial({ vertexColors: true, toneMapped: false, depthTest: false, side: DoubleSide, transparent: true }));
+    this.mesh = new Mesh(g, new MeshBasicMaterial({ vertexColors: true, toneMapped: false, depthTest: false, side: DoubleSide, transparent: true, forceSinglePass: true }));
     this.mesh.name = 'Sketch workbench geometry';
     this.mesh.renderOrder = 26;
     this.mesh.frustumCulled = false;

@@ -151,7 +151,7 @@ export class TemplateSystem extends createSystem({}) {
     this.sheet.position.copy(point).add(n.clone().multiplyScalar(0.001));
     const s = 0.001;
     const mm = (p: Vec2): Vec2 => [(p[0] - cx) * s, (p[1] - cy) * s];
-    const mat = (color: number): MeshBasicMaterial => new MeshBasicMaterial({ color, toneMapped: false, side: DoubleSide, depthTest: false, transparent: true });
+    const mat = (color: number): MeshBasicMaterial => new MeshBasicMaterial({ color, toneMapped: false, side: DoubleSide, depthTest: false, transparent: true, forceSinglePass: true });
     const add = (g: BufferGeometry, color: number): void => {
       const mesh = new Mesh(g, mat(color));
       mesh.renderOrder = 41;
