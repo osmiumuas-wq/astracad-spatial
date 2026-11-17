@@ -121,6 +121,8 @@ export class WorkspaceSystem extends createSystem({
   private captionUntil = 0;
   private placedAt = -1;
   private snapped = false;
+  /** The part's shader variants are compiled once per session, after the bench has settled. */
+  private warmed = false;
   private readonly head = new Vector3();
   private readonly fwd = new Vector3();
   private readonly q = new Quaternion();
@@ -992,6 +994,10 @@ export class WorkspaceSystem extends createSystem({
       }
     }
     this.anchor.update(this.elapsed, ctx.bench.root, this.player, this.world.renderer as never);
+    if (!this.warmed && this.placedAt > 0 && this.elapsed - this.placedAt > 1.5) {
+      this.warmed = true;
+      ctx.bench.part.warmUp();
+    }
     probe.anchor = { state: this.anchor.state, correctionMm: Math.round(this.anchor.correctionMm * 10) / 10 };
     const show = ctx.app.settings.peek().captions && this.elapsed < this.captionUntil;
     if (show !== this.caption.group.visible) {

@@ -47,6 +47,10 @@ export class PartView {
 
   private base: Float32Array = new Float32Array(0);
   private stress: Float32Array | null = null;
+  /** Tiny copies of the part that compile its other shader variants (see warmUp); frames left to draw them. */
+  private warmers: Mesh[] = [];
+  private warmFrames = 0;
+  private warmed = false;
   private disp: Float32Array | null = null;
   private maxDisp = 0;
   private colors: Float32Array = new Float32Array(0);
@@ -225,8 +229,65 @@ export class PartView {
     this.tiltAngle = angle;
   }
 
+  /**
+   * Compile the part's other shader variants and upload the finish textures now, while the session starts, so
+   * the first stress test or finish later does not stall the frame. Draws near-zero-size copies of the part
+   * for a few frames: each shares the part material's compile hook and cache key, so three.js caches exactly
+   * the programs the part will use (the stress and draft colours, each textured finish, and both together). The copies are
+   * removed afterwards but their materials are not disposed: disposing would release the cached programs.
+   * Once per view; call during the immersive session, so the programs match its render state.
+   */
+  warmUp(): void {
+    if (this.warmed) return;
+    this.warmed = true;
+    const base = this.mesh.material;
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]), 3));
+    g.setAttribute('normal', new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
+    g.setAttribute('uv', new BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1]), 2));
+    g.setAttribute('color', new BufferAttribute(new Float32Array(9), 3));
+    const copy = (setup: (m: MeshStandardMaterial) => void): Mesh => {
+      const m = base.clone();
+      m.onBeforeCompile = base.onBeforeCompile;
+      m.customProgramCacheKey = base.customProgramCacheKey;
+      setup(m);
+      const mesh = new Mesh(g, m);
+      mesh.name = 'Shader warm-up';
+      mesh.scale.setScalar(1e-4);
+      mesh.frustumCulled = false;
+      mesh.raycast = () => {};
+      return mesh;
+    };
+    this.warmers = [
+      copy((m) => {
+        m.vertexColors = true;
+      }),
+      // A stress or draft map over a textured finish.
+      copy((m) => {
+        m.vertexColors = true;
+        m.map = textureFor('brushed');
+      }),
+      ...(['brushed', 'carbon', 'wood', 'knurl'] as const).flatMap((kind) => {
+        const tex = textureFor(kind);
+        return tex
+          ? [
+              copy((m) => {
+                m.map = tex;
+              }),
+            ]
+          : [];
+      }),
+    ];
+    this.pivot.add(...this.warmers);
+    this.warmFrames = 3;
+  }
+
   /** Ease towards the seat; call every frame. */
   update(delta: number): void {
+    if (this.warmFrames > 0 && --this.warmFrames === 0) {
+      for (const w of this.warmers) w.removeFromParent();
+      this.warmers = [];
+    }
     if (this.seatReady) {
       this.seatPos.lerp(this.seatTarget, 1 - Math.exp(-delta * 9));
       this.pivot.position.copy(this.seatPos);
