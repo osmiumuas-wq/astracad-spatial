@@ -6,7 +6,7 @@ Developer Competition 2026, Productivity track. Plan and scope: [PLAN.md](PLAN.m
 
 ## What runs where
 
-Everything runs in the browser. No server, no account, no third-party service.
+The hosted app runs in the browser and needs no native app installation or account. On a successful first visit, its service worker precaches the core app shell. Offline reload has not been verified. Optional voice models and STEP import may need network access the first time they are used; co-design uses a public signalling broker.
 
 | Part | Where | What it does |
 |---|---|---|
@@ -28,6 +28,19 @@ Desktop preview with the XR emulator, over HTTPS (needed for a headset on the sa
 ```bash
 npm run dev
 ```
+
+### Repeatable WebXR emulator smoke
+
+IWER (IWSDK's browser-based XR emulator) can test functional XR paths without a physical headset. It simulates the headset profile, XR session, hand/controller inputs, and supported WebXR features; it does not simulate Quest hardware performance, optics, thermals, or real camera-based tracking. Frame timings from this desktop run are diagnostic only and must not be reported as Quest FPS.
+
+Start/restart the managed browser with script automation enabled, then run the smoke:
+
+```bash
+npx @iwsdk/cli dev restart --headless --allow-browser-automation --timeout 60000
+npm run test:xr:emulator
+```
+
+The script enters emulated XR, switches to hand mode, builds and edits a wall bracket, checks the geometry truth gate and Fit view behavior, verifies simulated hand tracking, and records XR frame-time percentiles to ignored `artifacts/iwer-smoke.json`. Optionally pass `--output=artifacts/my-run.json` to `node scripts/probe/run-emulator-smoke.mjs`. The generated evidence is marked as simulated and stays local.
 
 Desktop preview over plain HTTP on localhost, headless managed browser, scriptable from the IWSDK CLI:
 
@@ -82,7 +95,7 @@ Accessibility (Access button): colour-safe stress map, captions for every meanin
 1. Push this folder to a public GitHub repository, branch `main`.
 2. In the repository settings, set Pages to deploy from GitHub Actions.
 3. `.github/workflows/pages.yml` runs the tests, builds, and publishes `dist/`.
-4. Open the Pages URL in Quest Browser. The page offers "Enter the bench".
+4. Open the Pages URL in Quest Browser. No app-store install is required. The production service worker precaches the core app shell after a successful first visit; test an offline reload on the target browser before claiming offline operation. Optional large features may download their assets on first use.
 
 Any static HTTPS host works (Vercel, Netlify). The WebAssembly file must be served as `application/wasm`.
 

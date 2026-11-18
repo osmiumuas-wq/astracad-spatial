@@ -48,7 +48,7 @@ import { History } from './history.js';
 import { DEFAULT_GDT, drawingSvg, GdtScheme } from '../engine/drawing.js';
 import { answer, blockParams, Described, describe } from '../engine/describe.js';
 import { Action, deicticEdit, HELP, parseCommand, wordsToDigits } from '../engine/commands.js';
-import { nextZoom, parseZoom, zoomReply } from './view-zoom.js';
+import { fitReply, fitZoom, nextZoom, parseZoom, zoomReply } from './view-zoom.js';
 import { Style, styleOf, styleParams } from '../engine/style.js';
 import { addFeature, designFlatPattern, designMembers, edgeNear, featureDefs, normalCode, OPS, parseDesign } from '../engine/design.js';
 import { applyEquations, emptyEquations, EquationSet, evalExpr, spokenToExpr } from '../engine/equations.js';
@@ -1088,9 +1088,18 @@ export class App {
     // The view's zoom by hand or voice: "true size", "zoom in", "zoom 2 times", "toggle zoom". Any job.
     const zoom = parseZoom(sentence);
     if (zoom) {
-      const z = nextZoom(this.viewZoom.peek(), zoom);
+      const built = this.built.peek();
+      if ('fit' in zoom && !built) {
+        const reply = 'The part is still building; try fit view again when it is ready.';
+        this.say(reply, 'warn');
+        return reply;
+      }
+      const width = built ? built.props.bbox.max[0] - built.props.bbox.min[0] : 0;
+      const height = built ? built.props.bbox.max[1] - built.props.bbox.min[1] : 0;
+      const depth = built ? built.props.bbox.max[2] - built.props.bbox.min[2] : 0;
+      const z = 'fit' in zoom && built ? fitZoom(width, height, depth) : nextZoom(this.viewZoom.peek(), zoom);
       this.viewZoom.value = z;
-      const reply = zoomReply(z);
+      const reply = 'fit' in zoom ? fitReply(width, height, depth, z) : zoomReply(z);
       this.say(reply, 'info');
       return reply;
     }

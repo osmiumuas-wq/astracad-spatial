@@ -41,6 +41,7 @@ const TOOLS: [string, string, string, Tab][] = [
   ['design:mould', 'Make mould', 'make mould margin 15 shrink 0.5', 'Output'],
   ['design:carbon', 'Carbon fibre', 'appearance carbon fibre', 'Output'],
   ['design:zoom', 'Zoom 1:1 / 2×', 'toggle zoom', 'Output'],
+  ['design:fit', 'Fit view', 'fit view', 'Output'],
   ['design:surface', 'Freeform', 'freeform surface 80 by 60 thick 3', 'Sheet'],
   ['design:top', 'Freeform top', 'freeform top 80 by 60', 'Sheet'],
   ['design:hole', 'Hole here', 'drill a 5 mm hole here', 'Holes'],
