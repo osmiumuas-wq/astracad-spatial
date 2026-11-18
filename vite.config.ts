@@ -15,7 +15,7 @@ export default defineConfig({
   plugins: [iwsdkDev({ https: process.env.ASTRA_DEV_HTTP === '1' ? false : undefined }), serviceWorker()],
   worker: { format: 'es' },
   // Evidence files written during emulator runs must not reload the page (that ends the XR session).
-  server: { host: '0.0.0.0', port: 8081, open: false, watch: { ignored: ['**/artifacts/**', '**/exchange/**', '**/dist/**'] } },
+  server: { host: '0.0.0.0', port: 8082, open: false, watch: { ignored: ['**/artifacts/**', '**/exchange/**', '**/dist/**'] } },
   build: {
     outDir: 'dist',
     sourcemap: process.env.NODE_ENV !== 'production',
