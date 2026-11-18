@@ -1,0 +1,33 @@
+name: Quality gates
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --onnxruntime-node-install-cuda=skip
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests (serial to avoid timing-test contention)
+        run: npx vitest run --no-file-parallelism --maxWorkers=1
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
+      - name: Production build
+        run: npm run build
+        env:
+          NODE_ENV: production
