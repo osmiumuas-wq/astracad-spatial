@@ -72,7 +72,9 @@ export class RoomAnchor {
     // Anchor pose (reference space) to the bench's parent frame.
     this.m.fromArray(pose.transform.matrix).premultiply(player.matrixWorld);
     if (root.parent) {
-      root.parent.updateMatrixWorld();
+      // Only the parent's own world matrix is needed: update it and its ancestors, not every object under it
+      // (updateMatrixWorld() walked the whole subtree every frame, about 2 ms of a desktop frame in the emulator).
+      root.parent.updateWorldMatrix(true, false);
       this.inv.copy(root.parent.matrixWorld).invert();
       this.m.premultiply(this.inv);
     }

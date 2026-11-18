@@ -63,7 +63,7 @@ export class SketchSystem extends createSystem({}) {
     this.line = new Mesh(
       g,
       // Transparent so it sorts with (and after) the translucent turntable instead of being drawn under it.
-      new MeshBasicMaterial({ color: COLORS.amber, toneMapped: false, depthTest: false, side: DoubleSide, transparent: true }),
+      new MeshBasicMaterial({ color: COLORS.amber, toneMapped: false, depthTest: false, side: DoubleSide, transparent: true, forceSinglePass: true }),
     );
     this.line.name = 'Air sketch stroke';
     this.line.renderOrder = 25;
