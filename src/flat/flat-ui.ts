@@ -10,8 +10,6 @@ import qrcode from 'qrcode-generator';
 import { AGENTS, Finding } from '../engine/agents.js';
 import { JOBS } from '../engine/jobs.js';
 import { MATERIALS } from '../engine/materials.js';
-import { toThreeMF } from '../engine/threemf.js';
-import { stressColor } from '../app/palette.js';
 import { App } from '../app/app.js';
 import { Bench } from '../app/bench.js';
 import { CoDesign } from '../app/codesign.js';
@@ -338,21 +336,7 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
           }
         } }, 'Download record'),
         h('button', { type: 'button', title: 'With the stress map as vertex colours, when the part has been tested', click: () => {
-          const built = app.built.peek();
-          const grown = app.grown.peek();
-          const mesh = grown?.final ? grown.mesh : built?.mesh;
-          if (!mesh) return;
-          const s = app.stress.peek();
-          let colors: Float32Array | null = null;
-          if (s && s.vertexStress.length * 3 === mesh.positions.length) {
-            colors = new Float32Array(mesh.positions.length);
-            const k = app.loadN.peek() / s.newtons / app.materialData.yield;
-            const safe = app.settings.peek().colorSafe;
-            for (let v = 0; v < s.vertexStress.length; v++) stressColor(s.vertexStress[v] * k, safe, colors, v * 3);
-          }
-          const res = toThreeMF(mesh.positions, mesh.indices, colors, app.job.title);
-          download(res.bytes, `${app.job.id}${colors ? '_stress' : ''}.3mf`, 'model/3mf');
-          app.say(colors ? `3MF saved with ${res.colors} stress colours.` : '3MF saved. Run a load test first to include stress colours.', 'good');
+          app.export3mf();
         } }, 'Download 3MF'),
         h('button', { type: 'button', title: 'Front, top and right views with dimensions and a title block (A4, SVG)', click: async () => {
           const d = await app.makeDrawing();

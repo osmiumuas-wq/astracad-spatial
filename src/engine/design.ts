@@ -1045,7 +1045,7 @@ export interface DesignEdit {
  *   "fillet 3" / "round the corners"  "shell 2" / "hollow it"
  *   "pattern 4 times 15 apart"        "4 around" (circular)        "remove the last feature"
  */
-export function parseDesign(text: string, p: Params, here?: [number, number, number], edgeAt?: (at: [number, number, number]) => { a: [number, number, number]; b: [number, number, number] } | null, faceCode = 0): DesignEdit | null {
+export function parseDesign(text: string, p: Params, here?: [number, number, number], edgeAt?: (at: [number, number, number], reach?: number) => { a: [number, number, number]; b: [number, number, number] } | null, faceCode = 0): DesignEdit | null {
   let t = text.toLowerCase().replace(/(\d)\s*x\s*(\d)/gu, '$1 by $2');
   // Exact placement by numbers, not the hand: "at 10, -5" (x, z on the top face) or "at 10, 20, -5" (x, y, z).
   if (!typedSketch(t)) {
@@ -1094,12 +1094,16 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
   if (/\b(fillet|round)\b/u.test(t) && /\b(this|that) edge\b|\bedge here\b/u.test(t)) {
     if (!here) return { params: p, reply: 'Point at an edge of the part, then say "fillet this edge 3".' };
     const r = nums[0] ?? 2;
+    // The kernel looks for a sharp edge within max(6, 2r) mm of the point: check the same here, so the
+    // reply never claims a fillet the build then refuses.
+    if (edgeAt && !edgeAt(here, Math.max(6, 2 * r))) return { params: p, reply: 'No sharp edge where you pointed. Point right at an edge, straight or curved, then say "fillet this edge 3".' };
     const r3 = (x: number): number => Math.round(x * 1e4) / 1e4;
     return { params: addFeature(p, OPS.ROUND, { a: r, c: r3(here[0]), d: r3(here[1]), e: r3(here[2]) }), reply: `Filleted that edge to ${r} mm, following its tangent edges. Fillet the edges next to it with the same radius and the corner blends.` };
   }
   // "chamfer this edge 2": a straight edge or a circle (a hole's rim) at the pointed spot.
   if (/\b(chamfer|bevel)\b/u.test(t) && /\b(this|that) edge\b|\bedge here\b|\b(rim|hole edge)\b/u.test(t) && here) {
     const d = nums[0] ?? 1;
+    if (edgeAt && !edgeAt(here, Math.max(6, 2 * d))) return { params: p, reply: 'No sharp edge where you pointed. Point right at an edge, straight or curved, then say "chamfer this edge 1".' };
     const r3 = (x: number): number => Math.round(x * 1e4) / 1e4;
     return { params: addFeature(p, OPS.ROUND, { a: d, c: r3(here[0]), d: r3(here[1]), e: r3(here[2]), f: 1 }), reply: `Chamfered that edge by ${d} mm.` };
   }
@@ -1174,7 +1178,23 @@ export function parseDesign(text: string, p: Params, here?: [number, number, num
     const n = Math.max(2, Math.round(nums[0]));
     return { params: addFeature(p, OPS.CIRCPAT, { a: n, b: seed, d: here ? at[0] : 0, e: here ? at[2] : 0 }), reply: `${n} copies of feature ${seed + 1} round the vertical axis.` };
   }
-  if (/\b(pattern|repeat|times|copies|row)\b/u.test(t) && nums.length) {
+  // "make it 2 times thicker", "1.5 times longer", "twice as wide", "half as tall": scale the base block (the
+  // first feature, when it is a box). Thicker, taller, higher and deeper: its height; longer: its length; wider:
+  // its width; bigger and larger: all three. Thinner, shorter, narrower and smaller divide instead.
+  const sized = t.match(/\b(twice|half|(\d+(?:\.\d+)?) times)\b (?:as )?(thick|thin|tall|high|deep|long|short|wide|narrow|big|small|large)\w*/u);
+  if (sized && readFeature(p, 0).op === OPS.BOX) {
+    const k0 = sized[1] === 'twice' ? 2 : sized[1] === 'half' ? 0.5 : parseFloat(sized[2]);
+    const word = sized[3];
+    const k = /^(thin|short|narrow|small)$/u.test(word) && k0 > 0 ? 1 / k0 : k0;
+    if (!(k > 0)) return null;
+    const slots = /^(thick|thin|tall|high|deep)$/u.test(word) ? ['c'] : /^(long|short)$/u.test(word) ? ['a'] : /^(wide|narrow)$/u.test(word) ? ['b'] : ['a', 'b', 'c'];
+    const out: Params = { ...p };
+    for (const sl of slots) out[`${sl}0`] = Math.round(p[`${sl}0`] * k * 100) / 100;
+    const f = readFeature(out, 0).v;
+    return { params: out, reply: `The block is now ${f.a} by ${f.b} by ${f.c} mm.` };
+  }
+  // "2 times thicker" (or bigger, longer...) is a size, not a pattern of two.
+  if (/\b(pattern|repeat|times|copies|row)\b/u.test(t) && nums.length && !/\btimes (as )?(thick|thin|big|small|large|long|short|tall|wide|narrow|high|deep)\w*/u.test(t)) {
     const seed = featureCount(p) - 1;
     const n = Math.round(nums[0]);
     const gap = nums[1] ?? 15;
