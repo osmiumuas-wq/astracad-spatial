@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --onnxruntime-node-install-cuda=skip
       - name: Typecheck
         run: npm run typecheck
       - name: Tests (serial to avoid timing-test contention)
