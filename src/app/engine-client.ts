@@ -40,7 +40,7 @@ const spawn = (): Worker =>
 
 export class EngineClient {
   private builder = spawn();
-  private analysis = spawn();
+  private analysis: Worker | null = null;
   private nextId = 1;
   private builderReady = false;
   private building = false;
@@ -66,7 +66,6 @@ export class EngineClient {
 
   constructor() {
     this.wireBuilder();
-    this.wireAnalysis();
     // A build normally takes milliseconds. One still running after this long has hung (or the
     // WebAssembly heap is gone): replace the worker and build again.
     if (typeof setInterval !== 'undefined') {
@@ -81,7 +80,8 @@ export class EngineClient {
 
   registerMesh(meshId: string, positions: Float32Array, indices: Uint32Array): void {
     this.meshes.set(meshId, { positions, indices });
-    for (const w of [this.builder, this.analysis]) this.sendMesh(w, meshId);
+    this.sendMesh(this.builder, meshId);
+    if (this.analysis) this.sendMesh(this.analysis, meshId);
   }
 
   private sendMesh(w: Worker, meshId: string): void {
@@ -117,22 +117,31 @@ export class EngineClient {
     this.onRecovered('build');
   }
 
-  private wireAnalysis(): void {
-    this.analysisReady = false;
-    for (const k of this.meshes?.keys() ?? []) this.sendMesh(this.analysis, k);
-    this.analysis.onmessage = (ev: MessageEvent<Response>) => this.fromAnalysis(ev.data);
-    this.analysis.onerror = (ev) => {
-      ev.preventDefault?.();
-      const error = new Error(ev.message || 'The analysis worker failed.');
-      for (const p of this.pending.values()) {
-        p.reject(error);
-      }
-      this.pending.clear();
-      // A worker that threw may have a broken WebAssembly heap: start a clean one for the next job.
-      this.analysis.terminate();
-      this.analysisQueue = [];
+  private ensureAnalysis(): Worker {
+    if (!this.analysis) {
       this.analysis = spawn();
       this.wireAnalysis();
+    }
+    return this.analysis;
+  }
+
+  private wireAnalysis(): void {
+    const worker = this.analysis;
+    if (!worker) return;
+    this.analysisReady = false;
+    for (const k of this.meshes.keys()) this.sendMesh(worker, k);
+    worker.onmessage = (ev: MessageEvent<Response>) => this.fromAnalysis(ev.data);
+    worker.onerror = (ev) => {
+      ev.preventDefault?.();
+      if (this.analysis !== worker) return;
+      const error = new Error(ev.message || 'The analysis worker failed.');
+      for (const p of this.pending.values()) p.reject(error);
+      this.pending.clear();
+      // Defer the clean worker's WASM startup until the next analysis request.
+      worker.terminate();
+      this.analysis = null;
+      this.analysisReady = false;
+      this.analysisQueue = [];
       this.onRecovered('analysis');
     };
   }
@@ -140,7 +149,8 @@ export class EngineClient {
   dispose(): void {
     if (this.watchdog) clearInterval(this.watchdog);
     this.builder.terminate();
-    this.analysis.terminate();
+    this.analysis?.terminate();
+    this.analysis = null;
   }
 
   private fromBuilder(msg: Response): void {
@@ -242,7 +252,8 @@ export class EngineClient {
         reject,
         onEvent,
       });
-      const send = (): void => this.analysis.postMessage({ id, ...request } as Request, transfer);
+      const worker = this.ensureAnalysis();
+      const send = (): void => worker.postMessage({ id, ...request } as Request, transfer);
       if (this.analysisReady) {
         send();
       } else {
@@ -256,14 +267,14 @@ export class EngineClient {
     if (this.pending.size === 0 && this.analysisQueue.length === 0) {
       return;
     }
-    this.analysis.terminate();
+    this.analysis?.terminate();
+    this.analysis = null;
+    this.analysisReady = false;
     for (const p of this.pending.values()) {
       p.reject(new CancelledError());
     }
     this.pending.clear();
     this.analysisQueue = [];
-    this.analysis = spawn();
-    this.wireAnalysis();
   }
 
   get analysing(): boolean {
