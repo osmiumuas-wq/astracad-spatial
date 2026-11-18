@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampZoom, nextZoom, parseZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, zoomReply } from '../src/app/view-zoom.js';
+import { clampZoom, fitReply, fitZoom, nextZoom, parseZoom, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP, zoomReply } from '../src/app/view-zoom.js';
 
 describe('view zoom by voice and hand', () => {
   it('true size in every phrasing', () => {
@@ -18,8 +18,23 @@ describe('view zoom by voice and hand', () => {
     expect(parseZoom('toggle zoom')).toEqual({ toggle: true });
   });
 
+  it('fits the part footprint to the bench span within the supported zoom range', () => {
+    expect(parseZoom('fit view')).toEqual({ fit: true });
+    expect(parseZoom('zoom to fit')).toEqual({ fit: true });
+    expect(fitZoom(100, 80, 60)).toBeCloseTo(208 / Math.hypot(100, 60), 12);
+    expect(fitZoom(400, 300, 200)).toBeCloseTo(208 / Math.hypot(400, 200), 12);
+    expect(fitZoom(1000, 700, 400)).toBe(ZOOM_MIN);
+    expect(fitZoom(20, 1000, 20)).toBe(4);
+    expect(fitZoom(0, 0, 0)).toBe(1);
+    expect(fitZoom(Number.NaN, 20, 10)).toBe(1);
+    expect(fitZoom(-10, 20, 10)).toBe(1);
+    expect(fitReply(100, 80, 60, fitZoom(100, 80, 60))).toContain('dimensions are unchanged');
+    expect(fitReply(1000, 700, 400, ZOOM_MIN)).toContain('may extend beyond the bench');
+    expect(fitReply(100, Number.NaN, 60, 1)).toContain('may extend beyond the bench');
+  });
+
   it('leaves part edits and other commands alone', () => {
-    for (const s of ['add a box 40 by 30 by 10', 'make it 2 times thicker', 'scale 2', 'size 20', 'drill a 5 mm hole here', 'flange 25 at 45', 'test it', 'zoom']) {
+    for (const s of ['add a box 40 by 30 by 10', 'make it 2 times thicker', 'scale 2', 'size 20', 'drill a 5 mm hole here', 'flange 25 at 45', 'test it', 'zoom', 'make a part that fits the phone']) {
       expect(parseZoom(s), s).toBeNull();
     }
   });

@@ -7,9 +7,6 @@
     <meta name="theme-color" content="#070b14" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230b1220' stroke='%2335d0ff' stroke-width='2'/%3E%3Cpath d='M9 22 16 8l7 14' fill='none' stroke='%23ffb020' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <title>AstraCAD Spatial</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
     <style>
       /* Liquid glass: frosted, rounded panels over a deep blue-violet field. */
       :root {
@@ -28,8 +25,8 @@
         --red: #ff5a64;
         --violet: #9b7bff;
         --radius: 26px;
-        --sans: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-        --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+        --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+        --mono: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace;
         color-scheme: dark;
       }
       * { box-sizing: border-box; }
@@ -91,6 +88,7 @@
       p { margin: 0 0 8px; }
       .lede { color: var(--dim); font-size: 15.5px; }
       .hint, .note { color: var(--dim); font-size: 12.5px; }
+      #offline-hint { margin: 7px 2px 0; padding-left: 10px; border-left: 2px solid var(--green); font-size: 12px; }
       section {
         padding: 16px 16px 10px; margin-top: 14px; border-radius: 22px;
         background: rgba(255, 255, 255, 0.045); border: 1px solid var(--edge-soft);

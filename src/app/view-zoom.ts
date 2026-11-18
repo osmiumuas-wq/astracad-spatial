@@ -8,6 +8,7 @@
  *   "zoom out"                                                         /1.5
  *   "zoom 2 times" / "zoom to 2x" / "zoom 150 percent"                 that zoom
  *   "toggle zoom" (the ribbon button)                                  1 <-> 2
+ *   "fit view" / "zoom to fit"                                         fit footprint to the bench
  */
 
 import { wordsToDigits } from '../engine/commands.js';
@@ -17,7 +18,10 @@ export const ZOOM_MAX = 4;
 /** One "zoom in" or "zoom out" step. */
 export const ZOOM_STEP = 1.5;
 
-export type ZoomRequest = { abs: number } | { factor: number } | { toggle: true };
+export type ZoomRequest = { abs: number } | { factor: number } | { toggle: true } | { fit: true };
+
+/** Target footprint: 80% of the 260 mm diameter turntable. */
+export const FIT_SPAN_MM = 208;
 
 export const clampZoom = (z: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
 
@@ -25,6 +29,7 @@ export const clampZoom = (z: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM
 export function parseZoom(sentence: string): ZoomRequest | null {
   const t = wordsToDigits(sentence).toLowerCase();
   if (/\btoggle (the )?zoom\b/u.test(t)) return { toggle: true };
+  if (/\bfit (the )?view\b|\bzoom to fit\b/u.test(t)) return { fit: true };
   if (/\b(true|actual|real|life|full)[ -]?size\b|\bone to one\b|\b1\s*(?::|to)\s*1\b|\b(reset|normal) zoom\b|\bzoom (reset|normal)\b/u.test(t)) {
     return { abs: 1 };
   }
@@ -41,7 +46,30 @@ export function parseZoom(sentence: string): ZoomRequest | null {
 /** The zoom after a request, from the current zoom (clamped to the view's range). */
 export function nextZoom(current: number, req: ZoomRequest): number {
   if ('toggle' in req) return Math.abs(current - 1) < 0.01 ? 2 : 1;
+  if ('fit' in req) return clampZoom(current);
   return clampZoom('abs' in req ? req.abs : current * req.factor);
+}
+
+/** Return a zoom that fits the part's horizontal X/Z footprint within the bench target span. */
+function footprintSpan(widthMm: number, heightMm: number, depthMm: number): number {
+  if (![widthMm, heightMm, depthMm].every(Number.isFinite) || widthMm < 0 || heightMm < 0 || depthMm < 0) {
+    return Number.NaN;
+  }
+  return Math.hypot(widthMm, depthMm);
+}
+
+export function fitZoom(widthMm: number, heightMm: number, depthMm: number): number {
+  const span = footprintSpan(widthMm, heightMm, depthMm);
+  if (!Number.isFinite(span) || span <= 0) return 1;
+  return clampZoom(FIT_SPAN_MM / span);
+}
+
+export function fitReply(widthMm: number, heightMm: number, depthMm: number, zoom: number): string {
+  const span = footprintSpan(widthMm, heightMm, depthMm);
+  const fits = Number.isFinite(span) && span * zoom <= FIT_SPAN_MM + 1e-6;
+  return fits
+    ? `Fit view: adjusted the part to the bench view (${zoom.toFixed(2)}×). Its dimensions are unchanged.`
+    : `Fit view reached the ${zoom.toFixed(2)}× zoom limit; this large part may extend beyond the bench. Its dimensions are unchanged.`;
 }
 
 /** What the app says after a zoom. */

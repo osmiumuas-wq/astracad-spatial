@@ -133,6 +133,27 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
     world.launchXR();
   } }, 'Enter the bench');
   const xrHint = h('p', { class: 'hint' }, 'Checking for a headset...');
+  const offlineHint = h('p', { class: 'hint', 'aria-live': 'polite' }, 'No app install required. Checking offline readiness...');
+  const updateOfflineHint = (): void => {
+    if (!('serviceWorker' in navigator)) {
+      offlineHint.textContent = 'No app install required. This browser does not support the app-shell cache.';
+      return;
+    }
+    offlineHint.textContent = navigator.serviceWorker.controller
+      ? 'No app install required. The app shell is cached by the service worker; offline reload is not verified.'
+      : 'No app install required. The hosted build prepares an app-shell cache on first visit.';
+  };
+  if (import.meta.env.DEV) {
+    offlineHint.textContent = 'No app install required. The production build prepares an app-shell cache; offline reload is not verified.';
+  } else {
+    updateOfflineHint();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', updateOfflineHint, { once: true });
+      void navigator.serviceWorker.ready.then(updateOfflineHint).catch(() => {
+        offlineHint.textContent = 'No app install required. Offline caching could not be confirmed; keep a connection for this session.';
+      });
+    }
+  }
   root.append(
     h('header', {},
       h('div', { class: 'brand' },
@@ -146,6 +167,7 @@ export function mountFlatUi(world: World, app: App, bench: Bench, sfx: Sfx, code
       h('p', { class: 'lede' }, 'Pinch a real object to size a part, shape it with your fingers, push it to test it, and take the file with you. Hands only.'),
       enter,
       xrHint,
+      offlineHint,
     ),
   );
   const xr = (navigator as Navigator & { xr?: XRSystem }).xr;
