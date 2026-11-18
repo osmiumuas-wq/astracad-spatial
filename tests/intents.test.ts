@@ -70,7 +70,8 @@ describe('on-device language model', () => {
     const wrong: string[] = [];
     for (const [s, want] of HELD_OUT) {
       const u = await understand(s);
-      if (u.kind === 'none' || u.kind === 'tie') asked++;
+      // A question back ("did you mean...?") is asking, not a right answer.
+      if (u.kind === 'none' || u.kind === 'tie' || u.kind === 'confirm') asked++;
       else if (u.intent.key === want) right++;
       else wrong.push(`${s} -> ${u.intent.key}`);
     }

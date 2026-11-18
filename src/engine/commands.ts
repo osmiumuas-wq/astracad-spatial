@@ -40,7 +40,8 @@ const ACTIONS: [RegExp, Action][] = [
   [/\b(air ?flow|wind|aero)\b/u, 'flow'],
   [/\b(vibrat\w*|frequenc\w*|resonan\w*|modes?)\b/u, 'vibration'],
   [/\b(drawing|blueprint|drafting|three views?)\b/u, 'drawing'],
-  [/\b(print preview|slice it|how long to print|print it)\b/u, 'print'],
+  [/\b(g ?code|slice (it )?for (my|the) printer|make (the )?g ?code)\b/u, 'gcode'],
+  [/\b(print preview|slice( it)?|how long to print|print it)\b/u, 'print'],
   [/\bsave\b/u, 'save'],
   [/\bshare\b|\bqr\b/u, 'share'],
   [/\blaser\b/u, 'laser'],
@@ -49,7 +50,6 @@ const ACTIONS: [RegExp, Action][] = [
   [/\bcapture\b|\bscan\b/u, 'capture'],
   [/\bsketch\b|\bdraw (a|an|the)\b/u, 'sketch'],
   [/\bswing\b|\bopen the hinge\b/u, 'swing'],
-  [/\b(g ?code|slice (it )?for (my|the) printer|make (the )?g ?code)\b/u, 'gcode'],
   [/\b(drill(ing)? template|template|where (do i|to) drill)\b/u, 'template'],
   [/\b(lattice|gyroid|infill|hollow (it|this) out)\b/u, 'lattice'],
   [/\bexplore\b|\b(show me )?(options|variants|alternatives)\b/u, 'explore'],
@@ -146,7 +146,8 @@ export function parseCommand(input: string, job: Job, params: Params): Command {
   if (action && !num) return { kind: 'action', action: action[1], text: input };
   // "two more bolts" / "one fewer hole" / "6 bolts": a count. A singular noun with a size
   // ("bolt hole 6.6", "bolt circle 60") names a dimension instead.
-  const count = job.params.find((d) => d.unit === '');
+  // Only a count of bolts, holes, screws or spokes: a unitless ratio (the cradle's held height) is not one.
+  const count = job.params.find((d) => d.unit === '' && /bolt|hole|screw|spoke/iu.test(d.label));
   const countWords = /\b(more|fewer|less)\b/u.test(text) || /\b(bolts|holes|screws|spokes)\b/u.test(text);
   if (count && countWords && /\b(bolts?|holes?|screws?|spokes?)\b/u.test(text) && num && !/\bmm\b/u.test(text)) {
     const v = Number(num[1]);

@@ -51,10 +51,21 @@ export const INTENTS: Intent[] = [
 export const MATCH_FLOOR = 0.33;
 /** Two intents closer than this are a tie: ask rather than guess. */
 export const TIE_MARGIN = 0.03;
+/**
+ * An intent that changes or replaces the part (a new part, make it stronger, grow bone, undo) needs this
+ * similarity to act; below it the app asks first. Measured on the shipped model: right paraphrases of these
+ * intents score 0.36-0.49 or above 0.5, and wrong single words land in the same 0.40-0.45 band ("slice" ->
+ * stronger 0.44, "make it blue" -> grow 0.44, "make a gear" -> knob 0.40), so below 0.5 a guess could
+ * silently change the part.
+ */
+export const CONFIRM_FLOOR = 0.5;
+/** Intents that change or replace the part, so a doubtful match asks before acting. */
+const CHANGES_PART = new Set(['act:stronger', 'act:grow', 'act:undo']);
 
 export type Understood =
   | { kind: 'none' }
   | { kind: 'tie'; a: Intent; b: Intent }
+  | { kind: 'confirm'; intent: Intent; score: number }
   | { kind: 'part'; intent: Intent; score: number }
   | { kind: 'action'; intent: Intent; action: Action; score: number };
 
@@ -70,6 +81,8 @@ export function decide(scores: { key: string; score: number }[]): Understood {
     const other = INTENTS.find((i) => i.key === second.key);
     if (other) return { kind: 'tie', a: intent, b: other };
   }
+  const changes = !intent.key.startsWith('act:') || CHANGES_PART.has(intent.key);
+  if (changes && top.score < CONFIRM_FLOOR) return { kind: 'confirm', intent, score: top.score };
   if (intent.key.startsWith('act:')) return { kind: 'action', intent, action: intent.key.slice(4) as Action, score: top.score };
   return { kind: 'part', intent, score: top.score };
 }
