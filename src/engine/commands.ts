@@ -204,7 +204,7 @@ export function parseCommand(input: string, job: Job, params: Params): Command {
 
 export const HELP =
   'Try: "make the arm 20 mm longer", "double the thickness", "bore 8", "two more bolts", "in aluminium", ' +
-  '"test it", "make it stronger", "show the drawing", "air flow", "vibration", "true size", "zoom in", "undo", or ' +
+  '"test it", "make it stronger", "show the drawing", "air flow", "vibration", "true size", "fit view", "zoom in", "undo", or ' +
   'describe a new part.';
 
 /**
