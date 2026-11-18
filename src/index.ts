@@ -165,11 +165,15 @@ World.create(
     explode: () => world.getSystem(HingeSystem)?.explode(),
   });
 
+  // Register the component even while its optional system is inactive; the
+  // setting can add it to the part before DepthSensingSystem is first needed.
+  world.registerComponent(DepthOccludable);
+
   // Depth occlusion (Access: "Real occlusion"): real hands and objects in front
   // of the part hide it. Off by default until it has been checked on a headset;
   // without depth data the system does nothing.
-  world.registerSystem(DepthSensingSystem, { configData: { enableOcclusion: true, enableDepthTexture: true } });
   const pivotEntity = world.createTransformEntity(bench.part.pivot, { parent: turntableEntity, persistent: true });
+  let depthSystemActive = false;
   effect(() => {
     const s = app.settings.value;
     // Clash check needs the same depth data; it shows hidden parts in red instead of hiding them.
@@ -177,6 +181,16 @@ World.create(
     bench.part.setClash(s.clash);
     if (on && !pivotEntity.hasComponent(DepthOccludable)) pivotEntity.addComponent(DepthOccludable);
     if (!on && pivotEntity.hasComponent(DepthOccludable)) pivotEntity.removeComponent(DepthOccludable);
+
+    // Depth sensing is optional and both features are off by default. Do not
+    // read/process XR depth each frame until an occludable part actually exists.
+    if (on && !depthSystemActive) {
+      world.registerSystem(DepthSensingSystem, { configData: { enableOcclusion: true, enableDepthTexture: true } });
+      depthSystemActive = true;
+    } else if (!on && depthSystemActive) {
+      world.unregisterSystem(DepthSensingSystem);
+      depthSystemActive = false;
+    }
   });
 
   mountFlatUi(world, app, bench, sfx, codesign);
